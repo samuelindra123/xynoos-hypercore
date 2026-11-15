@@ -1,0 +1,4 @@
+case,iterations,total_ns,ns_per_parse
+psi,10000,6106205,610
+mem,10000,1890785,189
+vm,10000,2396739,239
