@@ -6,3 +6,4 @@ license = "GPL-3.0-only"
 [dependencies]
 xynoos-hypermemory = { path = "../xynoos-hypermemory" }
 xynoos-pressureiq = { path = "../xynoos-pressureiq" }
+serde_json = "1"

@@ -123,6 +123,30 @@ fn main() -> Result<(), Box<dyn Error>> {
 
 fn system_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     use xynoos_pressureiq::system::{collect_system, cpu_utilization, disk_delta};
+    if args.len() >= 3 && args[1] == "snapshot" && args[2] == "--json" {
+        let mut disk = None;
+        let mut freshness_ms = 5000u64;
+        let mut i = 3;
+        while i < args.len() {
+            let value = args.get(i + 1).ok_or("Missing option value")?;
+            match args[i].as_str() {
+                "--disk" => disk = Some(value.as_str()),
+                "--freshness-ms" => freshness_ms = value.parse()?,
+                _ => return Err("Unknown option".into()),
+            }
+            i += 2;
+        }
+        let s = collect_system();
+        let contract = xynoos_pressureiq::system::contract::build(
+            &s,
+            None,
+            disk,
+            std::time::Instant::now(),
+            Duration::from_millis(freshness_ms),
+        );
+        println!("{}", serde_json::to_string(&contract)?);
+        return Ok(());
+    }
     if args.len() == 2 && args[1] == "snapshot" {
         let s = collect_system();
         println!("CPU: {:?}\nCPU PSI: {:?}\nMemori: {:?}\nMemory PSI: {:?}\nVMStat: {:?}\nIO PSI: {:?}\nDisk: {:?}\nCgroup v2: {:?}\nFrekuensi CPU kHz: {:?}\nLoad 1 menit: {:?}\nDRM: {:?}\nThermal: {:?}\nPower: {:?}\nGPU utilisasi/video decode/akselerasi: tidak tersedia",s.cpu,s.cpu_psi,s.memory.mem.result,s.memory.psi.result,s.memory.vm.result,s.io_psi,s.disks,s.cgroup,s.cpu_frequency_khz,s.load_one,s.gpu,s.thermal,s.power);
@@ -132,27 +156,51 @@ fn system_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         return Err("Gunakan system snapshot atau system sample --count N --interval-ms N".into());
     }
     let (mut count, mut ms) = (5u32, 1000u64);
+    let mut disk_name: Option<&str> = None;
+    let mut json = false;
+    let mut freshness_ms = 5000u64;
     let mut i = 2;
     while i < args.len() {
+        if args[i] == "--json" {
+            json = true;
+            i += 1;
+            continue;
+        }
         if i + 1 >= args.len() {
             return Err("Nilai parameter hilang".into());
         }
         match args[i].as_str() {
             "--count" => count = args[i + 1].parse()?,
             "--interval-ms" => ms = args[i + 1].parse()?,
+            "--disk" => disk_name = Some(&args[i + 1]),
+            "--freshness-ms" => freshness_ms = args[i + 1].parse()?,
             _ => return Err("Parameter tidak dikenal".into()),
         }
         i += 2
     }
     let interval = Duration::from_millis(ms);
     validate_sampling(count, interval)?;
-    println!("timestamp_unix_ms,elapsed_ms,cpu_util_pct,logical_cpus,mem_available_bytes,cpu_psi_some_pct,io_psi_some_pct,cgroup_cpu_usage_us,cgroup_memory_bytes,cgroup_read_bytes,cgroup_write_bytes,disk_major,disk_minor,disk_read_delta_bytes,disk_write_delta_bytes,gpu_cards,thermal_sensors,power_supplies,snapshot_ns,memory_snapshot_ns,memory_psi_some_pct,pgfault_total,pgmajfault_total");
+    if !json {
+        println!("timestamp_unix_ms,elapsed_ms,cpu_util_pct,logical_cpus,mem_available_bytes,cpu_psi_some_pct,io_psi_some_pct,cgroup_cpu_usage_us,cgroup_memory_bytes,cgroup_read_bytes,cgroup_write_bytes,disk_major,disk_minor,disk_read_delta_bytes,disk_write_delta_bytes,gpu_cards,thermal_sensors,power_supplies,snapshot_ns,memory_snapshot_ns,memory_psi_some_pct,pgfault_total,pgmajfault_total");
+    }
     let mut previous: Option<xynoos_pressureiq::system::SystemSnapshot> = None;
     for k in 0..count {
         if k > 0 {
             std::thread::sleep(interval)
         }
         let s = collect_system();
+        if json {
+            let contract = xynoos_pressureiq::system::contract::build(
+                &s,
+                previous.as_ref(),
+                disk_name,
+                std::time::Instant::now(),
+                Duration::from_millis(freshness_ms),
+            );
+            println!("{}", serde_json::to_string(&contract)?);
+            previous = Some(s);
+            continue;
+        }
         let elapsed = previous
             .as_ref()
             .and_then(|p| s.monotonic.checked_duration_since(p.monotonic));
@@ -165,17 +213,27 @@ fn system_command(args: &[String]) -> Result<(), Box<dyn Error>> {
                     .ok()
                     .and_then(|old| elapsed.and_then(|d| cpu_utilization(old, c, d).ok()))
             });
-        let disk = s.disks.as_ref().ok().and_then(|v| v.first());
-        let delta = previous.as_ref().zip(disk).and_then(|(p, d)| {
-            p.disks
+        // No disk is representative by default: the caller must choose one.
+        let disk = disk_name.and_then(|name| {
+            s.disks
                 .as_ref()
                 .ok()
-                .and_then(|v| {
-                    v.iter()
-                        .find(|x| x.major == d.major && x.minor == d.minor && x.name == d.name)
-                })
-                .and_then(|old| disk_delta(old, d).ok())
+                .and_then(|v| v.iter().find(|d| d.name == name))
         });
+        let delta = previous
+            .as_ref()
+            .zip(disk)
+            .filter(|_| elapsed.is_some_and(|d| !d.is_zero()))
+            .and_then(|(p, d)| {
+                p.disks
+                    .as_ref()
+                    .ok()
+                    .and_then(|v| {
+                        v.iter()
+                            .find(|x| x.major == d.major && x.minor == d.minor && x.name == d.name)
+                    })
+                    .and_then(|old| disk_delta(old, d).ok())
+            });
         let opt = |v: Option<u64>| v.map(|n| n.to_string()).unwrap_or_default();
         let cg = s.cgroup.as_ref().ok();
         let io = cg.and_then(|c| c.io_bytes.as_ref().ok());
