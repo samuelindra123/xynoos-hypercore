@@ -1,5 +1,15 @@
 # TASK 018 — Real optimization validation (partial)
 
+## TASK 018D continuation — partial, control remains disabled
+
+The manager diagnostic now opens the parent and `manager` directories using the existing descriptor-relative, no-follow helpers, checks cgroup v2 and non-root ownership, refuses the cgroup mount root, and compares the open manager's device/inode with PressureIQ's process-scoped cgroup observation before and after reading the parent files. The systemd unit properties are still checked separately and sequentially: **this is not an authorization binding for a controller write** and does not close races. The launcher checks whether systemd reports the transient service inactive or collected, but does not verify cgroup removal; the unit diagnostic remains untested on systemd 257.
+
+A controller-activation state machine inside `xynoos-linux-control` now has fixture coverage for authorization, populated parent, unavailable or unexpected controllers, identity changes, denied activation and mismatched read-back. It checks the expected enabled-controller set and reports ambiguous write/read-back failures without a blind retry. **There is no real descriptor-backed controller-activation implementation or integration with the gated workload**; the fixture backend only changes memory in a Rust test object. No kernel writes were made. The public controlled command remains disabled.
+
+Full workspace tests and focused controller and example tests passed; formatting, Clippy with warnings denied, workspace check, rustdoc with warnings denied and the release build passed. The real kernel test remained ignored. A read-only Codespaces probe saw PID 1 `docker-init` and `/sys/fs/cgroup/init`; no MX Linux machine was accessed. No performance improvement is established.
+
+Remaining blockers: bind the open parent and manager descriptors to the exact live transient unit and verify that binding at each write; implement descriptor-relative `+memory` activation with real read-back and clear handling of ambiguous writes; integrate it with the worker, cancellation and restoration lifecycle; close the cancellation/release race; inject creation, spawn, placement, signal, timeout, termination, rollback and cleanup failures end to end; verify no restoration or removal while any worker may remain alive; and verify actual cgroup removal and transient-service termination. Keep PR #14 draft until these pass. Real kernel intervention and physical MX Linux validation are separate release gates.
+
 ## TASK 018D — delegated manager preflight (PARTIAL)
 
 This update supersedes previous suggestions to run controlled mode. The standalone controlled command now refuses before creating a cgroup or writing any control: transient-unit authorization, safe controller activation and lifecycle failure coverage are not complete. **Manager/workload separation, controller activation, empty-child and workload intervention remain NOT VERIFIED and not ready for execution.**

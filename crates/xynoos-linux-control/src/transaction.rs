@@ -551,3 +551,82 @@ fn read_at(dir: &File, name: &std::ffi::CStr) -> Result<String, String> {
     }
     Ok(s)
 }
+
+/// Read-only descriptor-relative manager and parent inspection; this is not
+/// authorization to mutate the parent or proof of systemd unit ownership.
+#[derive(Debug, Serialize)]
+pub struct ManagerParentInspection {
+    pub parent_device: u64,
+    pub parent_inode: u64,
+    pub manager_device: u64,
+    pub manager_inode: u64,
+    pub controllers: String,
+    pub enabled: String,
+    pub parent_empty: bool,
+}
+
+pub fn inspect_manager_parent(parent_path: &Path) -> Result<ManagerParentInspection, String> {
+    let pid = std::process::id();
+    let process = xynoos_pressureiq::workload::identify(pid)
+        .map_err(|e| format!("manager identity: {e:?}"))?;
+    let parent = open_absolute_dir(parent_path)?;
+    let meta = parent.metadata().map_err(|e| e.to_string())?;
+    // SAFETY: geteuid has no preconditions.
+    if unsafe { libc::geteuid() } == 0
+        || meta.uid() != unsafe { libc::geteuid() }
+        || meta.mode() & 0o022 != 0
+    {
+        return Err("parent ownership or mode invalid".into());
+    }
+    let mut st = std::mem::MaybeUninit::<libc::statfs>::uninit();
+    // SAFETY: parent is an open descriptor and st is valid output storage.
+    if unsafe { libc::fstatfs(parent.as_raw_fd(), st.as_mut_ptr()) } != 0 {
+        return Err(io::Error::last_os_error().to_string());
+    }
+    // SAFETY: successful fstatfs initialized st.
+    if unsafe { st.assume_init() }.f_type as u64 != 0x6367_7270 {
+        return Err("parent is not cgroup v2".into());
+    }
+    let up = openat(
+        parent.as_raw_fd(),
+        c"..",
+        libc::O_RDONLY | libc::O_DIRECTORY,
+    )?;
+    let up_meta = up.metadata().map_err(|e| e.to_string())?;
+    if up_meta.dev() != meta.dev() || up_meta.ino() == meta.ino() {
+        return Err("cgroup mount root refused".into());
+    }
+    let manager = openat(
+        parent.as_raw_fd(),
+        c"manager",
+        libc::O_RDONLY | libc::O_DIRECTORY,
+    )?;
+    let mm = manager.metadata().map_err(|e| e.to_string())?;
+    let observed = xynoos_pressureiq::cgroup_pressure::collect(&process)
+        .map_err(|e| format!("manager membership: {e:?}"))?;
+    if observed.cgroup.device != mm.dev() || observed.cgroup.inode != mm.ino() {
+        return Err("manager cgroup identity mismatch".into());
+    }
+    let procs = read_at(&parent, c"cgroup.procs")?;
+    let controllers = read_at(&parent, c"cgroup.controllers")?;
+    let enabled = read_at(&parent, c"cgroup.subtree_control")?;
+    let check = open_absolute_dir(parent_path)?
+        .metadata()
+        .map_err(|e| e.to_string())?;
+    let membership = xynoos_pressureiq::cgroup_pressure::collect(&process)
+        .map_err(|e| format!("manager membership changed: {e:?}"))?;
+    if (check.dev(), check.ino()) != (meta.dev(), meta.ino())
+        || (membership.cgroup.device, membership.cgroup.inode) != (mm.dev(), mm.ino())
+    {
+        return Err("parent or manager identity changed".into());
+    }
+    Ok(ManagerParentInspection {
+        parent_device: meta.dev(),
+        parent_inode: meta.ino(),
+        manager_device: mm.dev(),
+        manager_inode: mm.ino(),
+        controllers,
+        enabled,
+        parent_empty: procs.trim().is_empty(),
+    })
+}

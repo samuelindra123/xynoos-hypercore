@@ -1,0 +1,183 @@
+//! Controller-activation state machine. A backend must prove unit ownership and
+//! confine operations to one held directory descriptor. No production backend
+//! is registered yet; this is exercised only by deterministic fixtures.
+use std::collections::BTreeSet;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ParentIdentity {
+    pub device: u64,
+    pub inode: u64,
+}
+
+/// All reads and writes must be relative to the same verified directory.
+/// A backend must reject replacement or loss of the designated unit binding.
+pub trait ControllerBackend {
+    fn verify_unit(&mut self) -> Result<ParentIdentity, String>;
+    fn processes(&mut self) -> Result<String, String>;
+    fn available(&mut self) -> Result<String, String>;
+    fn enabled(&mut self) -> Result<String, String>;
+    fn enable_memory(&mut self) -> Result<(), String>;
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub enum Activation {
+    AlreadyEnabled,
+    Enabled,
+}
+
+fn controllers(value: &str) -> Result<BTreeSet<&str>, String> {
+    let set: BTreeSet<_> = value.split_whitespace().collect();
+    if set.iter().any(|c| !["cpu", "memory", "pids"].contains(c)) {
+        return Err("unexpected enabled controllers".into());
+    }
+    Ok(set)
+}
+
+/// Enables memory only on a backend which independently verifies its unit.
+/// A failed write or read-back is reported as ambiguous; there is no blind retry.
+pub fn activate_memory<B: ControllerBackend>(
+    backend: &mut B,
+    authorized: bool,
+) -> Result<Activation, String> {
+    if !authorized {
+        return Err("explicit authorization required".into());
+    }
+    let identity = backend.verify_unit()?;
+    if !backend.processes()?.trim().is_empty() {
+        return Err("parent populated".into());
+    }
+    if !backend
+        .available()?
+        .split_whitespace()
+        .any(|c| c == "memory")
+    {
+        return Err("memory controller unavailable".into());
+    }
+    let before = backend.enabled()?;
+    let before_set = controllers(&before)?;
+    if backend.verify_unit()? != identity || !backend.processes()?.trim().is_empty() {
+        return Err("unit identity or population changed".into());
+    }
+    if before_set.contains("memory") {
+        return Ok(Activation::AlreadyEnabled);
+    }
+    if let Err(e) = backend.enable_memory() {
+        return Err(format!("activation write failed; state ambiguous: {e}"));
+    }
+    if backend.verify_unit()? != identity {
+        return Err("unit changed after activation; state ambiguous".into());
+    }
+    let after = backend
+        .enabled()
+        .map_err(|e| format!("activation read-back failed; state ambiguous: {e}"))?;
+    let after_set = controllers(&after)?;
+    let mut expected = before_set;
+    expected.insert("memory");
+    if after_set != expected {
+        return Err("activation read-back mismatch; state ambiguous".into());
+    }
+    Ok(Activation::Enabled)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Fixture {
+        calls: usize,
+        enabled: String,
+        procs: String,
+        available: String,
+        fail_write: bool,
+        mismatch: bool,
+        change_id: bool,
+        writes: usize,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            Self {
+                calls: 0,
+                enabled: "cpu pids".into(),
+                procs: String::new(),
+                available: "cpu memory pids".into(),
+                fail_write: false,
+                mismatch: false,
+                change_id: false,
+                writes: 0,
+            }
+        }
+    }
+    impl ControllerBackend for Fixture {
+        fn verify_unit(&mut self) -> Result<ParentIdentity, String> {
+            self.calls += 1;
+            Ok(ParentIdentity {
+                device: 1,
+                inode: if self.change_id && self.calls > 1 {
+                    2
+                } else {
+                    1
+                },
+            })
+        }
+        fn processes(&mut self) -> Result<String, String> {
+            Ok(self.procs.clone())
+        }
+        fn available(&mut self) -> Result<String, String> {
+            Ok(self.available.clone())
+        }
+        fn enabled(&mut self) -> Result<String, String> {
+            Ok(self.enabled.clone())
+        }
+        fn enable_memory(&mut self) -> Result<(), String> {
+            self.writes += 1;
+            if self.fail_write {
+                return Err("denied".into());
+            }
+            if !self.mismatch {
+                self.enabled.push_str(" memory");
+            }
+            Ok(())
+        }
+    }
+    #[test]
+    fn authorized_write_and_readback() {
+        let mut f = Fixture::new();
+        assert_eq!(activate_memory(&mut f, true), Ok(Activation::Enabled));
+        assert_eq!(f.writes, 1);
+        assert_eq!(
+            activate_memory(&mut f, true),
+            Ok(Activation::AlreadyEnabled)
+        );
+        assert_eq!(f.writes, 1);
+    }
+    #[test]
+    fn preconditions_never_write() {
+        for case in 0..5 {
+            let mut f = Fixture::new();
+            let authorized = case != 0;
+            match case {
+                1 => f.procs = "123".into(),
+                2 => f.available = "cpu".into(),
+                3 => f.enabled = "io".into(),
+                4 => f.change_id = true,
+                _ => (),
+            }
+            assert!(activate_memory(&mut f, authorized).is_err());
+            assert_eq!(f.writes, 0);
+        }
+    }
+    #[test]
+    fn write_and_readback_fail_closed() {
+        let mut f = Fixture::new();
+        f.fail_write = true;
+        assert!(activate_memory(&mut f, true)
+            .unwrap_err()
+            .contains("ambiguous"));
+        assert_eq!(f.writes, 1);
+        let mut f = Fixture::new();
+        f.mismatch = true;
+        assert!(activate_memory(&mut f, true)
+            .unwrap_err()
+            .contains("mismatch"));
+        assert_eq!(f.writes, 1);
+    }
+}

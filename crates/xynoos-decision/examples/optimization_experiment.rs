@@ -315,7 +315,6 @@ fn validate_parent_state(
 
 // Read-only service verification. It is not authorization to activate controllers.
 fn manager_preflight(unit: &str) -> Result<(), Box<dyn std::error::Error>> {
-    use std::os::unix::fs::MetadataExt;
     if !unit.starts_with("xynoos-018d-")
         || !unit.ends_with(".service")
         || !unit
@@ -362,27 +361,23 @@ fn manager_preflight(unit: &str) -> Result<(), Box<dyn std::error::Error>> {
         return Err("manager subgroup mismatch".into());
     }
     let parent = path.parent().ok_or("no delegated parent")?;
-    let meta = fs::symlink_metadata(parent)?;
-    // SAFETY: geteuid has no preconditions.
-    if !meta.is_dir()
-        || meta.file_type().is_symlink()
-        || meta.uid() != unsafe { libc::geteuid() }
-        || meta.mode() & 0o022 != 0
-    {
-        return Err("parent ownership or mode invalid".into());
-    }
-    let procs = fs::read_to_string(parent.join("cgroup.procs"))?;
-    let controllers = fs::read_to_string(parent.join("cgroup.controllers"))?;
-    let enabled = fs::read_to_string(parent.join("cgroup.subtree_control"))?;
+    let inspection = xynoos_linux_control::transaction::inspect_manager_parent(parent)?;
     let memory = available_memory(&system::collect_system());
-    let parent_state = validate_parent_state(&procs, &controllers, &enabled);
+    let parent_state = validate_parent_state(
+        if inspection.parent_empty {
+            ""
+        } else {
+            "populated"
+        },
+        &inspection.controllers,
+        &inspection.enabled,
+    );
     let eligible = parent_state.is_ok() && memory.is_ok();
     println!(
         "{}",
         serde_json::json!({"record":"manager_preflight", "unit":unit, "manager_pid":std::process::id(),
-        "manager_path":path, "parent_path":parent, "parent_device":meta.dev(), "parent_inode":meta.ino(),
-        "parent_empty":procs.trim().is_empty(), "available_controllers":controllers.trim(),
-        "enabled_controllers":enabled.trim(), "parent_state":parent_state, "memory_gate":memory, "eligible_for_further_validation":eligible,
+        "manager_path":path, "parent_path":parent, "inspection":inspection, "parent_state":parent_state,
+        "memory_gate":memory, "eligible_for_further_validation":eligible,
         "controller_activation":"DISABLED", "kernel_control_write":false})
     );
     if !eligible {

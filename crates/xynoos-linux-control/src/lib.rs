@@ -121,6 +121,7 @@ pub fn validate_telemetry(
     Ok(())
 }
 
+pub mod controller;
 pub mod transaction;
 
 /// Builds the v1 contract at decision time, so its age cannot be frozen by a caller.
