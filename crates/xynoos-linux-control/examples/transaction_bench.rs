@@ -5,6 +5,9 @@ use xynoos_linux_control::{
 };
 struct Memory(u64);
 impl Backend for Memory {
+    fn ready_to_restore(&mut self) -> Result<(), String> {
+        Ok(()) // This in-memory fixture never starts a worker.
+    }
     fn identity(&mut self) -> Result<Identity, String> {
         Ok(Identity {
             device: 1,

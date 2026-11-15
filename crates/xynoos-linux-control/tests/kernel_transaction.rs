@@ -8,6 +8,9 @@ use xynoos_linux_control::{
 
 struct Observed(DisposableCgroup, Vec<(u64, Result<u64, String>)>);
 impl Backend for Observed {
+    fn ready_to_restore(&mut self) -> Result<(), String> {
+        self.0.ready_to_restore()
+    }
     fn identity(&mut self) -> Result<Identity, String> {
         self.0.identity()
     }
@@ -25,6 +28,10 @@ impl Backend for Observed {
 #[test]
 #[ignore = "requires an isolated delegated cgroup v2 parent and explicit opt-in"]
 fn kernel_apply_restore_and_cleanup() {
+    assert!(
+        std::env::var_os("CODESPACES").is_none() && std::env::var_os("CODESPACE_NAME").is_none(),
+        "kernel mutation tests are prohibited in Codespaces"
+    );
     assert_eq!(
         std::env::var("XYNOOS_KERNEL_TEST").as_deref(),
         Ok("1"),

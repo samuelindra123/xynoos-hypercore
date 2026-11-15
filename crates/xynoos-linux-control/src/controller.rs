@@ -21,7 +21,6 @@ pub trait ControllerBackend {
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Activation {
-    AlreadyEnabled,
     Enabled,
 }
 
@@ -55,11 +54,14 @@ pub fn activate_memory<B: ControllerBackend>(
     }
     let before = backend.enabled()?;
     let before_set = controllers(&before)?;
+    if before_set.contains("memory") {
+        return Err("memory already enabled; unexpected initial state".into());
+    }
     if backend.verify_unit()? != identity || !backend.processes()?.trim().is_empty() {
         return Err("unit identity or population changed".into());
     }
-    if before_set.contains("memory") {
-        return Ok(Activation::AlreadyEnabled);
+    if controllers(&backend.enabled()?)? != before_set {
+        return Err("enabled controllers changed before activation".into());
     }
     if let Err(e) = backend.enable_memory() {
         return Err(format!("activation write failed; state ambiguous: {e}"));
@@ -91,6 +93,8 @@ mod tests {
         mismatch: bool,
         change_id: bool,
         writes: usize,
+        enabled_reads: usize,
+        competing_change: bool,
     }
     impl Fixture {
         fn new() -> Self {
@@ -103,6 +107,8 @@ mod tests {
                 mismatch: false,
                 change_id: false,
                 writes: 0,
+                enabled_reads: 0,
+                competing_change: false,
             }
         }
     }
@@ -125,6 +131,10 @@ mod tests {
             Ok(self.available.clone())
         }
         fn enabled(&mut self) -> Result<String, String> {
+            self.enabled_reads += 1;
+            if self.competing_change && self.enabled_reads == 2 {
+                self.enabled.push_str(" memory");
+            }
             Ok(self.enabled.clone())
         }
         fn enable_memory(&mut self) -> Result<(), String> {
@@ -143,10 +153,7 @@ mod tests {
         let mut f = Fixture::new();
         assert_eq!(activate_memory(&mut f, true), Ok(Activation::Enabled));
         assert_eq!(f.writes, 1);
-        assert_eq!(
-            activate_memory(&mut f, true),
-            Ok(Activation::AlreadyEnabled)
-        );
+        assert!(activate_memory(&mut f, true).is_err());
         assert_eq!(f.writes, 1);
     }
     #[test]
@@ -179,5 +186,14 @@ mod tests {
             .unwrap_err()
             .contains("mismatch"));
         assert_eq!(f.writes, 1);
+    }
+    #[test]
+    fn competing_change_before_write_is_not_overwritten() {
+        let mut f = Fixture::new();
+        f.competing_change = true;
+        assert!(activate_memory(&mut f, true)
+            .unwrap_err()
+            .contains("changed"));
+        assert_eq!(f.writes, 0);
     }
 }

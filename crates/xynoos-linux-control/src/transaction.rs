@@ -27,9 +27,7 @@ pub trait Backend {
     fn read_low(&mut self) -> Result<u64, String>;
     fn write_low(&mut self, value: u64) -> Result<(), String>;
     /// Refuse restoration while a controlled process might still be running.
-    fn ready_to_restore(&mut self) -> Result<(), String> {
-        Ok(())
-    }
+    fn ready_to_restore(&mut self) -> Result<(), String>;
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -404,7 +402,7 @@ impl DisposableCgroup {
     pub fn cleanup(mut self) -> Result<(), String> {
         // A failed explicit cleanup must not be followed by an unreported retry in Drop.
         self.cleanup_on_drop = false;
-        self.identity()?;
+        self.ready_to_restore()?;
         // SAFETY: valid descriptor and name; kernel rejects populated groups.
         if unsafe {
             libc::unlinkat(
@@ -496,7 +494,7 @@ impl Drop for DisposableCgroup {
             return;
         }
         // Do not deliberately remove a replacement target. The final check/removal is not atomic.
-        if self.identity().is_err() {
+        if self.ready_to_restore().is_err() {
             return;
         }
         // SAFETY: removal fails for a populated cgroup.
