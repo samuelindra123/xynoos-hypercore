@@ -121,6 +121,7 @@ pub fn validate_telemetry(
     Ok(())
 }
 
+mod bound_child;
 pub mod controller;
 pub mod systemd_identity;
 pub mod transaction;

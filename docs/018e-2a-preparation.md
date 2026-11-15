@@ -8,28 +8,28 @@ control writes. It is not a physical-test command. The existing read-only
 
 The 018E-1C physical read-only results do not verify controller or child writes.
 The existing controller activation/restoration fixtures test those operations in
-isolation; they do not test an end-to-end empty-child transaction. Existing
-`DisposableCgroup` opens a parent by pathname and cannot serve as the required
-held-binding implementation without further work. `LinuxController::verify_unit`
-currently expects exactly the manager descendant, so it cannot validate the
-hierarchy while a test child exists. No child lifecycle has been connected to
-`ControllerSession`, and the disabled request does not bind its unit argument to
-any descriptors. Existing fixture tests cannot establish real kernel behavior.
+isolation; they do not test an end-to-end empty-child transaction. The older `DisposableCgroup` opens a parent by pathname and is not used by the
+new session-owned child. TASK 018E-2B adds descriptor-relative creation, inspection
+and guarded removal of one registered empty child to `ControllerSession`. Its
+hierarchy check requires exactly the manager and, when registered, that child.
+The disabled request does not bind its unit argument to any descriptors and does
+not invoke this API. Fixture tests cannot establish real kernel behavior.
 
 Before enabling physical testing, implement and review all of the following:
 
 - Bind the authorized request to the active unit's invocation and held parent and
-  manager descriptors, revalidating identity and the exact allowed hierarchy at
-  each transition. Eliminate pathname reopening as authority for child creation.
+  manager descriptors, and integrate the session-owned child lifecycle. Binding
+  revalidation reopens the observed path to detect replacement; operations use the
+  held parent descriptor as authority.
 - Check fresh memory safety telemetry immediately before mutation. Check empty
   parent, expected controller set and manager membership, activate `+memory`
   descriptor-relatively and verify read-back. Record enough recovery information
   before each potentially ambiguous operation.
-- Create a unique restrictive empty child relative to the held parent; verify its
-  identity, emptiness, absence of descendants, memory controller inheritance and
-  `memory.low`. Apply a bounded value, verify it, restore its original value and
-  verify again. Remove only the same verified empty child, then restore and verify
-  the original parent controller state. Never overwrite a competing change.
+- Integrate the session-owned child with controller activation and verify memory
+  controller inheritance and `memory.low`. Apply a bounded value, verify it,
+  restore its original value and verify again. Remove only the same verified empty
+  child, then restore and verify the original parent controller state. Never
+  overwrite a competing change.
 - Handle cancellation, short/failed writes and ambiguous reads, stale identities,
   unexpected population, child removal failure and controller rollback failure.
   Preserve unresolved resources and report precise recovery state. Never release
@@ -58,3 +58,14 @@ stop conditions; no such command is approved here. Capture logs and exit status,
 verify unit termination and cgroup disappearance independently, and report any
 ambiguous state for investigation without manual cgroup writes or deletion.
 Never use sudo, migrate an existing workload, or run stress/performance tests.
+
+## TASK 018E-2B fixture scope
+
+The child uses `mkdirat`, no-follow descriptor-relative opens, and identity-checked
+removal. Failure after creation preserves the child and blocks controller restoration;
+there is no automatic drop cleanup. A held descriptor and inode checks do not make
+checks and writes atomic, or prove that a hostile writer did not replace an object
+between creation and its first open. Exclusive control of the hierarchy is required.
+Fixtures use ordinary temporary directories and simulated cgroup control files and
+removal; kernel cgroup behavior remains NOT VERIFIED. The older worker-termination
+guards are unchanged.

@@ -145,6 +145,8 @@ pub fn restore_memory<B: ControllerBackend>(
 struct LinuxController {
     binding: crate::systemd_identity::Binding,
     authorized: bool,
+    child: Option<crate::bound_child::BoundChild>,
+    child_unresolved: bool,
 }
 impl LinuxController {
     fn new(binding: crate::systemd_identity::Binding, authorized: bool) -> Result<Self, String> {
@@ -155,6 +157,8 @@ impl LinuxController {
         Ok(Self {
             binding,
             authorized,
+            child: None,
+            child_unresolved: false,
         })
     }
     fn write(&mut self, command: &[u8]) -> Result<(), String> {
@@ -241,6 +245,8 @@ impl ControllerInspectionSession {
             backend: LinuxController {
                 binding,
                 authorized: false,
+                child: None,
+                child_unresolved: false,
             },
         })
     }
@@ -283,19 +289,101 @@ impl ControllerSession {
         if !authorized {
             return Err("explicit authorization required".into());
         }
+        if self.backend.child.is_some() || self.backend.child_unresolved {
+            return Err("child cleanup not verified; controller restoration refused".into());
+        }
         let activation = self
             .activation
             .take()
             .ok_or("restoration already attempted")?;
         restore_memory(&mut self.backend, &activation, true)
     }
+    /// Create one empty child relative to the held, validated parent descriptor.
+    /// A failed creation may leave a child; the session is then blocked from restoration.
+    pub fn create_empty_child(&mut self) -> Result<(), String> {
+        if self.backend.child.is_some() || self.backend.child_unresolved {
+            return Err("child already registered or unresolved".into());
+        }
+        let id = self.backend.verify_unit()?;
+        if !self.backend.processes()?.trim().is_empty() {
+            return Err("parent populated".into());
+        }
+        if self.backend.verify_unit()? != id {
+            return Err("parent identity changed before child creation".into());
+        }
+        self.backend.child_unresolved = true;
+        let expected = crate::bound_child::FileId {
+            dev: id.device,
+            ino: id.inode,
+        };
+        let child =
+            crate::bound_child::BoundChild::create(self.backend.binding.parent(), expected)?;
+        self.backend.child = Some(child);
+        self.backend.child_unresolved = false;
+        if let Err(e) = self.backend.verify_unit() {
+            self.backend.child_unresolved = true;
+            return Err(format!(
+                "created child preserved; hierarchy validation failed: {e}"
+            ));
+        }
+        Ok(())
+    }
+    /// Inspect the registered child's inherited controller list without control writes.
+    pub fn child_controllers(&mut self) -> Result<String, String> {
+        let id = self.backend.verify_unit()?;
+        let child = self.backend.child.as_ref().ok_or("no registered child")?;
+        child.controllers(
+            self.backend.binding.parent(),
+            crate::bound_child::FileId {
+                dev: id.device,
+                ino: id.inode,
+            },
+        )
+    }
+    /// Remove only the registered, still-empty child; failed cleanup blocks restoration.
+    pub fn remove_empty_child(&mut self) -> Result<(), String> {
+        let id = self.backend.verify_unit()?;
+        let child = self.backend.child.as_ref().ok_or("no registered child")?;
+        self.backend.child_unresolved = true;
+        child.remove(
+            self.backend.binding.parent(),
+            crate::bound_child::FileId {
+                dev: id.device,
+                ino: id.inode,
+            },
+        )?;
+        self.backend.child = None;
+        self.backend.child_unresolved = false;
+        if let Err(e) = self.backend.verify_unit() {
+            self.backend.child_unresolved = true;
+            return Err(format!("hierarchy verification after removal failed: {e}"));
+        }
+        Ok(())
+    }
 }
-fn validate_hierarchy(stat: &str, manager_procs: &str, pid: u32) -> Result<(), String> {
+fn validate_hierarchy(
+    stat: &str,
+    manager_stat: &str,
+    manager_procs: &str,
+    pid: u32,
+    child_registered: bool,
+) -> Result<(), String> {
+    let expected = if child_registered {
+        "nr_descendants 2"
+    } else {
+        "nr_descendants 1"
+    };
     if stat
         .lines()
-        .filter(|line| line.trim() == "nr_descendants 1")
+        .filter(|line| line.split_whitespace().next() == Some("nr_descendants"))
         .count()
         != 1
+        || !stat.lines().any(|line| line.trim() == expected)
+        || manager_stat
+            .lines()
+            .filter(|line| line.split_whitespace().next() == Some("nr_descendants"))
+            .collect::<Vec<_>>()
+            != ["nr_descendants 0"]
     {
         return Err("unexpected delegated hierarchy descendants".into());
     }
@@ -306,11 +394,36 @@ fn validate_hierarchy(stat: &str, manager_procs: &str, pid: u32) -> Result<(), S
 }
 impl ControllerBackend for LinuxController {
     fn verify_unit(&mut self) -> Result<ParentIdentity, String> {
+        if self.child_unresolved {
+            return Err("child state unresolved".into());
+        }
         self.binding.revalidate()?;
+        if !crate::transaction::read_at(self.binding.parent(), c"cgroup.procs")?
+            .trim()
+            .is_empty()
+        {
+            return Err("parent populated".into());
+        }
         let stat = crate::transaction::read_at(self.binding.parent(), c"cgroup.stat")?;
+        let manager_stat = crate::transaction::read_at(self.binding.manager(), c"cgroup.stat")?;
         let manager_procs = crate::transaction::read_at(self.binding.manager(), c"cgroup.procs")?;
-        validate_hierarchy(&stat, &manager_procs, std::process::id())?;
         let (device, inode) = self.binding.parent_identity();
+        if let Some(child) = &self.child {
+            child.verify(
+                self.binding.parent(),
+                crate::bound_child::FileId {
+                    dev: device,
+                    ino: inode,
+                },
+            )?;
+        }
+        validate_hierarchy(
+            &stat,
+            &manager_stat,
+            &manager_procs,
+            std::process::id(),
+            self.child.is_some(),
+        )?;
         Ok(ParentIdentity { device, inode })
     }
     fn processes(&mut self) -> Result<String, String> {
@@ -556,14 +669,28 @@ mod tests {
     }
     #[test]
     fn hierarchy_requires_only_manager_and_no_other_descendants() {
-        assert!(validate_hierarchy("nr_descendants 1\n", "42\n", 42).is_ok());
+        assert!(
+            validate_hierarchy("nr_descendants 1\n", "nr_descendants 0", "42\n", 42, false).is_ok()
+        );
+        assert!(
+            validate_hierarchy("nr_descendants 2\n", "nr_descendants 0", "42\n", 42, true).is_ok()
+        );
+        assert!(
+            validate_hierarchy("nr_descendants 2", "nr_descendants 0", "42", 42, false).is_err()
+        );
+        assert!(
+            validate_hierarchy("nr_descendants 3", "nr_descendants 0", "42", 42, true).is_err()
+        );
+        assert!(
+            validate_hierarchy("nr_descendants 2", "nr_descendants 1", "42", 42, true).is_err()
+        );
         for (stat, procs) in [
             ("nr_descendants 2", "42"),
             ("nr_descendants 1", "42\n43"),
             ("nr_descendants 1\nnr_descendants 1", "42"),
             ("", "42"),
         ] {
-            assert!(validate_hierarchy(stat, procs, 42).is_err());
+            assert!(validate_hierarchy(stat, "nr_descendants 0", procs, 42, false).is_err());
         }
     }
 }
