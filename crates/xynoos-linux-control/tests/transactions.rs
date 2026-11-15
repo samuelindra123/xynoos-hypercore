@@ -19,6 +19,8 @@ struct Fixture {
     fail_write: Option<usize>,
     fail_after_write: Option<usize>,
     change_read: Option<(usize, u64)>,
+    identities: usize,
+    fail_identity: Option<usize>,
 }
 impl Fixture {
     fn new() -> Self {
@@ -36,6 +38,8 @@ impl Fixture {
             fail_write: None,
             fail_after_write: None,
             change_read: None,
+            identities: 0,
+            fail_identity: None,
         }
     }
     fn value(&self) -> u64 {
@@ -52,6 +56,10 @@ impl Drop for Fixture {
 }
 impl Backend for Fixture {
     fn identity(&mut self) -> Result<Identity, String> {
+        self.identities += 1;
+        if self.fail_identity == Some(self.identities) {
+            return Err("injected identity failure".into());
+        }
         let d = fs::metadata(&self.dir).map_err(|e| e.to_string())?;
         let f = fs::metadata(self.dir.join("memory.low")).map_err(|e| e.to_string())?;
         Ok(Identity {
@@ -79,6 +87,24 @@ impl Backend for Fixture {
             return Err("injected error after mutation".into());
         }
         Ok(())
+    }
+}
+
+#[test]
+fn identity_failure_never_triggers_blind_write_or_rollback() {
+    for (failure, outcome, writes, value) in [
+        (1, Outcome::Declined, 0, 4096),
+        (2, Outcome::Conflict, 0, 4096),
+        (3, Outcome::Conflict, 1, 8192),
+        (4, Outcome::Conflict, 1, 8192),
+        (5, Outcome::RollbackFailed, 2, 4096),
+    ] {
+        let mut f = Fixture::new();
+        f.fail_identity = Some(failure);
+        let report = run(&mut f, &collect_system(), action(), true);
+        assert_eq!(report.outcome, outcome);
+        assert_eq!(f.writes, writes);
+        assert_eq!(f.value(), value);
     }
 }
 fn action() -> Action {
