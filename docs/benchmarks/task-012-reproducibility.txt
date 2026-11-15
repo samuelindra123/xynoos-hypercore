@@ -1,0 +1,1 @@
+1296 record valid; seluruh metrik simulasi identik dengan TASK010 untuk setiap workload/seed/ukuran/mode/sample. Dua subprocess per versi, urutan ABBA. Timing, allocator dan RSS tidak disyaratkan identik.

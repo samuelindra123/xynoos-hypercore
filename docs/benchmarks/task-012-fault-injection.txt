@@ -1,0 +1,88 @@
+   Compiling xynoos-aura v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-aura)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+     Running unittests src/lib.rs (target/debug/build/xynoos-aura/1ce54bfa213956b7/out/xynoos_aura-1ce54bfa213956b7)
+
+running 3 tests
+
+thread 'physical::unwind_guard_tests::rollback_five_phases_and_same_index' (188651) panicked at crates/xynoos-aura/src/physical.rs:1145:25:
+assertion `left != right` failed: uji unwind
+  left: 0
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test physical::unwind_guard_tests::error_after_partial_mutation_restores ... ok
+
+thread 'physical::unwind_guard_tests::rollback_five_phases_and_same_index' (188651) panicked at crates/xynoos-aura/src/physical.rs:1145:25:
+assertion `left != right` failed: uji unwind
+  left: 0
+ right: 0
+
+thread 'physical::unwind_guard_tests::rollback_five_phases_and_same_index' (188651) panicked at crates/xynoos-aura/src/physical.rs:1145:25:
+assertion `left != right` failed: uji unwind
+  left: 1
+ right: 1
+
+thread 'physical::unwind_guard_tests::staged_selector_and_capacity_error' (188652) panicked at crates/xynoos-aura/src/physical.rs:1165:17:
+assertion `left != right` failed: unwind staged
+  left: 2
+ right: 2
+
+thread 'physical::unwind_guard_tests::rollback_five_phases_and_same_index' (188651) panicked at crates/xynoos-aura/src/physical.rs:1145:25:
+assertion `left != right` failed: uji unwind
+  left: 1
+ right: 1
+
+thread 'physical::unwind_guard_tests::rollback_five_phases_and_same_index' (188651) panicked at crates/xynoos-aura/src/physical.rs:1145:25:
+assertion `left != right` failed: uji unwind
+  left: 2
+ right: 2
+test physical::unwind_guard_tests::staged_selector_and_capacity_error ...
+thread 'physical::unwind_guard_tests::rollback_five_phases_and_same_index' (188651) panicked at crates/xynoos-aura/src/physical.rs:1145:25:
+assertion `left != right` failed: uji unwind
+  left: 2
+ right: 2
+ok
+
+thread 'physical::unwind_guard_tests::rollback_five_phases_and_same_index' (188651) panicked at crates/xynoos-aura/src/physical.rs:1145:25:
+assertion `left != right` failed: uji unwind
+  left: 3
+ right: 3
+
+thread 'physical::unwind_guard_tests::rollback_five_phases_and_same_index' (188651) panicked at crates/xynoos-aura/src/physical.rs:1145:25:
+assertion `left != right` failed: uji unwind
+  left: 3
+ right: 3
+
+thread 'physical::unwind_guard_tests::rollback_five_phases_and_same_index' (188651) panicked at crates/xynoos-aura/src/physical.rs:1145:25:
+assertion `left != right` failed: uji unwind
+  left: 4
+ right: 4
+
+thread 'physical::unwind_guard_tests::rollback_five_phases_and_same_index' (188651) panicked at crates/xynoos-aura/src/physical.rs:1145:25:
+assertion `left != right` failed: uji unwind
+  left: 4
+ right: 4
+test physical::unwind_guard_tests::rollback_five_phases_and_same_index ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 38 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running unittests src/lib.rs (target/debug/build/xynoos-aura/1ce54bfa213956b7/out/xynoos_aura-1ce54bfa213956b7)
+
+running 5 tests
+test selector::fast_tests::invalid_order_and_empty ... ok
+test selector::fast_tests::failures_atomic ... ok
+test selector::fast_tests::prepared_is_private_until_validated_publication ... ok
+test selector::fast_tests::six_sizes_budget_and_fallback ... ok
+test selector::fast_tests::multi_event_equivalence ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 36 filtered out; finished in 0.66s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running unittests src/lib.rs (target/debug/build/xynoos-aura/1ce54bfa213956b7/out/xynoos_aura-1ce54bfa213956b7)
+
+running 3 tests
+test selector::reservation_tests::injected_reservation ... ok
+test selector::reservation_tests::reserve_overflow_is_distinct ... ok
+test selector::reservation_tests::same_candidate_and_access ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 38 filtered out; finished in 0.01s

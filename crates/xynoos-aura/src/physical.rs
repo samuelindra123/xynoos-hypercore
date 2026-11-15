@@ -374,6 +374,64 @@ pub struct Simulator {
     pub metrics: Metrics,
     pub tick: u64,
 }
+// Snapshot berbatas, tanpa clone Vec atau alokasi heap.
+type JournalSnapshot = (
+    SystemState,
+    Engine,
+    Metrics,
+    u64,
+    usize,
+    usize,
+    PageGroupProfile,
+    PageGroupProfile,
+);
+struct JournalGuard<'a> {
+    sim: &'a mut Simulator,
+    saved: Option<JournalSnapshot>,
+}
+impl<'a> JournalGuard<'a> {
+    fn new(sim: &'a mut Simulator, index: usize, candidate: usize) -> Result<Self, Error> {
+        if index >= sim.pages.len() || candidate >= sim.pages.len() {
+            return Err(Error::InvalidInput);
+        }
+        let saved = (
+            sim.state.clone(),
+            sim.engine.clone(),
+            sim.metrics.clone(),
+            sim.tick,
+            index,
+            candidate,
+            sim.pages[index].clone(),
+            sim.pages[candidate].clone(),
+        );
+        Ok(Self {
+            sim,
+            saved: Some(saved),
+        })
+    }
+    fn commit(mut self) {
+        self.saved = None;
+    }
+}
+impl Drop for JournalGuard<'_> {
+    fn drop(&mut self) {
+        if let Some((state, engine, metrics, tick, index, candidate, first, second)) =
+            self.saved.take()
+        {
+            self.sim.state = state;
+            self.sim.engine = engine;
+            self.sim.metrics = metrics;
+            self.sim.tick = tick;
+            // step tidak mengubah panjang Vec; get_mut juga menghindari panic pada Drop.
+            if let Some(page) = self.sim.pages.get_mut(index) {
+                *page = first;
+            }
+            if let Some(page) = self.sim.pages.get_mut(candidate) {
+                *page = second;
+            }
+        }
+    }
+}
 impl Simulator {
     pub fn new(
         state: SystemState,
@@ -463,29 +521,32 @@ impl Simulator {
         pressure: u16,
         candidate: usize,
     ) -> Result<Decision, Error> {
-        if index >= self.pages.len() || candidate >= self.pages.len() {
-            return Err(Error::InvalidInput);
-        }
-        let saved = (
-            self.state.clone(),
-            self.engine.clone(),
-            self.metrics.clone(),
-            self.tick,
-            self.pages[index].clone(),
-            self.pages[candidate].clone(),
-        );
-        let result = self.step(index, pressure, candidate);
-        if result.is_err() {
-            self.state = saved.0;
-            self.engine = saved.1;
-            self.metrics = saved.2;
-            self.tick = saved.3;
-            self.pages[index] = saved.4;
-            self.pages[candidate] = saved.5;
-        }
-        result
+        self.event_journal_hook(index, pressure, candidate, |_| {})
+    }
+    fn event_journal_hook<F: FnMut(u8)>(
+        &mut self,
+        index: usize,
+        pressure: u16,
+        candidate: usize,
+        mut hook: F,
+    ) -> Result<Decision, Error> {
+        let guard = JournalGuard::new(self, index, candidate)?;
+        let result = guard.sim.step_hook(index, pressure, candidate, &mut hook)?;
+        hook(4);
+        guard.commit();
+        Ok(result)
     }
     fn step(&mut self, index: usize, pressure: u16, candidate: usize) -> Result<Decision, Error> {
+        self.step_hook(index, pressure, candidate, &mut |_| {})
+    }
+    fn step_hook<F: FnMut(u8)>(
+        &mut self,
+        index: usize,
+        pressure: u16,
+        candidate: usize,
+        hook: &mut F,
+    ) -> Result<Decision, Error> {
+        hook(0);
         if index >= self.pages.len() || candidate >= self.pages.len() || pressure > 1000 {
             return Err(Error::InvalidInput);
         }
@@ -500,6 +561,7 @@ impl Simulator {
         }
         p.accesses = add(p.accesses, 1)?;
         p.last_access_tick = self.tick;
+        hook(1);
         if p.tier != Tier::Ram {
             let cpu = if p.tier == Tier::Compressed {
                 p.decompress_ns
@@ -606,6 +668,7 @@ impl Simulator {
         }
         let p = &mut self.pages[candidate];
         let decision = self.engine.decide(&self.state, p, self.tick)?;
+        hook(2);
         if decision == Decision::Fallback
             || (self.engine.policy == Policy::Aura
                 && p.confidence_permille < self.engine.config.confidence_min)
@@ -638,6 +701,7 @@ impl Simulator {
             self.engine.migrations = add(self.engine.migrations, 1)?;
             self.engine.tick_migrations = add(self.engine.tick_migrations, 1)?;
         }
+        hook(3);
         if pressure >= self.engine.config.enter_pressure
             && (if self.state.stall_raw_only {
                 self.state.used_bytes[0]
@@ -1064,5 +1128,60 @@ mod journal_tests {
             s.metrics.peak_total_bytes
                 <= s.state.physical_budget_bytes + s.state.temporary_budget_bytes
         );
+    }
+}
+
+#[cfg(test)]
+mod unwind_guard_tests {
+    use super::*;
+    #[test]
+    fn rollback_five_phases_and_same_index() {
+        for phase in 0..5 {
+            for candidate in [0, 4] {
+                let mut s = fixture(Policy::CompressionFirst);
+                let before = s.clone();
+                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    s.event_journal_hook(0, 800, candidate, |at| {
+                        assert_ne!(phase, at, "uji unwind")
+                    })
+                }));
+                assert!(r.is_err());
+                assert_eq!(s, before);
+            }
+        }
+    }
+    #[test]
+    fn staged_selector_and_capacity_error() {
+        use crate::selector::Selector;
+        let mut s = fixture(Policy::CompressionFirst);
+        let mut selector = Selector::default();
+        let before = s.clone();
+        let cursor = selector.clone();
+        let order: Vec<_> = (0..16).collect();
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut staged = selector.clone();
+            let (candidate, _) = staged.state_aware(&s, 0, 800, &order).unwrap();
+            s.event_journal_hook(0, 800, candidate.unwrap_or(0), |phase| {
+                assert_ne!(phase, 2, "unwind staged")
+            })
+            .unwrap();
+            selector = staged;
+        }));
+        assert!(result.is_err());
+        assert_eq!(s, before);
+        assert_eq!(selector, cursor);
+        // State rusak hanya untuk memicu checked_sub; snapshot harus tetap atomik.
+        s.state.used_bytes[0] = 0;
+        let bad = s.clone();
+        assert_eq!(s.event_journal(0, 800, 4), Err(Error::Capacity));
+        assert_eq!(s, bad);
+    }
+    #[test]
+    fn error_after_partial_mutation_restores() {
+        let mut s = fixture(Policy::CompressionFirst);
+        s.metrics.migrations = u64::MAX;
+        let before = s.clone();
+        assert_eq!(s.event_journal(0, 800, 4), Err(Error::Overflow));
+        assert_eq!(s, before);
     }
 }

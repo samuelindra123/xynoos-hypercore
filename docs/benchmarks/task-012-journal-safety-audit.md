@@ -1,0 +1,7 @@
+# Audit journal dan guard rollback
+
+Sebelumnya `event_journal` hanya mengembalikan snapshot pada `Err`; unwind dapat melewati cabang tersebut. `JournalGuard` baru meminjam `&mut Simulator` dan menyimpan state, engine, metrics, tick serta profil access dan candidate. `step` tidak mengubah panjang pages atau profil lain. Guard memulihkan snapshot pada `Drop` hingga `commit` mengosongkan Option. Kedua indeks sama aman karena kedua snapshot berasal dari state awal yang sama.
+
+Drop tidak memanggil allocator, menggunakan `get_mut` daripada indexing, dan field snapshot tidak memiliki destructor kustom. Jika invariant panjang pages diubah oleh refactor masa depan, `get_mut` akan menghindari panic tetapi tidak menjamin pemulihan profil hilang; invariant ini harus dipertahankan dan diuji. Panic saat membuat snapshot terjadi sebelum step memutasi state; Field clone saat ini fixed-size. Panic hook fase 0–4 dan indeks sama/berbeda dibandingkan dengan snapshot. Error overflow setelah mutasi dan error Capacity akibat state input tidak konsisten juga diuji.
+
+Guard melindungi Simulator saat `Err` dan unwind pada jalur yang diuji; tidak menangani `panic=abort`, double panic dalam destructor, abort allocator, atau state yang dimutasi di luar dua indeks dalam versi masa depan. Cursor selector adalah objek terpisah; caller harus men-stage selector hingga journal sukses. Test mencakup pola tersebut. Tidak ada klaim bahwa `event_journal` sendiri merollback cursor eksternal. Default tetap clone.
