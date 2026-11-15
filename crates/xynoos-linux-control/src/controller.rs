@@ -39,6 +39,13 @@ pub fn activate_memory<B: ControllerBackend>(
     backend: &mut B,
     authorized: bool,
 ) -> Result<Activation, String> {
+    activate_memory_expected(backend, authorized, None)
+}
+fn activate_memory_expected<B: ControllerBackend>(
+    backend: &mut B,
+    authorized: bool,
+    expected_original: Option<&[String]>,
+) -> Result<Activation, String> {
     if !authorized {
         return Err("explicit authorization required".into());
     }
@@ -55,6 +62,15 @@ pub fn activate_memory<B: ControllerBackend>(
     }
     let before = backend.enabled()?;
     let before_set = controllers(&before)?;
+    if let Some(expected) = expected_original {
+        if before_set
+            .iter()
+            .copied()
+            .ne(expected.iter().map(String::as_str))
+        {
+            return Err("controller state changed since inspection".into());
+        }
+    }
     if before_set.contains("memory") {
         return Err("memory already enabled; unexpected initial state".into());
     }
@@ -262,17 +278,74 @@ impl ControllerInspectionSession {
 pub struct ControllerSession {
     backend: LinuxController,
     activation: Option<Activation>,
+    original_before_attempt: Option<Vec<String>>,
+    activation_unresolved: bool,
+}
+fn activate_with_tracking<B: ControllerBackend>(
+    backend: &mut B,
+    original: &mut Option<Vec<String>>,
+    unresolved: &mut bool,
+) -> Result<Activation, String> {
+    if *unresolved || original.is_some() {
+        return Err("activation already attempted".into());
+    }
+    let readiness = inspect_readiness(backend)?;
+    *original = Some(readiness.enabled_controllers);
+    *unresolved = true;
+    let activation = activate_memory_expected(backend, true, original.as_deref())?;
+    let Activation::Enabled {
+        original_controllers,
+    } = &activation;
+    if Some(original_controllers) != original.as_ref() {
+        return Err(
+            "controller state changed between inspection and activation; state unresolved".into(),
+        );
+    }
+    *unresolved = false;
+    Ok(activation)
 }
 impl ControllerSession {
+    /// Hold the validated binding before any controller write is attempted.
+    pub fn prepare(
+        binding: crate::systemd_identity::Binding,
+        authorized: bool,
+    ) -> Result<Self, String> {
+        Ok(Self {
+            backend: LinuxController::new(binding, authorized)?,
+            activation: None,
+            original_before_attempt: None,
+            activation_unresolved: false,
+        })
+    }
     pub fn activate(
         binding: crate::systemd_identity::Binding,
         authorized: bool,
     ) -> Result<Self, String> {
-        let mut backend = LinuxController::new(binding, authorized)?;
-        let activation = activate_memory(&mut backend, authorized)?;
-        Ok(Self {
-            backend,
-            activation: Some(activation),
+        let mut session = Self::prepare(binding, authorized)?;
+        session.activate_prepared()?;
+        Ok(session)
+    }
+    /// Capture initial state before activation. A failed attempt remains unresolved;
+    /// no automatic retry or rollback is performed on an ambiguous write.
+    pub fn activate_prepared(&mut self) -> Result<(), String> {
+        if self.activation.is_some() {
+            return Err("activation already attempted".into());
+        }
+        self.activation = Some(activate_with_tracking(
+            &mut self.backend,
+            &mut self.original_before_attempt,
+            &mut self.activation_unresolved,
+        )?);
+        Ok(())
+    }
+    /// The observed pre-attempt state does not by itself authorize recovery.
+    pub fn activation_diagnostic(&self) -> serde_json::Value {
+        serde_json::json!({
+            "binding": self.backend.binding.diagnostic(),
+            "original_controllers": self.original_before_attempt,
+            "activation_unresolved": self.activation_unresolved,
+            "child_unresolved": self.backend.child_unresolved,
+            "child_registered": self.backend.child.is_some(),
         })
     }
     pub fn original_controllers(&self) -> &[String] {
@@ -289,18 +362,27 @@ impl ControllerSession {
         if !authorized {
             return Err("explicit authorization required".into());
         }
-        if self.backend.child.is_some() || self.backend.child_unresolved {
+        if self.activation_unresolved
+            || self.backend.child.is_some()
+            || self.backend.child_unresolved
+        {
             return Err("child cleanup not verified; controller restoration refused".into());
         }
         let activation = self
             .activation
             .take()
             .ok_or("restoration already attempted")?;
-        restore_memory(&mut self.backend, &activation, true)
+        self.activation_unresolved = true;
+        restore_memory(&mut self.backend, &activation, true)?;
+        self.activation_unresolved = false;
+        Ok(())
     }
     /// Create one empty child relative to the held, validated parent descriptor.
     /// A failed creation may leave a child; the session is then blocked from restoration.
     pub fn create_empty_child(&mut self) -> Result<(), String> {
+        if self.activation.is_none() || self.activation_unresolved {
+            return Err("verified controller activation required".into());
+        }
         if self.backend.child.is_some() || self.backend.child_unresolved {
             return Err("child already registered or unresolved".into());
         }
@@ -457,6 +539,7 @@ mod tests {
         writes: usize,
         enabled_reads: usize,
         competing_change: bool,
+        change_after_inspection: bool,
         fail_unit_at: Option<usize>,
         populate_after_first_read: bool,
         process_reads: usize,
@@ -474,6 +557,7 @@ mod tests {
                 writes: 0,
                 enabled_reads: 0,
                 competing_change: false,
+                change_after_inspection: false,
                 fail_unit_at: None,
                 populate_after_first_read: false,
                 process_reads: 0,
@@ -509,6 +593,9 @@ mod tests {
             self.enabled_reads += 1;
             if self.competing_change && self.enabled_reads == 2 {
                 self.enabled.push_str(" memory");
+            }
+            if self.change_after_inspection && self.enabled_reads == 3 {
+                self.enabled = "cpu".into();
             }
             Ok(self.enabled.clone())
         }
@@ -638,6 +725,39 @@ mod tests {
         f.fail_write = false;
         restore_memory(&mut f, &activation, true).unwrap();
         assert_eq!(f.enabled, "cpu pids");
+    }
+    #[test]
+    fn tracked_activation_retains_original_and_refuses_retry_after_ambiguity() {
+        for mismatch in [false, true] {
+            let mut f = Fixture::new();
+            f.fail_write = !mismatch;
+            f.mismatch = mismatch;
+            let mut original = None;
+            let mut unresolved = false;
+            assert!(activate_with_tracking(&mut f, &mut original, &mut unresolved).is_err());
+            assert_eq!(original, Some(vec!["cpu".into(), "pids".into()]));
+            assert!(unresolved);
+            assert_eq!(f.writes, 1);
+            assert!(activate_with_tracking(&mut f, &mut original, &mut unresolved).is_err());
+            assert_eq!(f.writes, 1);
+        }
+        let mut f = Fixture::new();
+        let mut original = None;
+        let mut unresolved = false;
+        let activation = activate_with_tracking(&mut f, &mut original, &mut unresolved).unwrap();
+        assert!(!unresolved);
+        assert_eq!(original, Some(vec!["cpu".into(), "pids".into()]));
+        restore_memory(&mut f, &activation, true).unwrap();
+        assert_eq!(f.enabled, "cpu pids");
+
+        let mut f = Fixture::new();
+        f.change_after_inspection = true;
+        let mut original = None;
+        let mut unresolved = false;
+        assert!(activate_with_tracking(&mut f, &mut original, &mut unresolved).is_err());
+        assert!(unresolved);
+        assert_eq!(f.writes, 0);
+        assert_eq!(original, Some(vec!["cpu".into(), "pids".into()]));
     }
     #[test]
     fn read_only_session_readiness_refuses_changed_state_without_writes() {
