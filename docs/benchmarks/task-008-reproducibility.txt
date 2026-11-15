@@ -1,0 +1,1 @@
+324 record: metrik non-timing/non-allocator identik antar mode dan dua subprocess; alokasi dicatat sebagai pengukuran, bukan diuji determinismenya.
