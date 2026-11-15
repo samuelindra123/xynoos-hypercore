@@ -173,6 +173,7 @@ pub struct DisposableCgroup {
     control: File,
     name: std::ffi::CString,
     id: Identity,
+    cleanup_on_drop: bool,
 }
 impl DisposableCgroup {
     /// Creates an empty child only after authorization and ownership/delegation checks.
@@ -232,12 +233,24 @@ impl DisposableCgroup {
         if unsafe { libc::mkdirat(parent.as_raw_fd(), name.as_ptr(), 0o700) } != 0 {
             return Err(io::Error::last_os_error().to_string());
         }
+        let dir = openat(
+            parent.as_raw_fd(),
+            &name,
+            libc::O_RDONLY | libc::O_DIRECTORY,
+        )
+        .map_err(|e| {
+            format!(
+                "open created child {}: {e}; cleanup not attempted because identity is unknown",
+                name.to_string_lossy()
+            )
+        })?;
+        let created = dir.metadata().map_err(|e| {
+            format!(
+                "stat created child {}: {e}; cleanup not attempted because identity is unknown",
+                name.to_string_lossy()
+            )
+        })?;
         let result = (|| {
-            let dir = openat(
-                parent.as_raw_fd(),
-                &name,
-                libc::O_RDONLY | libc::O_DIRECTORY,
-            )?;
             let dm = dir.metadata().map_err(|e| e.to_string())?;
             if dm.uid() != uid || dm.dev() != meta.dev() || dm.mode() & 0o022 != 0 {
                 return Err("new cgroup ownership mismatch".into());
@@ -261,13 +274,33 @@ impl DisposableCgroup {
                 control,
                 name: name.clone(),
                 id,
+                cleanup_on_drop: true,
             })
         })();
-        if result.is_err() {
-            // SAFETY: remove only our freshly created child; removal fails if nonempty.
-            unsafe {
-                libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR);
+        if let Err(error) = result {
+            let same = openat(
+                parent.as_raw_fd(),
+                &name,
+                libc::O_RDONLY | libc::O_DIRECTORY,
+            )
+            .and_then(|f| f.metadata().map_err(|e| e.to_string()))
+            .is_ok_and(|m| m.dev() == created.dev() && m.ino() == created.ino());
+            if !same {
+                return Err(format!(
+                    "{error}; cleanup of {} skipped: identity changed or unavailable",
+                    name.to_string_lossy()
+                ));
             }
+            // SAFETY: identity was checked; removal still races another writer.
+            if unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR) } != 0
+            {
+                return Err(format!(
+                    "{error}; cleanup of {} failed: {}",
+                    name.to_string_lossy(),
+                    io::Error::last_os_error()
+                ));
+            }
+            return Err(error);
         }
         result
     }
@@ -275,6 +308,8 @@ impl DisposableCgroup {
 impl DisposableCgroup {
     /// Remove the empty disposable target explicitly and report cleanup errors.
     pub fn cleanup(mut self) -> Result<(), String> {
+        // A failed explicit cleanup must not be followed by an unreported retry in Drop.
+        self.cleanup_on_drop = false;
         self.identity()?;
         // SAFETY: valid descriptor and name; kernel rejects populated groups.
         if unsafe {
@@ -338,6 +373,9 @@ impl Backend for DisposableCgroup {
 }
 impl Drop for DisposableCgroup {
     fn drop(&mut self) {
+        if !self.cleanup_on_drop {
+            return;
+        }
         // Do not deliberately remove a replacement target. The final check/removal is not atomic.
         if self.identity().is_err() {
             return;
