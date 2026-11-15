@@ -139,6 +139,7 @@ name = "xynoos-cli"
 version = "0.1.0"
 dependencies = [
  "serde_json",
+ "xynoos-decision",
  "xynoos-hypermemory",
  "xynoos-pressureiq",
 ]
@@ -146,6 +147,16 @@ dependencies = [
 [[package]]
 name = "xynoos-core"
 version = "0.1.0"
+
+[[package]]
+name = "xynoos-decision"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "xynoos-linux-control",
+ "xynoos-pressureiq",
+]
 
 [[package]]
 name = "xynoos-hypermemory"
