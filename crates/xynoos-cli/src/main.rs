@@ -17,6 +17,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Halaman {:?}: {:?}", id, store.stats());
         return Ok(());
     }
+    if args.first().map(String::as_str) == Some("system") {
+        return system_command(&args);
+    }
     if args.len() < 2 || args[0] != "pressure" {
         return Err("Gunakan: pressure snapshot | pressure sample [--interval-ms N] [--count N] [--output FILE]".into());
     }
@@ -115,5 +118,139 @@ fn main() -> Result<(), Box<dyn Error>> {
         }
         writeln!(writer, "{}", csv_row(s)).map_err(|e| PressureError::Io(e.kind().to_string()))
     })?;
+    Ok(())
+}
+
+fn system_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    use xynoos_pressureiq::system::{collect_system, cpu_utilization, disk_delta};
+    if args.len() == 2 && args[1] == "snapshot" {
+        let s = collect_system();
+        println!("CPU: {:?}\nCPU PSI: {:?}\nMemori: {:?}\nMemory PSI: {:?}\nVMStat: {:?}\nIO PSI: {:?}\nDisk: {:?}\nCgroup v2: {:?}\nFrekuensi CPU kHz: {:?}\nLoad 1 menit: {:?}\nDRM: {:?}\nThermal: {:?}\nPower: {:?}\nGPU utilisasi/video decode/akselerasi: tidak tersedia",s.cpu,s.cpu_psi,s.memory.mem.result,s.memory.psi.result,s.memory.vm.result,s.io_psi,s.disks,s.cgroup,s.cpu_frequency_khz,s.load_one,s.gpu,s.thermal,s.power);
+        return Ok(());
+    }
+    if args.len() < 2 || args[1] != "sample" {
+        return Err("Gunakan system snapshot atau system sample --count N --interval-ms N".into());
+    }
+    let (mut count, mut ms) = (5u32, 1000u64);
+    let mut i = 2;
+    while i < args.len() {
+        if i + 1 >= args.len() {
+            return Err("Nilai parameter hilang".into());
+        }
+        match args[i].as_str() {
+            "--count" => count = args[i + 1].parse()?,
+            "--interval-ms" => ms = args[i + 1].parse()?,
+            _ => return Err("Parameter tidak dikenal".into()),
+        }
+        i += 2
+    }
+    let interval = Duration::from_millis(ms);
+    validate_sampling(count, interval)?;
+    println!("timestamp_unix_ms,elapsed_ms,cpu_util_pct,logical_cpus,mem_available_bytes,cpu_psi_some_pct,io_psi_some_pct,cgroup_cpu_usage_us,cgroup_memory_bytes,cgroup_read_bytes,cgroup_write_bytes,disk_major,disk_minor,disk_read_delta_bytes,disk_write_delta_bytes,gpu_cards,thermal_sensors,power_supplies,snapshot_ns,memory_snapshot_ns,memory_psi_some_pct,pgfault_total,pgmajfault_total");
+    let mut previous: Option<xynoos_pressureiq::system::SystemSnapshot> = None;
+    for k in 0..count {
+        if k > 0 {
+            std::thread::sleep(interval)
+        }
+        let s = collect_system();
+        let elapsed = previous
+            .as_ref()
+            .and_then(|p| s.monotonic.checked_duration_since(p.monotonic));
+        let cpu = previous
+            .as_ref()
+            .zip(s.cpu.as_ref().ok())
+            .and_then(|(p, c)| {
+                p.cpu
+                    .as_ref()
+                    .ok()
+                    .and_then(|old| elapsed.and_then(|d| cpu_utilization(old, c, d).ok()))
+            });
+        let disk = s.disks.as_ref().ok().and_then(|v| v.first());
+        let delta = previous.as_ref().zip(disk).and_then(|(p, d)| {
+            p.disks
+                .as_ref()
+                .ok()
+                .and_then(|v| {
+                    v.iter()
+                        .find(|x| x.major == d.major && x.minor == d.minor && x.name == d.name)
+                })
+                .and_then(|old| disk_delta(old, d).ok())
+        });
+        let opt = |v: Option<u64>| v.map(|n| n.to_string()).unwrap_or_default();
+        let cg = s.cgroup.as_ref().ok();
+        let io = cg.and_then(|c| c.io_bytes.as_ref().ok());
+        let ts = s
+            .timestamp
+            .duration_since(std::time::UNIX_EPOCH)?
+            .as_millis();
+        println!(
+            "{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{},{}",
+            ts,
+            opt(elapsed.map(|d| d.as_millis() as u64)),
+            cpu.map(|v| format!("{v:.3}")).unwrap_or_default(),
+            opt(s.cpu.as_ref().ok().map(|v| v.logical_cpus as u64)),
+            opt(s
+                .memory
+                .mem
+                .result
+                .as_ref()
+                .ok()
+                .and_then(|m| m.bytes.get("MemAvailable").copied())),
+            s.cpu_psi
+                .as_ref()
+                .ok()
+                .map(|p| p.some.avg10.to_string())
+                .unwrap_or_default(),
+            s.io_psi
+                .as_ref()
+                .ok()
+                .map(|p| p.some.avg10.to_string())
+                .unwrap_or_default(),
+            opt(cg.and_then(|c| c.cpu_usage_us.as_ref().ok().copied())),
+            opt(cg.and_then(|c| c.memory_current_bytes.as_ref().ok().copied())),
+            opt(io.map(|x| x.0)),
+            opt(io.map(|x| x.1)),
+            opt(disk.map(|d| d.major as u64)),
+            opt(disk.map(|d| d.minor as u64)),
+            opt(delta.map(|d| d.0)),
+            opt(delta.map(|d| d.1)),
+            s.gpu
+                .iter()
+                .filter(|x| x.source.ends_with("/device/vendor"))
+                .count(),
+            s.thermal
+                .iter()
+                .filter(|x| x.source.ends_with("/temp"))
+                .count(),
+            s.power
+                .iter()
+                .filter(|x| x.source.ends_with("/type"))
+                .count(),
+            s.elapsed_ns,
+            s.memory.elapsed_ns,
+            s.memory
+                .psi
+                .result
+                .as_ref()
+                .ok()
+                .map(|p| p.some.avg10.to_string())
+                .unwrap_or_default(),
+            opt(s
+                .memory
+                .vm
+                .result
+                .as_ref()
+                .ok()
+                .and_then(|v| v.counters.get("pgfault").copied())),
+            opt(s
+                .memory
+                .vm
+                .result
+                .as_ref()
+                .ok()
+                .and_then(|v| v.counters.get("pgmajfault").copied()))
+        );
+        previous = Some(s);
+    }
     Ok(())
 }

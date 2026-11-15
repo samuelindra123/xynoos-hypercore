@@ -45,3 +45,40 @@ TASK011: `Prepared` memiliki simulator privat dan hanya menyediakan inspeksi ser
 TASK012: `event_journal` menggunakan guard RAII yang menyimpan state, engine, metrics, tick dan kedua profil. Drop mengembalikan snapshot saat Err atau unwind sebelum commit; step tidak boleh memodifikasi grup lain atau panjang Vec. Cursor selector terpisah perlu di-stage caller. Abort tidak ditangani; journal tetap experimental dan default tetap clone.
 
 TASK013: crate `xynoos-pressureiq` adalah observer read-only independen dari AURA. Collector membaca PSI memori, meminfo dan vmstat secara berurutan; parser fixture independen dari I/O; Snapshot membawa root, clock dan Result per sumber. SnapshotDelta memakai monotonic dan checked subtraction. Sampling dibatasi dan CSV tidak melakukan kontrol kernel, reclaim atau perubahan swap. Procfs container dapat mencerminkan cakupan host/namespace yang berbeda.
+
+## PressureIQ: snapshot terpadu (TASK 014)
+
+`xynoos_pressureiq::system::collect_system()` mengembalikan `SystemSnapshot`
+yang memiliki timestamp wall-clock, `Instant`, durasi, `Snapshot` memori lama,
+dan `Result` terpisah untuk CPU, PSI, disk serta cgroup. Pemanggil harus
+memeriksa setiap hasil; sumber dibaca berurutan dan bukan snapshot atomik.
+Pemakaian controller/IPC mendatang harus melakukan serialisasi dengan skema
+versi dan mengekspos error, umur data, identitas sumber, serta batas cakupan;
+TASK 014 tidak menambah daemon atau loop kontrol.
+
+`/proc/stat` menghasilkan tick kumulatif delapan kategori pertama; delta
+busy/(busy+idle+iowait) menghasilkan persen hanya jika dua sampel valid.
+Diskstats menyatakan sektor Linux 512 byte; `disk_delta` memeriksa identitas,
+reset dan overflow. CSV memilih device pertama sebagaimana diurutkan kernel,
+bukan total semua disk dan bukan I/O aplikasi. `cpu_usage_us` dan I/O cgroup
+adalah counter kumulatif; `memory.current` adalah byte saat pembacaan. CPU PSI,
+I/O PSI dan memory PSI `some.avg10` adalah rata-rata persen 10 detik. Semua
+pengukuran antar-sumber dapat mencerminkan namespace yang berbeda.
+
+CSV `system sample` memiliki header nama dan satuan, kosong berarti tidak ada
+nilai yang valid; baris pertama tidak memiliki delta. `elapsed_ms` memakai
+monotonic clock. `snapshot_ns` mencakup seluruh koleksi terpadu dan
+`memory_snapshot_ns` hanya kolektor TASK 013. `gpu_cards`, `thermal_sensors`
+dan `power_supplies` adalah hitungan entri yang ditemukan, bukan indikasi
+utilisasi atau dukungan. Antarmuka `system snapshot` dan Rust API menampilkan
+error sumber; CSV ringkas tidak mengkodekan penyebab sel kosong. Atribut sysfs
+berupa teks mentah: thermal `temp` adalah miliderajat Celsius, power `capacity`
+persen, `power_now` mikrowatt, `energy_now` mikrowatt-jam, dan vendor DRM
+berbentuk ID heksadesimal; atribut tidak tersedia tetap berupa error. GPU
+utilisasi, decode dan akselerasi tidak disimpulkan dari keberadaan DRM.
+
+Setiap file dibatasi 1 MiB, disk maksimum 4096 entri, dan pemindaian tiap
+direktori maksimum 256 entri (hasil dapat terpotong pada sistem besar).
+Sampling dibatasi 1–60 sampel dengan interval 100–60000 ms dan sleep antar
+sampel; data disimpan maksimal dua snapshot dalam CLI. Read-only collector ini
+tidak mengubah kernel, cgroup, swap atau kebijakan AURA.
