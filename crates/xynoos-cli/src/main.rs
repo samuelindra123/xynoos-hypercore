@@ -17,6 +17,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         println!("Halaman {:?}: {:?}", id, store.stats());
         return Ok(());
     }
+    if args.first().map(String::as_str) == Some("shadow") {
+        return shadow_command(&args);
+    }
     if args.first().map(String::as_str) == Some("system") {
         return system_command(&args);
     }
@@ -309,6 +312,26 @@ fn system_command(args: &[String]) -> Result<(), Box<dyn Error>> {
                 .and_then(|v| v.counters.get("pgmajfault").copied()))
         );
         previous = Some(s);
+    }
+    Ok(())
+}
+
+fn shadow_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    if args.len() != 3 {
+        return Err("usage: shadow COUNT INTERVAL_MS".into());
+    }
+    let count: u32 = args[1].parse()?;
+    let interval = Duration::from_millis(args[2].parse()?);
+    validate_sampling(count, interval)?;
+    let mut engine = xynoos_decision::Engine::default();
+    for i in 0..count {
+        if i > 0 {
+            std::thread::sleep(interval);
+        }
+        let snapshot = xynoos_pressureiq::system::collect_system();
+        let target = snapshot.cgroup.as_ref().ok().map(|c| c.path.as_path());
+        let decision = engine.evaluate(&snapshot, std::time::Instant::now(), target);
+        println!("{}", serde_json::to_string(&decision)?);
     }
     Ok(())
 }
