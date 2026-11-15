@@ -1,8 +1,6 @@
 //! Conservative Linux cgroup v2 inspection and policy preparation.
 //!
-//! This milestone deliberately has no kernel write implementation: cgroupfs has no
-//! compare-and-swap, and ownership alone does not exclude privileged controllers.
-//! All kernel execution requests fail closed until an isolation protocol exists.
+//! Transactions are bounded and restore best-effort; cgroupfs has no atomic compare-and-swap.
 use serde::Serialize;
 use std::{
     fs,
@@ -87,6 +85,44 @@ pub fn discover() -> Capabilities {
     }
 }
 
+fn validate_telemetry(
+    snapshot: &SystemSnapshot,
+    now: Instant,
+    action: Action,
+) -> Result<(), String> {
+    let Action::MemoryLow { bytes } = action;
+    if bytes > MAX_LOW_BYTES || bytes % 4096 != 0 {
+        return Err("memory.low outside bounds or not 4096-byte aligned".into());
+    }
+    let age = now
+        .checked_duration_since(snapshot.monotonic)
+        .ok_or("monotonic clock moved backwards")?;
+    if age > MAX_AGE {
+        return Err("telemetry stale".into());
+    }
+    let contract = contract::build(snapshot, None, None, now, MAX_AGE);
+    if contract.schema_version != 1 || !contract.sequential {
+        return Err("unsupported telemetry contract".into());
+    }
+    for key in ["memory_psi", "meminfo"] {
+        let r = contract
+            .readings
+            .get(key)
+            .ok_or("missing required telemetry")?;
+        if r.status != Status::Available
+            || r.error.is_some()
+            || r.value.is_none()
+            || r.age_ns > MAX_AGE.as_nanos()
+            || r.scope != "visible_system"
+        {
+            return Err(format!("unusable telemetry: {key}"));
+        }
+    }
+    Ok(())
+}
+
+pub mod transaction;
+
 /// Builds the v1 contract at decision time, so its age cannot be frozen by a caller.
 /// Only memory PSI and meminfo are used; their scope is visible-system, not target-specific.
 pub fn prepare(snapshot: &SystemSnapshot, now: Instant, target: &Path, action: Action) -> Audit {
@@ -101,34 +137,8 @@ pub fn prepare(snapshot: &SystemSnapshot, now: Instant, target: &Path, action: A
         control_writable: None,
     };
     let result = (|| -> Result<(), String> {
-        let Action::MemoryLow { bytes } = action;
-        if bytes > MAX_LOW_BYTES || bytes % 4096 != 0 {
-            return Err("memory.low outside bounds or not 4096-byte aligned".into());
-        }
-        let age = now
-            .checked_duration_since(snapshot.monotonic)
-            .ok_or("monotonic clock moved backwards")?;
-        if age > MAX_AGE {
-            return Err("telemetry stale".into());
-        }
-        let contract = contract::build(snapshot, None, None, now, MAX_AGE);
-        if contract.schema_version != 1 || !contract.sequential {
-            return Err("unsupported telemetry contract".into());
-        }
-        for key in ["memory_psi", "meminfo"] {
-            let r = contract
-                .readings
-                .get(key)
-                .ok_or("missing required telemetry")?;
-            if r.status != Status::Available
-                || r.error.is_some()
-                || r.value.is_none()
-                || r.age_ns > MAX_AGE.as_nanos()
-                || r.scope != "visible_system"
-            {
-                return Err(format!("unusable telemetry: {key}"));
-            }
-        }
+        validate_telemetry(snapshot, now, action)?;
+
         let caps = discover();
         if !caps.cgroup2 {
             return Err("cgroup v2 mount unavailable".into());
