@@ -35,3 +35,5 @@ TASK 006 completion berstatus **SELESAI**. Preview selector memakai event commit
 TASK007 menambahkan FastPath eksperimental O(n) yang mempertahankan oracle/default TASK006. Jalankan `cargo build -p xynoos-aura --examples --release` dan `python3 scripts/benchmark_task007.py`. [Laporan TASK007](docs/reports/TASK-007-AURA-FASTPATH-RESEARCH-REPORT.md) mencakup differential testing, data timing lokal dan batas validitas.
 
 TASK008 menambahkan pengujian skala 1–64 grup dan profiling alokasi melalui executable benchmark terpisah. Jalankan `cargo build -p xynoos-aura --examples --release` lalu `python3 scripts/benchmark_task008.py`. Default tetap oracle. Lihat [laporan TASK008](docs/reports/TASK-008-AURA-SCALABILITY-RESEARCH-REPORT.md).
+
+TASK009 menambahkan register heap scope pada executable `reliability`, fault hook private, dan validasi rollback error/unwind sebelum publikasi state. Jalankan `cargo build -p xynoos-aura --examples --release` lalu `python3 scripts/benchmark_task009.py`. Tidak mengklaim OOM recovery; oracle tetap default. Lihat [laporan TASK009](docs/reports/TASK-009-AURA-MEMORY-RELIABILITY-REPORT.md).

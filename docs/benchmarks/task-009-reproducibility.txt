@@ -1,0 +1,1 @@
+1458 record valid; mode ekuivalen pada metrik simulasi; dua subprocess identik pada semua kolom selain runtime. Semua scope selesai dengan live count nol setelah drop; register tidak penuh.

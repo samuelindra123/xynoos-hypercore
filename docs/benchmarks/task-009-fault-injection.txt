@@ -1,0 +1,36 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running unittests src/lib.rs (target/debug/build/xynoos-aura/1ce54bfa213956b7/out/xynoos_aura-1ce54bfa213956b7)
+
+running 3 tests
+test selector::injected_tests::controlled_allocation_rejection ... 
+thread 'selector::injected_tests::unwind_before_commit_rollback' (140612) panicked at crates/xynoos-aura/src/selector.rs:464:21:
+assertion `left != right` failed: injection unwind
+  left: 0
+ right: 0
+oknote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+
+thread 'selector::injected_tests::unwind_before_commit_rollback' (140612) panicked at crates/xynoos-aura/src/selector.rs:464:21:
+assertion `left != right` failed: injection unwind
+  left: 1
+ right: 1
+
+thread 'selector::injected_tests::unwind_before_commit_rollback' (140612) panicked at crates/xynoos-aura/src/selector.rs:464:21:
+assertion `left != right` failed: injection unwind
+  left: 2
+ right: 2
+test selector::injected_tests::stage_errors_rollback ... ok
+
+thread 'selector::injected_tests::unwind_before_commit_rollback' (140612) panicked at crates/xynoos-aura/src/selector.rs:464:21:
+assertion `left != right` failed: injection unwind
+  left: 3
+ right: 3
+
+thread 'selector::injected_tests::unwind_before_commit_rollback' (140612) panicked at crates/xynoos-aura/src/selector.rs:464:21:
+assertion `left != right` failed: injection unwind
+  left: 4
+ right: 4
+test selector::injected_tests::unwind_before_commit_rollback ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 30 filtered out; finished in 0.00s
+
