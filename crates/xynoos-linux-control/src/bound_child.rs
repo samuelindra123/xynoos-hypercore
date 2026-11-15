@@ -47,6 +47,38 @@ pub(crate) struct BoundChild {
     uid: u32,
 }
 impl BoundChild {
+    pub(crate) fn identity(&self) -> crate::child_memory::ChildIdentity {
+        crate::child_memory::ChildIdentity {
+            device: self.identity.dev,
+            inode: self.identity.ino,
+        }
+    }
+    pub(crate) fn read_low(&self, parent: &File, expected: FileId) -> Result<u64, String> {
+        self.verify(parent, expected)?;
+        let control = openat(self.dir.as_raw_fd(), c"memory.low", libc::O_RDONLY)?;
+        let meta = control.metadata().map_err(|e| e.to_string())?;
+        if !meta.is_file() || meta.dev() != self.identity.dev || meta.uid() != self.uid {
+            return Err("unsafe memory.low file identity or type".into());
+        }
+        let mut text = String::new();
+        (&control)
+            .take(33)
+            .read_to_string(&mut text)
+            .map_err(|e| e.to_string())?;
+        if text.len() > 32 {
+            return Err("memory.low read too large".into());
+        }
+        let value = text
+            .trim()
+            .parse()
+            .map_err(|_| "invalid memory.low".to_string())?;
+        self.verify(parent, expected)?;
+        let current = openat(self.dir.as_raw_fd(), c"memory.low", libc::O_RDONLY)?;
+        if id(&current)? != id(&control)? {
+            return Err("memory.low identity changed".into());
+        }
+        Ok(value)
+    }
     // Only called after the containing session validates its held binding and hierarchy.
     pub(crate) fn create(parent: &File, expected: FileId) -> Result<Self, String> {
         let mut random = [0u8; 16];
@@ -259,6 +291,28 @@ mod tests {
             .any(|c| c == "memory"));
         f.remove(&child).unwrap();
         assert!(!f.path.join("child").exists());
+    }
+    #[test]
+    fn memory_low_read_is_descriptor_bound_and_rejects_bad_files() {
+        let f = Fixture::new();
+        let child = f.create().unwrap();
+        let path = f.path.join("child/memory.low");
+        assert!(child.read_low(&f.parent, f.id).is_err());
+        fs::write(&path, "8192\n").unwrap();
+        assert_eq!(child.read_low(&f.parent, f.id).unwrap(), 8192);
+        fs::write(&path, "1".repeat(33)).unwrap();
+        assert!(child.read_low(&f.parent, f.id).is_err());
+        fs::remove_file(&path).unwrap();
+        symlink("cgroup.procs", &path).unwrap();
+        assert!(child.read_low(&f.parent, f.id).is_err());
+        fs::remove_file(&path).unwrap();
+        fs::create_dir(&path).unwrap();
+        assert!(child.read_low(&f.parent, f.id).is_err());
+        fs::remove_dir(&path).unwrap();
+        fs::write(&path, "4096").unwrap();
+        fs::rename(f.path.join("child"), f.path.join("old")).unwrap();
+        fs::create_dir(f.path.join("child")).unwrap();
+        assert!(child.read_low(&f.parent, f.id).is_err());
     }
     #[test]
     fn wrong_parent_and_duplicate_refused() {

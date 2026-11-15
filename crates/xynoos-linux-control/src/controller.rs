@@ -280,6 +280,7 @@ pub struct ControllerSession {
     activation: Option<Activation>,
     original_before_attempt: Option<Vec<String>>,
     activation_unresolved: bool,
+    low_unresolved: bool,
 }
 fn activate_with_tracking<B: ControllerBackend>(
     backend: &mut B,
@@ -315,6 +316,7 @@ impl ControllerSession {
             activation: None,
             original_before_attempt: None,
             activation_unresolved: false,
+            low_unresolved: false,
         })
     }
     pub fn activate(
@@ -346,6 +348,7 @@ impl ControllerSession {
             "activation_unresolved": self.activation_unresolved,
             "child_unresolved": self.backend.child_unresolved,
             "child_registered": self.backend.child.is_some(),
+            "memory_low_unresolved": self.low_unresolved,
         })
     }
     pub fn original_controllers(&self) -> &[String] {
@@ -357,12 +360,54 @@ impl ControllerSession {
         };
         original_controllers
     }
+    /// Return the identity of this session's registered, validated child.
+    pub fn registered_child_identity(
+        &mut self,
+    ) -> Result<crate::child_memory::ChildIdentity, String> {
+        self.backend.verify_unit()?;
+        Ok(self
+            .backend
+            .child
+            .as_ref()
+            .ok_or("no registered child")?
+            .identity())
+    }
+    /// Read only through the held registered child descriptor.
+    pub fn read_child_memory_low(
+        &mut self,
+        child: crate::child_memory::ChildIdentity,
+    ) -> Result<u64, crate::child_memory::MemoryLowError> {
+        crate::child_memory::read(&mut SessionLow(self), child)
+    }
+    /// Validate a requested change. Physical memory.low writes are disabled even when authorized.
+    pub fn change_child_memory_low(
+        &mut self,
+        child: crate::child_memory::ChildIdentity,
+        expected: u64,
+        value: u64,
+        authorized: bool,
+        restoring: bool,
+    ) -> Result<u64, crate::child_memory::MemoryLowError> {
+        let mut unresolved = self.low_unresolved;
+        let result = crate::child_memory::change(
+            &mut SessionLow(self),
+            &mut unresolved,
+            child,
+            expected,
+            value,
+            authorized,
+            restoring,
+        );
+        self.low_unresolved = unresolved;
+        result
+    }
     /// A failed authorized attempt is never retried automatically.
     pub fn restore(&mut self, authorized: bool) -> Result<(), String> {
         if !authorized {
             return Err("explicit authorization required".into());
         }
         if self.activation_unresolved
+            || self.low_unresolved
             || self.backend.child.is_some()
             || self.backend.child_unresolved
         {
@@ -424,6 +469,9 @@ impl ControllerSession {
     }
     /// Remove only the registered, still-empty child; failed cleanup blocks restoration.
     pub fn remove_empty_child(&mut self) -> Result<(), String> {
+        if self.low_unresolved {
+            return Err("memory.low state unresolved; child preserved".into());
+        }
         let id = self.backend.verify_unit()?;
         let child = self.backend.child.as_ref().ok_or("no registered child")?;
         self.backend.child_unresolved = true;
@@ -441,6 +489,60 @@ impl ControllerSession {
             return Err(format!("hierarchy verification after removal failed: {e}"));
         }
         Ok(())
+    }
+}
+
+struct SessionLow<'a>(&'a mut ControllerSession);
+impl crate::child_memory::Access for SessionLow<'_> {
+    fn verify(&mut self, child: crate::child_memory::ChildIdentity) -> Result<(), String> {
+        if self.0.activation_unresolved || self.0.activation.is_none() {
+            return Err("verified activation required".into());
+        }
+        self.0.backend.verify_unit()?;
+        if self
+            .0
+            .backend
+            .child
+            .as_ref()
+            .ok_or("no registered child")?
+            .identity()
+            != child
+        {
+            return Err("registered child identity mismatch".into());
+        }
+        let mut expected: BTreeSet<_> = self.0.original_controllers().iter().cloned().collect();
+        expected.insert("memory".into());
+        let enabled = self.0.backend.enabled()?;
+        if controllers(&enabled)?
+            .iter()
+            .copied()
+            .ne(expected.iter().map(String::as_str))
+        {
+            return Err("controller state changed".into());
+        }
+        self.0.backend.verify_unit()?;
+        Ok(())
+    }
+    fn read(&mut self) -> Result<u64, String> {
+        let (dev, ino) = self.0.backend.binding.parent_identity();
+        self.0
+            .backend
+            .child
+            .as_ref()
+            .ok_or("no registered child")?
+            .read_low(
+                self.0.backend.binding.parent(),
+                crate::bound_child::FileId { dev, ino },
+            )
+    }
+    fn write(&mut self, _bytes: &[u8]) -> Result<usize, String> {
+        Err("physical memory.low writes disabled".into())
+    }
+    fn prepare_write(&mut self) -> Result<(), String> {
+        Err("physical memory.low writes disabled".into())
+    }
+    fn write_enabled(&self) -> bool {
+        false
     }
 }
 fn validate_hierarchy(
