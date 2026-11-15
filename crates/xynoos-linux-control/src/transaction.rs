@@ -507,7 +507,7 @@ impl Drop for DisposableCgroup {
         }
     }
 }
-fn openat(fd: i32, name: &std::ffi::CStr, flags: i32) -> Result<File, String> {
+pub(crate) fn openat(fd: i32, name: &std::ffi::CStr, flags: i32) -> Result<File, String> {
     // SAFETY: valid C string; O_NOFOLLOW prevents final symlink traversal.
     let raw = unsafe {
         libc::openat(
@@ -523,7 +523,7 @@ fn openat(fd: i32, name: &std::ffi::CStr, flags: i32) -> Result<File, String> {
         Ok(unsafe { File::from_raw_fd(raw) })
     }
 }
-fn open_absolute_dir(path: &Path) -> Result<File, String> {
+pub(crate) fn open_absolute_dir(path: &Path) -> Result<File, String> {
     use std::os::unix::ffi::OsStrExt;
     if !path.is_absolute() {
         return Err("parent must be absolute".into());

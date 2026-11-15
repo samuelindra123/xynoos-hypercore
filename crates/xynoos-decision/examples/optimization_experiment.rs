@@ -323,38 +323,9 @@ fn manager_preflight(unit: &str) -> Result<(), Box<dyn std::error::Error>> {
     {
         return Err("invalid transient unit name".into());
     }
-    let output = Command::new("systemctl")
-        .args([
-            "--user",
-            "show",
-            unit,
-            "--property=MainPID",
-            "--property=ControlGroup",
-            "--property=Delegate",
-            "--property=DelegateSubgroup",
-        ])
-        .output()?;
-    if !output.status.success() {
-        return Err("cannot inspect transient service".into());
-    }
-    let props = String::from_utf8(output.stdout)?;
-    let field = |name: &str| props.lines().find_map(|l| l.strip_prefix(name));
+    let binding = xynoos_linux_control::systemd_identity::Binding::discover(unit)?;
+    binding.revalidate()?;
     let membership = fs::read_to_string("/proc/self/cgroup")?;
-    let relative = membership
-        .lines()
-        .find_map(|l| l.strip_prefix("0::"))
-        .ok_or("no unified membership")?;
-    let expected = format!(
-        "{}/manager",
-        field("ControlGroup=").ok_or("missing unit cgroup")?
-    );
-    if relative != expected
-        || field("MainPID=") != Some(&std::process::id().to_string())
-        || field("Delegate=") != Some("yes")
-        || field("DelegateSubgroup=") != Some("manager")
-    {
-        return Err("manager/unit identity or delegation mismatch".into());
-    }
     let path =
         system::parse_cgroup_path(&membership, &fs::read_to_string("/proc/self/mountinfo")?)?;
     if path.file_name().and_then(|s| s.to_str()) != Some("manager") {
