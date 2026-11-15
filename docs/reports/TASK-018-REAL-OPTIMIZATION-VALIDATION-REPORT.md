@@ -1,5 +1,11 @@
 # TASK 018 — Real optimization validation (partial)
 
+## TASK 018E-1A — live binding diagnostic prepared
+
+**LIVE SYSTEMD BINDING: NOT VERIFIED.** The existing manager preflight now reports the typed D-Bus identity, invocation, state and delegation, PID/start ticks, actual membership, and held parent/manager device and inode, after final binding revalidation. This remains a sequential, read-only observation and grants no authority for a kernel write. The launcher checks service termination and the reported parent cgroup's disappearance; unavailable state or cleanup evidence fails closed. The service itself is a temporary systemd user unit. [MX handoff](TASK-018E-1A-MX-HANDOFF.md) contains exact steps and pass criteria.
+
+Focused identity and launcher fixtures, workspace tests, all-target Clippy and check, rustdoc and formatting passed. The workspace test emits existing duplicate example-name warnings. An x86_64 static musl release was built; no transient service was started in Codespaces and no physical test has been run. Fixture cleanup is not evidence of live cleanup. Controlled mode and kernel mutation remain disabled.
+
 ## TASK 018D continuation — partial, control remains disabled
 
 The manager diagnostic now opens the parent and `manager` directories using the existing descriptor-relative, no-follow helpers, checks cgroup v2 and non-root ownership, refuses the cgroup mount root, and compares the open manager's device/inode with PressureIQ's process-scoped cgroup observation before and after reading the parent files. The systemd unit properties are still checked separately and sequentially: **this is not an authorization binding for a controller write** and does not close races. The launcher checks whether systemd reports the transient service inactive or collected, but does not verify cgroup removal; the unit diagnostic remains untested on systemd 257.

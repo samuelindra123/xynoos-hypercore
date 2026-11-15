@@ -344,9 +344,12 @@ fn manager_preflight(unit: &str) -> Result<(), Box<dyn std::error::Error>> {
         &inspection.enabled,
     );
     let eligible = parent_state.is_ok() && memory.is_ok();
+    binding
+        .revalidate()
+        .map_err(|e| format!("binding revalidation failed: {e}"))?;
     println!(
         "{}",
-        serde_json::json!({"record":"manager_preflight", "unit":unit, "manager_pid":std::process::id(),
+        serde_json::json!({"binding":binding.diagnostic(), "binding_revalidation":"passed", "record":"manager_preflight", "unit":unit, "manager_pid":std::process::id(),
         "manager_path":path, "parent_path":parent, "inspection":inspection, "parent_state":parent_state,
         "memory_gate":memory, "eligible_for_further_validation":eligible,
         "controller_activation":"DISABLED", "kernel_control_write":false})

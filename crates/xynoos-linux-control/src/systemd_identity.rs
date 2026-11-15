@@ -30,7 +30,7 @@ fn bus(args: &[&str], signature: &str) -> Result<Value, String> {
         .output()
         .map_err(|e| format!("D-Bus inspection: {e}"))?;
     if !out.status.success() {
-        return Err("D-Bus inspection failed".into());
+        return Err(format!("D-Bus inspection failed (user bus unavailable, unit exited, or property lookup failed): {}", String::from_utf8_lossy(&out.stderr).trim()));
     }
     parse_reply(&out.stdout, signature)
 }
@@ -220,6 +220,10 @@ impl Binding {
         binding.revalidate()?;
         Ok(binding)
     }
+    /// Diagnostic snapshot of the original, held binding; this grants no authority.
+    pub fn diagnostic(&self) -> Value {
+        diagnostic(&self.initial)
+    }
     pub fn revalidate(&self) -> Result<(), String> {
         let u = unit(&self.name)?;
         let process =
@@ -251,6 +255,20 @@ impl Binding {
         }
         Ok(())
     }
+}
+
+fn diagnostic(o: &Observation) -> Value {
+    serde_json::json!({
+        "unit_id": o.unit.id, "object": o.unit.object,
+        "invocation_id": o.unit.invocation.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+        "active_state": o.unit.active, "load_state": o.unit.load,
+        "transient": o.unit.transient, "delegate": o.unit.delegate,
+        "delegate_subgroup": o.unit.subgroup, "control_group": o.unit.cgroup,
+        "main_pid": o.unit.pid, "start_ticks": o.process.start_ticks,
+        "actual_membership": o.membership,
+        "parent_descriptor": {"device": o.parent.0, "inode": o.parent.1},
+        "manager_descriptor": {"device": o.manager.0, "inode": o.manager.1}
+    })
 }
 
 fn compare(name: &str, initial: &Observation, current: &Observation) -> Result<(), String> {
@@ -310,6 +328,17 @@ mod tests {
                 "case {case}"
             );
         }
+    }
+    #[test]
+    fn diagnostic_contains_bound_identities() {
+        let d = diagnostic(&fixture());
+        assert_eq!(d["invocation_id"], "01010101010101010101010101010101");
+        assert_eq!(d["main_pid"], 42);
+        assert_eq!(d["start_ticks"], 100);
+        assert_eq!(d["actual_membership"], "/test.service/manager");
+        assert_eq!(d["parent_descriptor"]["inode"], 2);
+        assert_eq!(d["manager_descriptor"]["inode"], 3);
+        assert_eq!(d["delegate"], true);
     }
     #[test]
     fn missing_or_invalid_dbus_properties_fail() {
