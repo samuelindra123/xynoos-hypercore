@@ -242,6 +242,156 @@ fn memory_repeatability() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+const MIN_AVAILABLE_BYTES: u64 = 200 * 1024 * 1024;
+
+fn require_available_memory(bytes: Option<u64>) -> Result<u64, String> {
+    match bytes {
+        Some(value) if value >= MIN_AVAILABLE_BYTES => Ok(value),
+        Some(value) => Err(format!("MemAvailable {value} below 200 MiB minimum")),
+        None => Err("MemAvailable unavailable".into()),
+    }
+}
+
+fn available_memory(snapshot: &system::SystemSnapshot) -> Result<u64, String> {
+    require_available_memory(
+        snapshot
+            .memory
+            .mem
+            .result
+            .as_ref()
+            .ok()
+            .and_then(|m| m.bytes.get("MemAvailable").copied()),
+    )
+}
+
+fn preflight() -> Result<(), Box<dyn std::error::Error>> {
+    let start = Instant::now();
+    let snapshot = system::collect_system();
+    let available = snapshot
+        .memory
+        .mem
+        .result
+        .as_ref()
+        .ok()
+        .and_then(|m| m.bytes.get("MemAvailable").copied());
+    let identity = workload::identify(std::process::id())?;
+    let cgroup = cgroup_pressure::collect(&identity);
+    let caps = xynoos_linux_control::discover();
+    let cgroup_path = cgroup
+        .as_ref()
+        .ok()
+        .map(|c| c.cgroup.path.display().to_string());
+    println!(
+        "{}",
+        serde_json::json!({"record":"preflight", "pid1":fs::read_to_string("/proc/1/comm").ok().map(|s|s.trim().to_string()),
+        "cgroup_membership":fs::read_to_string("/proc/self/cgroup").ok(), "cgroup_path":cgroup_path,
+        "cgroup_error":cgroup.err().map(|e|format!("{e:?}")), "capabilities":caps,
+        "mem_available_bytes":available, "memory_gate":require_available_memory(available),
+        "controlled_mode":"DISABLED: transient-unit ownership and controller activation not verified",
+        "elapsed_ns":start.elapsed().as_nanos()})
+    );
+    Ok(())
+}
+
+fn validate_parent_state(
+    procs: &str,
+    controllers: &str,
+    enabled: &str,
+) -> Result<(), &'static str> {
+    if !procs.trim().is_empty() {
+        return Err("parent contains processes");
+    }
+    if !controllers.split_whitespace().any(|c| c == "memory") {
+        return Err("memory controller unavailable");
+    }
+    if enabled
+        .split_whitespace()
+        .any(|c| !["cpu", "memory", "pids"].contains(&c))
+    {
+        return Err("unexpected enabled controller");
+    }
+    Ok(())
+}
+
+// Read-only service verification. It is not authorization to activate controllers.
+fn manager_preflight(unit: &str) -> Result<(), Box<dyn std::error::Error>> {
+    use std::os::unix::fs::MetadataExt;
+    if !unit.starts_with("xynoos-018d-")
+        || !unit.ends_with(".service")
+        || !unit
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'.')
+    {
+        return Err("invalid transient unit name".into());
+    }
+    let output = Command::new("systemctl")
+        .args([
+            "--user",
+            "show",
+            unit,
+            "--property=MainPID",
+            "--property=ControlGroup",
+            "--property=Delegate",
+            "--property=DelegateSubgroup",
+        ])
+        .output()?;
+    if !output.status.success() {
+        return Err("cannot inspect transient service".into());
+    }
+    let props = String::from_utf8(output.stdout)?;
+    let field = |name: &str| props.lines().find_map(|l| l.strip_prefix(name));
+    let membership = fs::read_to_string("/proc/self/cgroup")?;
+    let relative = membership
+        .lines()
+        .find_map(|l| l.strip_prefix("0::"))
+        .ok_or("no unified membership")?;
+    let expected = format!(
+        "{}/manager",
+        field("ControlGroup=").ok_or("missing unit cgroup")?
+    );
+    if relative != expected
+        || field("MainPID=") != Some(&std::process::id().to_string())
+        || field("Delegate=") != Some("yes")
+        || field("DelegateSubgroup=") != Some("manager")
+    {
+        return Err("manager/unit identity or delegation mismatch".into());
+    }
+    let path =
+        system::parse_cgroup_path(&membership, &fs::read_to_string("/proc/self/mountinfo")?)?;
+    if path.file_name().and_then(|s| s.to_str()) != Some("manager") {
+        return Err("manager subgroup mismatch".into());
+    }
+    let parent = path.parent().ok_or("no delegated parent")?;
+    let meta = fs::symlink_metadata(parent)?;
+    // SAFETY: geteuid has no preconditions.
+    if !meta.is_dir()
+        || meta.file_type().is_symlink()
+        || meta.uid() != unsafe { libc::geteuid() }
+        || meta.mode() & 0o022 != 0
+    {
+        return Err("parent ownership or mode invalid".into());
+    }
+    let procs = fs::read_to_string(parent.join("cgroup.procs"))?;
+    let controllers = fs::read_to_string(parent.join("cgroup.controllers"))?;
+    let enabled = fs::read_to_string(parent.join("cgroup.subtree_control"))?;
+    let memory = available_memory(&system::collect_system());
+    let parent_state = validate_parent_state(&procs, &controllers, &enabled);
+    let eligible = parent_state.is_ok() && memory.is_ok();
+    println!(
+        "{}",
+        serde_json::json!({"record":"manager_preflight", "unit":unit, "manager_pid":std::process::id(),
+        "manager_path":path, "parent_path":parent, "parent_device":meta.dev(), "parent_inode":meta.ino(),
+        "parent_empty":procs.trim().is_empty(), "available_controllers":controllers.trim(),
+        "enabled_controllers":enabled.trim(), "parent_state":parent_state, "memory_gate":memory, "eligible_for_further_validation":eligible,
+        "controller_activation":"DISABLED", "kernel_control_write":false})
+    );
+    if !eligible {
+        return Err("delegation preflight declined".into());
+    }
+    Ok(())
+}
+
+#[allow(dead_code)]
 fn controlled(parent: &Path) -> Result<(), Box<dyn std::error::Error>> {
     use xynoos_linux_control::{
         transaction::{Backend, DisposableCgroup, Outcome},
@@ -250,6 +400,7 @@ fn controlled(parent: &Path) -> Result<(), Box<dyn std::error::Error>> {
     install_cancellation()?;
     cancellation_check()?;
     let snapshot = system::collect_system();
+    available_memory(&snapshot)?;
     cancellation_check()?;
     let mut group = DisposableCgroup::create(parent, true)?;
     if let Err(e) = cancellation_check() {
@@ -273,11 +424,16 @@ fn controlled(parent: &Path) -> Result<(), Box<dyn std::error::Error>> {
                 .stdout(Stdio::null())
                 .spawn()
                 .map_err(|e| format!("worker spawn: {e}"))?;
+            let spawned = Instant::now();
             let result = (|| -> Result<(), String> {
                 cancellation_check()?;
                 target.place_child(&child)?;
                 cancellation_check()?;
                 target.verify_child()?;
+                available_memory(&system::collect_system())?;
+                if spawned.elapsed() >= Duration::from_secs(5) {
+                    return Err("worker timeout before release".into());
+                }
                 xynoos_linux_control::validate_telemetry(&snapshot, Instant::now(), action)?;
                 if target.read_low()? != 32 * 1024 * 1024 {
                     return Err("control changed before release".into());
@@ -299,7 +455,7 @@ fn controlled(parent: &Path) -> Result<(), Box<dyn std::error::Error>> {
                         }
                         return Ok(());
                     }
-                    if started.elapsed() > Duration::from_secs(10) {
+                    if spawned.elapsed() > Duration::from_secs(5) {
                         return Err("worker timeout".into());
                     }
                     std::thread::sleep(Duration::from_millis(5));
@@ -341,6 +497,12 @@ fn validate_mode(mode: &str) -> Result<(), &'static str> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
+    if args.len() == 3 && args[1] == "manager-preflight" {
+        return manager_preflight(&args[2]);
+    }
+    if args.len() == 2 && args[1] == "preflight" {
+        return preflight();
+    }
     if args.len() == 2 && args[1] == "gated-memory-worker" {
         return gated_memory_worker(128);
     }
@@ -354,7 +516,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if args.len() != 5 || args[2] != "--authorize" || args[3] != "--parent" {
             return Err("usage: controlled --authorize --parent /absolute/delegated/parent".into());
         }
-        return controlled(Path::new(&args[4]));
+        return Err("controlled mode disabled: delegated transient unit verification and lifecycle safety gates remain incomplete".into());
     }
     if args.len() == 3 && args[1] == "worker" {
         return worker(&args[2]);
@@ -477,7 +639,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::{stop_and_reap, validate_mode};
+    use super::{
+        require_available_memory, stop_and_reap, validate_mode, validate_parent_state,
+        MIN_AVAILABLE_BYTES,
+    };
     use std::process::{Command, Stdio};
     #[test]
     fn stop_reaps_child_and_is_idempotent() {
@@ -489,6 +654,22 @@ mod tests {
         stop_and_reap(&mut child).unwrap();
         stop_and_reap(&mut child).unwrap();
         assert!(child.try_wait().unwrap().is_some());
+    }
+    #[test]
+    fn parent_preflight_refuses_unsafe_state() {
+        assert!(validate_parent_state("", "cpu memory pids", "cpu pids").is_ok());
+        assert!(validate_parent_state("123", "memory", "").is_err());
+        assert!(validate_parent_state("", "cpu pids", "").is_err());
+        assert!(validate_parent_state("", "memory", "io").is_err());
+    }
+    #[test]
+    fn memory_guard_rejects_missing_and_low() {
+        assert!(require_available_memory(None).is_err());
+        assert!(require_available_memory(Some(MIN_AVAILABLE_BYTES - 1)).is_err());
+        assert_eq!(
+            require_available_memory(Some(MIN_AVAILABLE_BYTES)),
+            Ok(MIN_AVAILABLE_BYTES)
+        );
     }
     #[test]
     fn modes_fail_closed() {

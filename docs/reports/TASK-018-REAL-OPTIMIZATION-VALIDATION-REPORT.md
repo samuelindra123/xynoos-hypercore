@@ -1,5 +1,36 @@
 # TASK 018 — Real optimization validation (partial)
 
+## TASK 018D — delegated manager preflight (PARTIAL)
+
+This update supersedes previous suggestions to run controlled mode. The standalone controlled command now refuses before creating a cgroup or writing any control: transient-unit authorization, safe controller activation and lifecycle failure coverage are not complete. **Manager/workload separation, controller activation, empty-child and workload intervention remain NOT VERIFIED and not ready for execution.**
+
+The new `scripts/xynoos-018d-launcher.sh unit-preflight` starts a transient user service using `Delegate=cpu memory pids` and `DelegateSubgroup=manager`, then invokes the experiment's read-only `manager-preflight`. The systemd unit setting for a restricted controller list is `Delegate=`; `DelegateControllers` is a D-Bus property, not the unit-file assignment. See [systemd 257 resource control](https://www.freedesktop.org/software/systemd/man/257/systemd.resource-control.html) and [systemd D-Bus properties](https://freedesktop.org/software/systemd/man/latest/org.freedesktop.systemd1.html). The preflight dynamically maps `/proc/self/cgroup` and mountinfo, checks the unit's `MainPID`, `ControlGroup`, `Delegate`, and `DelegateSubgroup` with `systemctl --user show`, examines parent owner/mode, direct population and controllers, and emits JSON. These pathname-based sequential checks are only diagnostic: they are **not** an authorization boundary or race-free proof of ownership. No subtree control write is implemented. Starting the transient service itself creates/manages systemd cgroups; it is distinct from the fully read-only `preflight` command. Unit termination and cleanup are not independently verified.
+
+A 200 MiB `MemAvailable` guard and five-second spawned-worker deadline were added to the dormant controlled implementation; the threshold is rechecked before release. Visible-system MemAvailable is not a guarantee of cgroup headroom and can change immediately. The existing worker allocation is bounded to 32 MiB. Fixture tests cover the exact low-memory threshold and parent populated, memory-controller-unavailable and unexpected-controller preflight cases. Existing transaction fixtures exercise rollback checks. They do not cover controller activation denial/read-back, unit authority, placement, cancellation boundaries, timeout, cleanup and service termination end to end. No physical-host kernel writes or service launch were performed in Codespaces.
+
+Codespaces read-only preflight: PID 1 `docker-init`; `/proc/self/cgroup` `0::/init`; cgroup v2 visible at `/sys/fs/cgroup`; `/sys/fs/cgroup/init` is root-owned. `MemAvailable` was 13,455,589,376 bytes during this particular probe, not a target-host measurement. `cargo fmt --all -- --check`, `cargo test --workspace`, targeted example tests (4), Clippy with warnings denied, `cargo check --workspace`, release build, and rustdoc with warnings denied passed. The real-kernel test remains ignored. No claim of optimization is made.
+
+### Safe physical preparation
+
+Build on a compatible x86_64 Linux/glibc environment and copy the two files to the target. The release artifact is dynamically linked; a Codespaces build may require a newer glibc than MX Linux, so inspect with `ldd` and use a compatible build environment if needed. No Rust installation is needed on the target for a compatible binary:
+
+```sh
+cargo build --release -p xynoos-decision --example optimization_experiment
+mkdir -p xynoos-018d-dist
+cp target/release/examples/optimization_experiment scripts/xynoos-018d-launcher.sh xynoos-018d-dist/
+ldd xynoos-018d-dist/optimization_experiment
+# Transfer xynoos-018d-dist/ to the MX Linux host, then:
+cd xynoos-018d-dist
+ldd ./optimization_experiment
+./xynoos-018d-launcher.sh preflight | tee preflight.json
+```
+
+After reviewing the non-mutating output, the separate diagnostic `./xynoos-018d-launcher.sh unit-preflight` intentionally creates a short-lived systemd user service. This diagnostic has not been tested on MX Linux. The launcher does not use sudo or enable controllers; do not use the desktop scope, alter swap/zram, or change ancestor cgroups. No safe standalone empty-child or controlled workload command is supplied yet. If a transient unit remains, inspect it using the unit name in the output and the user's `systemctl --user` and journal; do not remove or alter a populated or unverified cgroup by hand.
+
+### Blocking implementation gates
+
+Implement descriptor-relative verification binding the parent to the designated transient service, safely activate and read back only `+memory`, integrate the existing adapter and gated worker, and prove cleanup and transient-unit termination. Add deterministic activation denied/read-back, creation, spawn, placement, identity, cancellation, timeout, termination, rollback, cleanup and service-termination tests. Resolve the release/cancellation race and prove no restore/removal while a worker might be alive. Add explicit opt-in empty-child and separate workload commands only after those gates. Real MX kernel operation and performance remain separate release gates.
+
 ## TASK 018B finalization update — still partial
 
 The runner now installs SIGINT/SIGTERM handlers for controlled mode, checks a cancellation flag around startup and while waiting, and attempts kill and reap within two seconds. If termination cannot be verified it marks the target unresolved and blocks restoration and automatic removal. The real backend also independently refuses restoration while its cgroup is populated. These checks are not atomic with worker release or external migration. Signal handling, real placement, creation and cleanup failures have not been exercised end-to-end; an uninterruptible process, races, SIGKILL, power loss and privileged concurrent writers remain limits. In particular, cancellation can arrive between the last flag check and release, and the correctness of real cgroup termination and restoration has not been verified. **Keep the PR draft; do not run controlled mode on a physical host yet.**
