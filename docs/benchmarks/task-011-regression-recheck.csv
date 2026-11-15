@@ -1,0 +1,7 @@
+groups,version,median_batch_ns
+1,baseline,45975.5
+1,typed,54245.5
+16,baseline,299137.5
+16,typed,298827.0
+64,baseline,1212766.0
+64,typed,1200468.0
