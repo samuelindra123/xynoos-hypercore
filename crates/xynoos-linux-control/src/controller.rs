@@ -179,6 +179,78 @@ impl LinuxController {
         crate::transaction::read_at(self.binding.parent(), name)
     }
 }
+/// Read-only initialization of the same bound controller backend used by a session.
+/// It does not grant authority or expose mutation methods.
+pub struct ControllerInspectionSession {
+    backend: LinuxController,
+}
+#[derive(serde::Serialize)]
+pub struct ControllerReadiness {
+    pub parent_device: u64,
+    pub parent_inode: u64,
+    pub available_controllers: Vec<String>,
+    pub enabled_controllers: Vec<String>,
+    pub parent_empty: bool,
+    pub ready: bool,
+}
+fn inspect_readiness<B: ControllerBackend>(backend: &mut B) -> Result<ControllerReadiness, String> {
+    let id = backend.verify_unit()?;
+    if !backend.processes()?.trim().is_empty() {
+        return Err("parent populated".into());
+    }
+    let available_text = backend.available()?;
+    let available: BTreeSet<_> = available_text.split_whitespace().collect();
+    if !available.contains("memory") {
+        return Err("memory controller unavailable".into());
+    }
+    let enabled_text = backend.enabled()?;
+    let enabled = controllers(&enabled_text)?;
+    if enabled.contains("memory") {
+        return Err("memory already enabled; unexpected initial state".into());
+    }
+    if backend.verify_unit()? != id || !backend.processes()?.trim().is_empty() {
+        return Err("unit identity or population changed".into());
+    }
+    let available_again = backend.available()?;
+    let enabled_again = backend.enabled()?;
+    if available_again.split_whitespace().collect::<BTreeSet<_>>() != available
+        || controllers(&enabled_again)? != enabled
+    {
+        return Err("controller state changed during inspection".into());
+    }
+    backend.verify_unit().and_then(|current| {
+        if current == id {
+            Ok(())
+        } else {
+            Err("unit identity changed".into())
+        }
+    })?;
+    Ok(ControllerReadiness {
+        parent_device: id.device,
+        parent_inode: id.inode,
+        available_controllers: available.iter().map(|s| (*s).to_owned()).collect(),
+        enabled_controllers: enabled.iter().map(|s| (*s).to_owned()).collect(),
+        parent_empty: true,
+        ready: true,
+    })
+}
+impl ControllerInspectionSession {
+    pub fn new(binding: crate::systemd_identity::Binding) -> Result<Self, String> {
+        binding.revalidate()?;
+        Ok(Self {
+            backend: LinuxController {
+                binding,
+                authorized: false,
+            },
+        })
+    }
+    pub fn inspect(&mut self) -> Result<ControllerReadiness, String> {
+        inspect_readiness(&mut self.backend)
+    }
+    pub fn binding_diagnostic(&self) -> serde_json::Value {
+        self.backend.binding.diagnostic()
+    }
+}
 /// An activation held in memory until one explicit restoration attempt.
 /// Dropping this value never writes to the kernel.
 pub struct ControllerSession {
@@ -218,18 +290,26 @@ impl ControllerSession {
         restore_memory(&mut self.backend, &activation, true)
     }
 }
+fn validate_hierarchy(stat: &str, manager_procs: &str, pid: u32) -> Result<(), String> {
+    if stat
+        .lines()
+        .filter(|line| line.trim() == "nr_descendants 1")
+        .count()
+        != 1
+    {
+        return Err("unexpected delegated hierarchy descendants".into());
+    }
+    if manager_procs.trim() != pid.to_string() {
+        return Err("unexpected manager subgroup population".into());
+    }
+    Ok(())
+}
 impl ControllerBackend for LinuxController {
     fn verify_unit(&mut self) -> Result<ParentIdentity, String> {
         self.binding.revalidate()?;
         let stat = crate::transaction::read_at(self.binding.parent(), c"cgroup.stat")?;
-        if stat
-            .lines()
-            .filter(|line| line.trim() == "nr_descendants 1")
-            .count()
-            != 1
-        {
-            return Err("unexpected delegated hierarchy descendants".into());
-        }
+        let manager_procs = crate::transaction::read_at(self.binding.manager(), c"cgroup.procs")?;
+        validate_hierarchy(&stat, &manager_procs, std::process::id())?;
         let (device, inode) = self.binding.parent_identity();
         Ok(ParentIdentity { device, inode })
     }
@@ -445,5 +525,45 @@ mod tests {
         f.fail_write = false;
         restore_memory(&mut f, &activation, true).unwrap();
         assert_eq!(f.enabled, "cpu pids");
+    }
+    #[test]
+    fn read_only_session_readiness_refuses_changed_state_without_writes() {
+        let mut f = Fixture::new();
+        let readiness = inspect_readiness(&mut f).unwrap();
+        assert!(readiness.ready && readiness.parent_empty);
+        assert_eq!(f.writes, 0);
+        for case in 0..7 {
+            let mut f = Fixture::new();
+            match case {
+                0 => f.procs = "123".into(),
+                1 => f.available = "cpu".into(),
+                2 => f.enabled = "memory".into(),
+                3 => f.enabled = "io".into(),
+                4 => f.change_id = true,
+                5 => f.populate_after_first_read = true,
+                6 => f.competing_change = true,
+                _ => unreachable!(),
+            }
+            assert!(inspect_readiness(&mut f).is_err(), "case {case}");
+            assert_eq!(f.writes, 0);
+        }
+        for call in 1..=3 {
+            let mut f = Fixture::new();
+            f.fail_unit_at = Some(call);
+            assert!(inspect_readiness(&mut f).is_err());
+            assert_eq!(f.writes, 0);
+        }
+    }
+    #[test]
+    fn hierarchy_requires_only_manager_and_no_other_descendants() {
+        assert!(validate_hierarchy("nr_descendants 1\n", "42\n", 42).is_ok());
+        for (stat, procs) in [
+            ("nr_descendants 2", "42"),
+            ("nr_descendants 1", "42\n43"),
+            ("nr_descendants 1\nnr_descendants 1", "42"),
+            ("", "42"),
+        ] {
+            assert!(validate_hierarchy(stat, procs, 42).is_err());
+        }
     }
 }

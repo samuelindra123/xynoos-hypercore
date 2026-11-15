@@ -264,6 +264,9 @@ impl Binding {
     pub(crate) fn parent(&self) -> &File {
         &self.parent
     }
+    pub(crate) fn manager(&self) -> &File {
+        &self.manager
+    }
     pub(crate) fn parent_identity(&self) -> (u64, u64) {
         self.initial.parent
     }

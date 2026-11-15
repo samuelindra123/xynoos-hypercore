@@ -333,6 +333,9 @@ fn manager_preflight(unit: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     let parent = path.parent().ok_or("no delegated parent")?;
     let inspection = xynoos_linux_control::transaction::inspect_manager_parent(parent)?;
+    let mut controller_session =
+        xynoos_linux_control::controller::ControllerInspectionSession::new(binding)?;
+    let readiness = controller_session.inspect()?;
     let memory = available_memory(&system::collect_system());
     let parent_state = validate_parent_state(
         if inspection.parent_empty {
@@ -344,12 +347,9 @@ fn manager_preflight(unit: &str) -> Result<(), Box<dyn std::error::Error>> {
         &inspection.enabled,
     );
     let eligible = parent_state.is_ok() && memory.is_ok();
-    binding
-        .revalidate()
-        .map_err(|e| format!("binding revalidation failed: {e}"))?;
     println!(
         "{}",
-        serde_json::json!({"binding":binding.diagnostic(), "binding_revalidation":"passed", "record":"manager_preflight", "unit":unit, "manager_pid":std::process::id(),
+        serde_json::json!({"binding":controller_session.binding_diagnostic(), "binding_revalidation":"passed", "controller_session":readiness, "record":"manager_preflight", "unit":unit, "manager_pid":std::process::id(),
         "manager_path":path, "parent_path":parent, "inspection":inspection, "parent_state":parent_state,
         "memory_gate":memory, "eligible_for_further_validation":eligible,
         "controller_activation":"DISABLED", "kernel_control_write":false})
