@@ -1,0 +1,2 @@
+Peak RSS maksimum subprocess benchmark (KiB): 16628
+Pengukuran seluruh proses, seluruh mode, bukan footprint per-mode. /usr/bin/time tidak tersedia; resource.getrusage dipakai.

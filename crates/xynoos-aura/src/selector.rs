@@ -193,3 +193,174 @@ mod aware_tests {
         assert_eq!(selector, before);
     }
 }
+
+impl Selector {
+    /// Satu clone transaksi dan satu layanan akses, tanpa Vec clone dalam loop kandidat.
+    pub fn fast_event(
+        &mut self,
+        sim: &mut Simulator,
+        index: usize,
+        pressure: u16,
+        order: &[usize],
+    ) -> Result<(Option<usize>, SearchStats, Decision), crate::physical::Error> {
+        self.fast_event_inner(sim, index, pressure, order, None)
+    }
+    pub fn fast_event_measured(
+        &mut self,
+        sim: &mut Simulator,
+        index: usize,
+        pressure: u16,
+        order: &[usize],
+        inspection_ns: &mut u128,
+    ) -> Result<(Option<usize>, SearchStats, Decision), crate::physical::Error> {
+        self.fast_event_inner(sim, index, pressure, order, Some(inspection_ns))
+    }
+    fn fast_event_inner(
+        &mut self,
+        sim: &mut Simulator,
+        index: usize,
+        pressure: u16,
+        order: &[usize],
+        inspection_ns: Option<&mut u128>,
+    ) -> Result<(Option<usize>, SearchStats, Decision), crate::physical::Error> {
+        use crate::physical::Error;
+        if order.len() != sim.pages.len() || order.is_empty() || order.len() > 64 {
+            return Err(Error::InvalidInput);
+        }
+        let mut seen = [false; 64];
+        for &i in order {
+            if i >= order.len() || seen[i] {
+                return Err(Error::InvalidInput);
+            }
+            seen[i] = true;
+        }
+        let mut prepared = sim.clone();
+        let limits = prepared.prepare_access(index, pressure)?;
+        let inspection_start = inspection_ns.as_ref().map(|_| std::time::Instant::now());
+        let mut stats = SearchStats::default();
+        let mut chosen = None;
+        for offset in 0..order.len() {
+            let i = order[(self.cursor + offset) % order.len()];
+            let (d, metrics) = prepared.inspect_prepared(i, limits)?;
+            stats.evaluations += 1;
+            stats.capacity += metrics.last_capacity_rejections;
+            stats.budget += metrics.last_budget_rejections;
+            if metrics.last_feasible_mask != 0 {
+                stats.feasible += 1;
+            } else {
+                stats.rejected += 1;
+            }
+            if chosen.is_none()
+                && matches!(
+                    d,
+                    Decision::StoreRaw | Decision::StoreCompressed | Decision::MoveToBacking
+                )
+            {
+                chosen = Some(i);
+            }
+        }
+        if let (Some(output), Some(start)) = (inspection_ns, inspection_start) {
+            *output += start.elapsed().as_nanos();
+        }
+        if stats.feasible == 0 {
+            stats.no_feasible = 1;
+        }
+        if chosen.is_none() {
+            stats.no_policy_migration = 1;
+        }
+        let decision = prepared.complete_candidate(chosen.unwrap_or(index), limits)?;
+        *sim = prepared;
+        self.cursor = (self.cursor + 1) % order.len();
+        Ok((chosen, stats, decision))
+    }
+}
+#[cfg(test)]
+mod fast_tests {
+    use super::*;
+    use crate::physical::{fixture, Error, Policy};
+    fn reference(
+        sel: &mut Selector,
+        s: &mut Simulator,
+        index: usize,
+        p: u16,
+        o: &[usize],
+    ) -> Result<(Option<usize>, SearchStats, Decision), Error> {
+        let mut next = sel.clone();
+        let (chosen, stats) = next.state_aware(s, index, p, o)?;
+        let d = s.event_candidate(index, p, chosen.unwrap_or(index))?;
+        *sel = next;
+        Ok((chosen, stats, d))
+    }
+    #[test]
+    fn multi_event_equivalence() {
+        for n in [1, 16, 64] {
+            for policy in [Policy::Aura, Policy::Lru, Policy::CompressionFirst] {
+                let mut a = fixture(policy);
+                if n == 1 {
+                    a.pages.truncate(1);
+                    a.state.used_bytes = [4096, 0, 0];
+                } else if n == 64 {
+                    let template = a.pages.clone();
+                    for i in 16..64 {
+                        let mut p = template[i % 16].clone();
+                        p.id = i as u64;
+                        a.pages.push(p);
+                    }
+                    a.state.used_bytes = [64 * 4096, 0, 0];
+                    a.state.capacity_bytes[0] = 64 * 4096;
+                    a.state.physical_budget_bytes = 64 * 4096 + a.state.metadata_bytes;
+                }
+                let mut b = a.clone();
+                let mut x = Selector::default();
+                let mut y = x.clone();
+                let mut rng = 42u64;
+                let order: Vec<_> = (0..n).rev().collect();
+                for tick in 0..256 {
+                    rng ^= rng << 13;
+                    rng ^= rng >> 7;
+                    rng ^= rng << 17;
+                    let index = if tick % 31 == 0 { 99 } else { rng as usize % n };
+                    let pressure = if tick % 2 == 0 { 690 } else { 800 };
+                    assert_eq!(
+                        reference(&mut x, &mut a, index, pressure, &order),
+                        y.fast_event(&mut b, index, pressure, &order)
+                    );
+                    assert_eq!(a, b);
+                    assert_eq!(x, y);
+                }
+            }
+        }
+    }
+    #[test]
+    fn failures_atomic() {
+        for case in 0..5 {
+            let mut a = fixture(Policy::Aura);
+            match case {
+                0 => a.tick = u64::MAX,
+                1 => a.pages[0].accesses = u64::MAX,
+                2 => a.metrics.migrations = u64::MAX,
+                3 => a.engine.config.capacity_ns_per_byte = u64::MAX,
+                _ => a.metrics.stall_ns = u64::MAX,
+            };
+            let mut b = a.clone();
+            let before = a.clone();
+            let mut x = Selector::default();
+            let mut y = x.clone();
+            let o: Vec<_> = (0..16).collect();
+            let r = reference(&mut x, &mut a, 0, 800, &o);
+            assert!(r.is_err());
+            assert_eq!(r, y.fast_event(&mut b, 0, 800, &o));
+            assert_eq!(a, b);
+            assert_eq!(b, before);
+            assert_eq!(x, y);
+        }
+    }
+    #[test]
+    fn invalid_order_and_empty() {
+        let mut a = fixture(Policy::Aura);
+        let before = a.clone();
+        let mut s = Selector::default();
+        assert!(s.fast_event(&mut a, 0, 800, &[0; 16]).is_err());
+        assert_eq!(a, before);
+    }
+}

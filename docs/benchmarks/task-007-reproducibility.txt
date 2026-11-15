@@ -1,0 +1,1 @@
+1944 record valid; dua proses identik non-timing; journal/FastPath identik dengan oracle pada setiap sample dan konfigurasi. Warm-up1 dan3 sample tiap mode, seed1/42/2026.
