@@ -466,6 +466,9 @@ fn validate_mode(mode: &str) -> Result<(), &'static str> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
+    if args.get(1).is_some_and(|x| x == "empty-child-transaction") {
+        return disabled_empty_child_request(&args[2..]).map_err(Into::into);
+    }
     if args.len() == 3 && args[1] == "manager-preflight" {
         return manager_preflight(&args[2]);
     }
@@ -606,11 +609,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// This parser deliberately does not discover a unit, start a service, or obtain
+// a controller session. Authorization alone cannot bypass the implementation gate.
+fn disabled_empty_child_request(args: &[String]) -> Result<(), &'static str> {
+    if args.len() != 3 || args[0] != "--authorize-physical-mutation" || args[1] != "--unit" {
+        return Err(
+            "usage: empty-child-transaction --authorize-physical-mutation --unit UNIT.service",
+        );
+    }
+    let unit = &args[2];
+    if !unit.starts_with("xynoos-018d-")
+        || !unit.ends_with(".service")
+        || !unit
+            .bytes()
+            .all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'.')
+    {
+        return Err("invalid transient unit name");
+    }
+    Err("physical empty-child transaction disabled: safety gates remain incomplete")
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        require_available_memory, stop_and_reap, validate_mode, validate_parent_state,
-        MIN_AVAILABLE_BYTES,
+        disabled_empty_child_request, require_available_memory, stop_and_reap, validate_mode,
+        validate_parent_state, MIN_AVAILABLE_BYTES,
     };
     use std::process::{Command, Stdio};
     #[test]
@@ -646,5 +669,35 @@ mod tests {
         assert!(validate_mode("dry-run").is_ok());
         assert!(validate_mode("controlled").is_err());
         assert!(validate_mode("unknown").is_err());
+    }
+    #[test]
+    fn physical_request_requires_separate_authorization_and_stays_disabled() {
+        let args = |items: &[&str]| items.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        for input in [
+            args(&[]),
+            args(&["--unit", "xynoos-018d-1.service"]),
+            args(&["--authorize", "--unit", "xynoos-018d-1.service"]),
+            args(&["--authorize-physical-mutation", "--unit", "other.service"]),
+            args(&[
+                "--authorize-physical-mutation",
+                "--unit",
+                "xynoos-018d-../x.service",
+            ]),
+            args(&[
+                "--authorize-physical-mutation",
+                "--unit",
+                "xynoos-018d-1.service",
+                "extra",
+            ]),
+        ] {
+            assert!(disabled_empty_child_request(&input).is_err());
+        }
+        let error = disabled_empty_child_request(&args(&[
+            "--authorize-physical-mutation",
+            "--unit",
+            "xynoos-018d-1.service",
+        ]))
+        .unwrap_err();
+        assert!(error.contains("disabled"));
     }
 }
