@@ -538,7 +538,7 @@ pub(crate) fn open_absolute_dir(path: &Path) -> Result<File, String> {
     }
     Ok(dir)
 }
-fn read_at(dir: &File, name: &std::ffi::CStr) -> Result<String, String> {
+pub(crate) fn read_at(dir: &File, name: &std::ffi::CStr) -> Result<String, String> {
     let f = openat(dir.as_raw_fd(), name, libc::O_RDONLY)?;
     let mut s = String::new();
     f.take(4097)

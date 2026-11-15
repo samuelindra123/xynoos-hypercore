@@ -1,4 +1,4 @@
-//! Read-only, point-in-time binding to a systemd user service. No controller backend.
+//! Point-in-time binding to a systemd user service; discovery is read-only.
 //! `busctl --json=short` transports typed D-Bus replies; every property is required.
 use serde_json::Value;
 use std::{
@@ -260,6 +260,12 @@ impl Binding {
         };
         binding.revalidate()?;
         Ok(binding)
+    }
+    pub(crate) fn parent(&self) -> &File {
+        &self.parent
+    }
+    pub(crate) fn parent_identity(&self) -> (u64, u64) {
+        self.initial.parent
     }
     /// Diagnostic snapshot of the original, held binding; this grants no authority.
     pub fn diagnostic(&self) -> Value {
