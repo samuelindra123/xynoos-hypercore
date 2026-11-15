@@ -1,0 +1,176 @@
+
+$ cargo fmt --all -- --check
+EXIT 0
+
+$ cargo clippy --workspace --all-targets -- -D warnings
+    Checking xynoos-pressureiq v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-pressureiq)
+    Checking xynoos-cli v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.53s
+EXIT 0
+
+$ cargo test --workspace
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.04s
+     Running unittests src/lib.rs (target/debug/build/xynoos-aura/1ce54bfa213956b7/out/xynoos_aura-1ce54bfa213956b7)
+
+running 41 tests
+test physical::journal_tests::injected_overflow ... ok
+test physical::journal_tests::scratch_simultaneous ... ok
+test physical::tests::atomic_error ... ok
+test physical::tests::entropy_no_free_capacity ... ok
+test physical::tests::fallback_and_budget ... ok
+test physical::tests::metadata_overcommit_overflow ... ok
+test physical::tests::shared_transition ... ok
+test physical::tests::temp_limit ... ok
+test physical::unwind_guard_tests::error_after_partial_mutation_restores ... ok
+test physical::unwind_guard_tests::rollback_five_phases_and_same_index ... ok
+test placement::eligibility_tests::ineligible_access_does_not_migrate ... ok
+test physical::unwind_guard_tests::staged_selector_and_capacity_error ... ok
+test placement::protection_tests::decision_error_is_atomic ... ok
+test placement::protection_tests::adversarial_limit_and_clock ... ok
+test placement::tests::budgets_capacity_confidence ... ok
+test placement::tests::cost_units_and_overflow ... ok
+test placement::tests::hysteresis_and_cooldown ... ok
+test placement::tests::invalid_rollback ... ok
+test placement::tests::refault_and_fallback ... ok
+test placement::tests::validation ... ok
+test selector::aware_tests::checks_are_pure_and_bounded ... ok
+test selector::aware_tests::multiple_rejections_progress ... ok
+test physical::tests::bounded_sequences ... ok
+test placement::tests::determinism_and_accounting ... ok
+test selector::fast_tests::failures_atomic ... ok
+test selector::fast_tests::invalid_order_and_empty ... ok
+test selector::fast_tests::prepared_is_private_until_validated_publication ... ok
+test selector::injected_tests::controlled_allocation_rejection ... ok
+test selector::injected_tests::stage_errors_rollback ... ok
+test selector::injected_tests::targeted_reservation_atomic ... ok
+test selector::injected_tests::unwind_before_commit_rollback ... ok
+test selector::reservation_tests::injected_reservation ... ok
+test selector::reservation_tests::reserve_overflow_is_distinct ... ok
+test physical::journal_tests::differential ... ok
+test selector::tests::empty_and_overflow_atomic ... ok
+test selector::tests::no_candidate_and_changing_mask ... ok
+test selector::tests::progress_and_ties ... ok
+test tests::deterministic ... ok
+test selector::reservation_tests::same_candidate_and_access ... ok
+test selector::fast_tests::six_sizes_budget_and_fallback ... ok
+test selector::fast_tests::multi_event_equivalence ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+     Running unittests src/main.rs (target/debug/build/xynoos-bench/f2e14fff0a6c044c/out/xynoos_bench-f2e14fff0a6c044c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/build/xynoos-cli/c1424342794115c8/out/xynoos_cli-c1424342794115c8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/pressure.rs (target/debug/build/xynoos-cli/462e9fa437db3889/out/pressure-462e9fa437db3889)
+
+running 5 tests
+test human_snapshot ... ok
+Error: Bounds
+test snapshot_has_csv_columns ... ok
+Error: Bounds
+Error: "Parameter membutuhkan nilai"
+test invalid_bounds_and_missing_options ... ok
+test bounded_file_output_and_no_overwrite ... ok
+test unified_sample_csv ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-core/08e8fe2e5d48e9f5/out/xynoos_core-08e8fe2e5d48e9f5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-hypermemory/0f0a8f6adfdf8f64/out/xynoos_hypermemory-0f0a8f6adfdf8f64)
+
+running 13 tests
+test budget_boundary_tests::boundary_and_reuse ... ok
+test adaptive_tests::raw_corruption_is_detected ... ok
+test budget_boundary_tests::overflow_and_raw_integrity ... ok
+test integrity_tests::checksum_and_length ... ok
+test adaptive_tests::mixed_and_budget ... ok
+test integrity_tests::corruption_and_isolation ... ok
+test integrity_tests::failures_preserve_state ... ok
+test integrity_tests::truncation_and_decoder_failure ... ok
+test malformed_tests::bounded_malformed_blocks ... ok
+test budget_boundary_tests::mixed_sequence ... ok
+test tests::invalid ... ok
+test tests::round_trips_and_statistics ... ok
+test integrity_tests::generated_operation_sequences ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.43s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-pressureiq/e42fd78f280d6fb0/out/xynoos_pressureiq-e42fd78f280d6fb0)
+
+running 10 tests
+test delta_tests::monotonic_and_reset ... ok
+test system::tests::cpu_delta_and_resets ... ok
+test system::tests::cgroup_values ... ok
+test system::tests::disk_units_identity_and_reset ... ok
+test tests::bounds ... ok
+test tests::meminfo_units_and_optional ... ok
+test tests::psi_ok_and_optional ... ok
+test tests::partial_and_csv ... ok
+test tests::psi_rejects_invalid ... ok
+test tests::vm_delta_and_reset ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xynoos_aura
+
+running 1 test
+test crates/xynoos-aura/src/selector.rs - selector::Selector::fast_event (line 241) - compile fail ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests xynoos_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xynoos_hypermemory
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xynoos_pressureiq
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+EXIT 0
+
+$ cargo check --workspace
+    Checking xynoos-pressureiq v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-pressureiq)
+    Checking xynoos-cli v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.19s
+EXIT 0
+
+$ cargo build --workspace --release
+   Compiling xynoos-pressureiq v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-pressureiq)
+   Compiling xynoos-cli v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-cli)
+    Finished `release` profile [optimized] target(s) in 1.33s
+EXIT 0
+
+$ cargo build --workspace --examples --release
+   Compiling xynoos-pressureiq v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-pressureiq)
+    Finished `release` profile [optimized] target(s) in 0.17s
+EXIT 0
+
+$ cargo doc --workspace --no-deps
+ Documenting xynoos-pressureiq v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-pressureiq)
+ Documenting xynoos-cli v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.19s
+   Generated /workspaces/xynoos-hypercore/target/doc/xynoos_aura/index.html and 5 other files
+EXIT 0

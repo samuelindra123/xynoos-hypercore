@@ -1,0 +1,2 @@
+25 baris, lima run x lima sampel; header dan tipe diperiksa; CPU persen 0–100, interval >=200 ms, CPU cgroup monoton: PASS.
+RSS VmHWM proses kolektor terbaca maksimum 2364 KiB; polling 100 ms, dapat melewatkan puncak.

@@ -45,3 +45,14 @@ TASK011 menambahkan type-state internal Prepared → CommitReady untuk FastPath;
 TASK012 menambahkan guard rollback journal pada `Err` dan unwind yang diuji; default tetap clone. Eksperimen regresi menggunakan baseline TASK010 dalam subprocess ABBA: `python3 scripts/benchmark_task012.py` setelah build examples release. [Laporan TASK012](docs/reports/TASK-012-FASTPATH-RELIABILITY-REPORT.md) menjelaskan keterbatasan dan self-audit allocator.
 
 PressureIQ v1 adalah observer Linux read-only, tanpa reclaim atau pengaturan swap. `cargo run -p xynoos-cli -- pressure snapshot --human` menampilkan ringkasan; `pressure snapshot` menghasilkan CSV dan `pressure sample --count 10 --interval-ms 1000 --output pressure.csv` membuat file baru. Batas count 1–60, interval 100–60000 ms. Data sumber dibaca berurutan dan bisa parsial; scope procfs container dapat berbeda dari perangkat lain. API `snapshot_delta` menyediakan interval monotonic dan mendeteksi counter reset. Lihat [laporan TASK013](docs/reports/TASK-013-PRESSUREIQ-LINUX-TELEMETRY-REPORT.md).
+
+### PressureIQ: pengamatan sistem terpadu
+
+`cargo run -p xynoos-cli -- system snapshot` menampilkan sumber CPU, memori,
+I/O, cgroup v2 dan kemampuan DRM, thermal serta power secara read-only.
+`cargo run -p xynoos-cli --release -- system sample --count 5 --interval-ms 200`
+mengeluarkan CSV ke stdout; alihkan stdout ke file biasa bila diperlukan.
+Perintah `pressure` sebelumnya tetap tersedia. Pembacaan antar-sumber tidak
+atomik. Data host dan cgroup memiliki cakupan berbeda dan bukan bukti optimasi.
+Lihat [arsitektur](docs/ARCHITECTURE.md) dan laporan TASK 014 untuk satuan,
+batasan serta hasil pengukuran.

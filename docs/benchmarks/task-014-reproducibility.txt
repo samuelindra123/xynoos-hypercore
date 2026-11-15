@@ -1,0 +1,7 @@
+Lingkungan dan perintah reproduksi (2026-11-15 UTC)
+Baseline: 242ae9936efbaca3f11b5386c809018c71267fa6; Rust 1.100.0; Linux 6.8.0-1070-azure x86_64; 4 CPU logis pada /proc/stat.
+cargo build -p xynoos-cli --release
+python3 scripts/task-014-measure.py
+cat docs/benchmarks/task-014-summary.csv
+cargo test --workspace
+Collector dibatasi lima run x lima sampel, interval 200 ms, warm-up dua proses. Run terakhir memuat CPU 150 ms, RAM 4 MiB dan file sementara 1 MiB; file dihapus otomatis. Runtime dan kondisi host berubah, sehingga angka yang diukur ulang tidak harus identik. Kolom collector_cpu_seconds dan collector_peak_rss_kib berasal dari wait4 hanya untuk CLI; nilai max RSS dapat mencakup high-water pasca fork sebelum exec. task-014-validation.txt mencatat pemeriksaan CSV dan VmHWM collector melalui polling. Dataset host tidak memuat nama proses, command line atau environment.
