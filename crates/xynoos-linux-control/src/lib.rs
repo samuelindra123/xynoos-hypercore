@@ -123,6 +123,7 @@ pub fn validate_telemetry(
 
 mod bound_child;
 pub mod controller;
+pub mod empty_child_coordinator;
 pub mod systemd_identity;
 pub mod transaction;
 
