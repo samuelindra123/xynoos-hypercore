@@ -223,6 +223,17 @@ impl Selector {
         order: &[usize],
         inspection_ns: Option<&mut u128>,
     ) -> Result<(Option<usize>, SearchStats, Decision), crate::physical::Error> {
+        self.fast_event_hook(sim, index, pressure, order, inspection_ns, |_| Ok(()))
+    }
+    fn fast_event_hook<F: FnMut(u8) -> Result<(), crate::physical::Error>>(
+        &mut self,
+        sim: &mut Simulator,
+        index: usize,
+        pressure: u16,
+        order: &[usize],
+        inspection_ns: Option<&mut u128>,
+        mut hook: F,
+    ) -> Result<(Option<usize>, SearchStats, Decision), crate::physical::Error> {
         use crate::physical::Error;
         if order.len() != sim.pages.len() || order.is_empty() || order.len() > 64 {
             return Err(Error::InvalidInput);
@@ -234,14 +245,17 @@ impl Selector {
             }
             seen[i] = true;
         }
+        hook(0)?;
         let mut prepared = sim.clone();
         let limits = prepared.prepare_access(index, pressure)?;
+        hook(1)?;
         let inspection_start = inspection_ns.as_ref().map(|_| std::time::Instant::now());
         let mut stats = SearchStats::default();
         let mut chosen = None;
         for offset in 0..order.len() {
             let i = order[(self.cursor + offset) % order.len()];
             let (d, metrics) = prepared.inspect_prepared(i, limits)?;
+            hook(2)?;
             stats.evaluations += 1;
             stats.capacity += metrics.last_capacity_rejections;
             stats.budget += metrics.last_budget_rejections;
@@ -268,7 +282,9 @@ impl Selector {
         if chosen.is_none() {
             stats.no_policy_migration = 1;
         }
+        hook(3)?;
         let decision = prepared.complete_candidate(chosen.unwrap_or(index), limits)?;
+        hook(4)?;
         *sim = prepared;
         self.cursor = (self.cursor + 1) % order.len();
         Ok((chosen, stats, decision))
@@ -408,5 +424,67 @@ mod fast_tests {
         let mut s = Selector::default();
         assert!(s.fast_event(&mut a, 0, 800, &[0; 16]).is_err());
         assert_eq!(a, before);
+    }
+}
+
+#[cfg(test)]
+mod injected_tests {
+    use super::*;
+    use crate::physical::{fixture, Error, Policy};
+    #[test]
+    fn stage_errors_rollback() {
+        for stage in 0..5 {
+            let mut s = fixture(Policy::Aura);
+            let before = s.clone();
+            let mut selector = Selector::default();
+            let initial = selector.clone();
+            let order: Vec<_> = (0..16).collect();
+            let r = selector.fast_event_hook(&mut s, 0, 800, &order, None, |phase| {
+                if phase == stage {
+                    Err(Error::Capacity)
+                } else {
+                    Ok(())
+                }
+            });
+            assert_eq!(r, Err(Error::Capacity));
+            assert_eq!(s, before);
+            assert_eq!(selector, initial);
+        }
+    }
+    #[test]
+    fn unwind_before_commit_rollback() {
+        for stage in 0..5 {
+            let mut s = fixture(Policy::Aura);
+            let before = s.clone();
+            let mut selector = Selector::default();
+            let initial = selector.clone();
+            let order: Vec<_> = (0..16).collect();
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                selector.fast_event_hook(&mut s, 0, 800, &order, None, |phase| {
+                    assert_ne!(phase, stage, "injection unwind");
+                    Ok(())
+                })
+            }));
+            assert!(result.is_err());
+            assert_eq!(s, before);
+            assert_eq!(selector, initial);
+        }
+    }
+    #[test]
+    fn controlled_allocation_rejection() {
+        let mut s = fixture(Policy::Aura);
+        let before = s.clone();
+        let mut selector = Selector::default();
+        let order: Vec<_> = (0..16).collect();
+        let r = selector.fast_event_hook(&mut s, 0, 800, &order, None, |phase| {
+            if phase == 0 {
+                let mut v = Vec::<u8>::new();
+                v.try_reserve_exact(usize::MAX)
+                    .map_err(|_| Error::Capacity)?;
+            }
+            Ok(())
+        });
+        assert_eq!(r, Err(Error::Capacity));
+        assert_eq!(s, before);
     }
 }
