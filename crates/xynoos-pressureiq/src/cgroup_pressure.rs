@@ -163,13 +163,14 @@ pub fn delta(a: &Snapshot, b: &Snapshot, source_name: &str) -> Result<PressureDe
     if a.process != b.process || a.cgroup != b.cgroup {
         return Err(Error::Malformed("identity mismatch".into()));
     }
+    let expected = a.cgroup.path.join(format!("{source_name}.pressure"));
     let (a, b) = match source_name {
         "cpu" => (&a.cpu, &b.cpu),
         "memory" => (&a.memory, &b.memory),
         "io" => (&a.io, &b.io),
         _ => return Err(Error::Malformed("source".into())),
     };
-    if a.path != b.path {
+    if a.path != b.path || a.path != expected {
         return Err(Error::Malformed("source mismatch".into()));
     }
     let interval =
@@ -242,5 +243,10 @@ mod tests {
         ));
         b.cgroup.inode += 1;
         assert!(delta(&a, &b, "io").is_err());
+        b.cgroup.inode -= 1;
+        let mut wrong = a.clone();
+        wrong.io.path = wrong.cgroup.path.join("cpu.pressure");
+        b.io.path = wrong.io.path.clone();
+        assert!(delta(&wrong, &b, "io").is_err());
     }
 }

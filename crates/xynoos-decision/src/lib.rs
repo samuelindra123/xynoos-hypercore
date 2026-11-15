@@ -363,14 +363,16 @@ pub struct WorkloadDecision {
     pub explanation: String,
     pub pressure_percent: Option<[f64; 3]>,
 }
+type PreviousWorkload = (
+    xynoos_pressureiq::workload::Identity,
+    xynoos_pressureiq::cgroup_pressure::CgroupIdentity,
+    [Instant; 3],
+    Instant,
+    [f64; 3],
+);
 #[derive(Default)]
 pub struct WorkloadEngine {
-    previous: Option<(
-        xynoos_pressureiq::workload::Identity,
-        xynoos_pressureiq::cgroup_pressure::CgroupIdentity,
-        [Instant; 3],
-        [f64; 3],
-    )>,
+    previous: Option<PreviousWorkload>,
     active: [bool; 3],
     last_change: Option<Instant>,
 }
@@ -392,6 +394,12 @@ impl WorkloadEngine {
             if let WorkloadScope::OperatorAttestedIsolated { process, cgroup } = scope {
                 if *process != s.process || *cgroup != s.cgroup {
                     return Err("workload or cgroup identity mismatch");
+                }
+                if [s.cpu.at, s.memory.at, s.io.at]
+                    .into_iter()
+                    .any(|at| s.isolation_check.at < at)
+                {
+                    return Err("isolation check predates PSI readings");
                 }
                 if now
                     .checked_duration_since(s.isolation_check.at)
@@ -449,8 +457,12 @@ impl WorkloadEngine {
         }
         out.scope = "operator_attested_isolated_cgroup";
         let at = [s.cpu.at, s.memory.at, s.io.at];
-        if let Some((p, c, t, _)) = &self.previous {
-            if *p != s.process || *c != s.cgroup || (0..3).any(|i| at[i] <= t[i]) {
+        if let Some((p, c, t, isolation_at, _)) = &self.previous {
+            if *p != s.process
+                || *c != s.cgroup
+                || s.isolation_check.at <= *isolation_at
+                || (0..3).any(|i| at[i] <= t[i])
+            {
                 *self = Self::default();
                 out.explanation = "changed identity or non-increasing observation".into();
                 return out;
@@ -459,12 +471,17 @@ impl WorkloadEngine {
                 *self = Self::default();
             }
         }
-        let previous = self
-            .previous
-            .replace((s.process.clone(), s.cgroup.clone(), at, values));
-        let Some((_, _, _, old)) = previous else {
+        let previous = self.previous.replace((
+            s.process.clone(),
+            s.cgroup.clone(),
+            at,
+            s.isolation_check.at,
+            values,
+        ));
+        let Some((_, _, _, _, old)) = previous else {
             out.kind = Kind::Observe;
-            out.explanation = "need two fresh isolated cgroup observations".into();
+            out.explanation =
+                "need two fresh operator-attested isolated cgroup observations".into();
             return out;
         };
         let cooling = self
@@ -491,7 +508,8 @@ impl WorkloadEngine {
             .collect();
         if names.is_empty() {
             out.kind = Kind::Observe;
-            out.explanation = "no sustained isolated cgroup pressure above threshold".into();
+            out.explanation =
+                "no sustained operator-attested isolated cgroup pressure above threshold".into();
         } else {
             out.kind = Kind::Recommend;
             out.explanation = format!("sustained operator-attested isolated cgroup {} pressure; benefit unproven, isolation depends on operator guarantee", names.join(", "));
@@ -584,6 +602,9 @@ mod scoped_tests {
         b.memory.path = "/proc/pressure/memory".into();
         assert_eq!(e.evaluate(&b, &isolated(&b), t).kind, Kind::Decline);
         let mut b = fixture(t + Duration::from_secs(1));
+        b.isolation_check.at = t;
+        assert_eq!(e.evaluate(&b, &isolated(&b), b.cpu.at).kind, Kind::Decline);
+        b.isolation_check.at = b.cpu.at;
         b.io.at = t;
         assert_eq!(e.evaluate(&a, &isolated(&a), t).kind, Kind::Observe);
         assert_eq!(e.evaluate(&b, &isolated(&b), b.cpu.at).kind, Kind::Decline);
