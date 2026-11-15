@@ -1,0 +1,8 @@
+[package]
+name = "xynoos-bench"
+version = "0.1.0"
+edition = "2021"
+license = "GPL-3.0-only"
+[dependencies]
+xynoos-hypermemory = { path = "../xynoos-hypermemory" }
+lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-encode", "safe-decode"] }
