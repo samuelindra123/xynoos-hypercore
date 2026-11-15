@@ -1,0 +1,1 @@
+648 pasangan baseline TASK010 dan type-state TASK011 identik pada semua field selain event_ns dan inspection_ns; executable baseline dibuat offline dari d082f60 dengan harness TASK011 identik.

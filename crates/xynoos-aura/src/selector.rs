@@ -194,8 +194,53 @@ mod aware_tests {
     }
 }
 
+// Hanya Prepared yang dapat diinspeksi; hanya CommitReady dapat dipublikasikan.
+struct Prepared {
+    simulation: Simulator,
+    limits: (u64, u64),
+}
+struct CommitReady {
+    simulation: Simulator,
+    decision: Decision,
+}
+impl Prepared {
+    fn new(
+        original: &Simulator,
+        index: usize,
+        pressure: u16,
+    ) -> Result<Self, crate::physical::Error> {
+        let mut simulation = original.try_clone_metadata()?;
+        let limits = simulation.prepare_access(index, pressure)?;
+        Ok(Self { simulation, limits })
+    }
+    fn inspect(
+        &mut self,
+        index: usize,
+    ) -> Result<(Decision, crate::physical::Metrics), crate::physical::Error> {
+        self.simulation.inspect_prepared(index, self.limits)
+    }
+    fn validate(mut self, index: usize) -> Result<CommitReady, crate::physical::Error> {
+        let decision = self.simulation.complete_candidate(index, self.limits)?;
+        Ok(CommitReady {
+            simulation: self.simulation,
+            decision,
+        })
+    }
+}
+impl CommitReady {
+    fn publish(self, original: &mut Simulator) -> Decision {
+        *original = self.simulation;
+        self.decision
+    }
+}
+
 impl Selector {
     /// Satu clone transaksi dan satu layanan akses, tanpa Vec clone dalam loop kandidat.
+    ///
+    /// Prepared adalah detail private dan tidak dapat dipublikasikan oleh caller:
+    /// ```compile_fail
+    /// use xynoos_aura::selector::Prepared;
+    /// ```
     pub fn fast_event(
         &mut self,
         sim: &mut Simulator,
@@ -246,15 +291,14 @@ impl Selector {
             seen[i] = true;
         }
         hook(0)?;
-        let mut prepared = sim.try_clone_metadata()?;
-        let limits = prepared.prepare_access(index, pressure)?;
+        let mut prepared = Prepared::new(sim, index, pressure)?;
         hook(1)?;
         let inspection_start = inspection_ns.as_ref().map(|_| std::time::Instant::now());
         let mut stats = SearchStats::default();
         let mut chosen = None;
         for offset in 0..order.len() {
             let i = order[(self.cursor + offset) % order.len()];
-            let (d, metrics) = prepared.inspect_prepared(i, limits)?;
+            let (d, metrics) = prepared.inspect(i)?;
             hook(2)?;
             stats.evaluations += 1;
             stats.capacity += metrics.last_capacity_rejections;
@@ -283,9 +327,9 @@ impl Selector {
             stats.no_policy_migration = 1;
         }
         hook(3)?;
-        let decision = prepared.complete_candidate(chosen.unwrap_or(index), limits)?;
+        let ready = prepared.validate(chosen.unwrap_or(index))?;
         hook(4)?;
-        *sim = prepared;
+        let decision = ready.publish(sim);
         self.cursor = (self.cursor + 1) % order.len();
         Ok((chosen, stats, decision))
     }
@@ -392,6 +436,21 @@ mod fast_tests {
                 }
             }
         }
+    }
+    #[test]
+    fn prepared_is_private_until_validated_publication() {
+        let mut original = fixture(Policy::Aura);
+        let before = original.clone();
+        let mut prepared = Prepared::new(&original, 0, 800).unwrap();
+        prepared.inspect(0).unwrap();
+        prepared.inspect(4).unwrap();
+        assert_eq!(original, before);
+        let ready = prepared.validate(4).unwrap();
+        assert_eq!(original, before);
+        let mut expected = before.clone();
+        let d = expected.event_candidate(0, 800, 4).unwrap();
+        assert_eq!(ready.publish(&mut original), d);
+        assert_eq!(original, expected);
     }
     #[test]
     fn failures_atomic() {
