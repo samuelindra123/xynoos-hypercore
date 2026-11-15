@@ -1,0 +1,7 @@
+groups,version,mode,median_noninspection_ns_batch,min_noninspection_ns_batch,max_noninspection_ns_batch,samples
+1,baseline,fast,25738.5,19573,43095,72
+1,current,fast,33251.0,27227,117016,72
+16,baseline,fast,36721.0,29715,73104,72
+16,current,fast,44510.5,36878,86661,72
+64,baseline,fast,53043.5,45977,81626,72
+64,current,fast,60743.5,52698,114276,72
