@@ -1,0 +1,46 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+     Running unittests src/lib.rs (target/debug/build/xynoos-aura/1ce54bfa213956b7/out/xynoos_aura-1ce54bfa213956b7)
+
+running 4 tests
+test selector::injected_tests::controlled_allocation_rejection ... ok
+
+thread 'selector::injected_tests::unwind_before_commit_rollback' (153356) panicked at crates/xynoos-aura/src/selector.rs:464:21:
+assertion `left != right` failed: injection unwind
+  left: 0
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test selector::injected_tests::targeted_reservation_atomic ... ok
+
+thread 'selector::injected_tests::unwind_before_commit_rollback' (153356) panicked at crates/xynoos-aura/src/selector.rs:464:21:
+assertion `left != right` failed: injection unwind
+  left: 1
+ right: 1
+test selector::injected_tests::stage_errors_rollback ... ok
+
+thread 'selector::injected_tests::unwind_before_commit_rollback' (153356) panicked at crates/xynoos-aura/src/selector.rs:464:21:
+assertion `left != right` failed: injection unwind
+  left: 2
+ right: 2
+
+thread 'selector::injected_tests::unwind_before_commit_rollback' (153356) panicked at crates/xynoos-aura/src/selector.rs:464:21:
+assertion `left != right` failed: injection unwind
+  left: 3
+ right: 3
+
+thread 'selector::injected_tests::unwind_before_commit_rollback' (153356) panicked at crates/xynoos-aura/src/selector.rs:464:21:
+assertion `left != right` failed: injection unwind
+  left: 4
+ right: 4
+test selector::injected_tests::unwind_before_commit_rollback ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 33 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running unittests src/lib.rs (target/debug/build/xynoos-aura/1ce54bfa213956b7/out/xynoos_aura-1ce54bfa213956b7)
+
+running 3 tests
+test selector::reservation_tests::injected_reservation ... ok
+test selector::reservation_tests::reserve_overflow_is_distinct ... ok
+test selector::reservation_tests::same_candidate_and_access ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 34 filtered out; finished in 0.02s

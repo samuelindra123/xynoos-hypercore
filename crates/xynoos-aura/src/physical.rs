@@ -39,6 +39,7 @@ impl Decision {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {
     InvalidInput,
+    AllocationReservation,
     Capacity,
     Overflow,
 }
@@ -408,6 +409,36 @@ impl Simulator {
             engine,
             metrics,
             tick: 0,
+        })
+    }
+    /// Menyalin hanya Vec profil secara fallible; seluruh field profil fixed-size.
+    pub(crate) fn try_clone_metadata(&self) -> Result<Self, Error> {
+        self.try_clone_metadata_with(|pages, count| {
+            pages
+                .try_reserve_exact(count)
+                .map_err(|_| Error::AllocationReservation)
+        })
+    }
+    pub(crate) fn try_clone_metadata_with<F>(&self, reserve: F) -> Result<Self, Error>
+    where
+        F: FnOnce(&mut Vec<PageGroupProfile>, usize) -> Result<(), Error>,
+    {
+        if self.pages.is_empty() || self.pages.len() > MAX_GROUPS {
+            return Err(Error::InvalidInput);
+        }
+        let mut pages = Vec::new();
+        reserve(&mut pages, self.pages.len())?;
+        // Injector tidak boleh menyebabkan extend melakukan alokasi infallible.
+        if pages.capacity() < self.pages.len() {
+            return Err(Error::AllocationReservation);
+        }
+        pages.extend(self.pages.iter().cloned());
+        Ok(Self {
+            state: self.state.clone(),
+            pages,
+            engine: self.engine.clone(),
+            metrics: self.metrics.clone(),
+            tick: self.tick,
         })
     }
     /// Transaksi clone dibatasi MAX_GROUPS untuk rollback pada error aritmetika.
