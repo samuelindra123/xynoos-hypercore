@@ -31,3 +31,5 @@ TASK 005 menambahkan modul `xynoos_aura::physical`: RAM raw dan compressed berba
 Eksperimen awal TASK006 dengan mask eksogen diarsipkan pada [laporan awal](docs/reports/TASK-006-PRELIMINARY-REPORT.md); hasil tersebut memiliki confound eligibility dan terpisah dari eksperimen completion.
 
 TASK 006 completion berstatus **SELESAI**. Preview selector memakai event commit yang sama; journal dua grup lulus differential test tetapi clone tetap default. Eksperimen final: `cargo run -p xynoos-aura --example completion --release > docs/benchmarks/task-006-final-raw.csv`, lalu `python3 scripts/summarize_task006.py`. Hasil awal tetap tersimpan; lihat laporan TASK006 yang telah direvisi.
+
+TASK007 menambahkan FastPath eksperimental O(n) yang mempertahankan oracle/default TASK006. Jalankan `cargo build -p xynoos-aura --examples --release` dan `python3 scripts/benchmark_task007.py`. [Laporan TASK007](docs/reports/TASK-007-AURA-FASTPATH-RESEARCH-REPORT.md) mencakup differential testing, data timing lokal dan batas validitas.

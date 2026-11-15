@@ -639,6 +639,231 @@ impl Simulator {
         self.state.io_budget_bytes = io_limit;
         Ok(decision)
     }
+    // Jalur TASK007; step di atas tetap oracle historis.
+    pub(crate) fn prepare_access(
+        &mut self,
+        index: usize,
+        pressure: u16,
+    ) -> Result<(u64, u64), Error> {
+        if index >= self.pages.len() || pressure > 1000 {
+            return Err(Error::InvalidInput);
+        }
+        self.tick = add(self.tick, 1)?;
+        self.state.pressure_permille = pressure;
+        self.engine.tick_migrations = 0;
+        let cpu_limit = self.state.cpu_budget_ns;
+        let io_limit = self.state.io_budget_bytes;
+        let p = &mut self.pages[index];
+        if p.last_access_tick > self.tick || p.last_migration_tick.is_some_and(|x| x > self.tick) {
+            return Err(Error::InvalidInput);
+        }
+        p.accesses = add(p.accesses, 1)?;
+        p.last_access_tick = self.tick;
+        if p.tier != Tier::Ram {
+            let cpu = if p.tier == Tier::Compressed {
+                p.decompress_ns
+            } else {
+                0
+            };
+            let io = if p.tier == Tier::Backing {
+                p.raw_bytes
+            } else {
+                0
+            };
+            if cpu > self.state.cpu_budget_ns || io > self.state.io_budget_bytes {
+                self.metrics.stall_ns =
+                    add(self.metrics.stall_ns, self.engine.config.stall_penalty_ns)?;
+            }
+            self.state.cpu_budget_ns = self.state.cpu_budget_ns.saturating_sub(cpu);
+            self.state.io_budget_bytes = self.state.io_budget_bytes.saturating_sub(io);
+            self.metrics.refaults = add(self.metrics.refaults, 1)?;
+            let latency = add(
+                self.state.restore_ns[p.tier.index()],
+                if p.tier == Tier::Compressed {
+                    p.decompress_ns
+                } else {
+                    0
+                },
+            )?;
+            self.metrics.restore_ns = add(self.metrics.restore_ns, latency)?;
+            if p.tier == Tier::Compressed {
+                self.metrics.cpu_ns = add(self.metrics.cpu_ns, p.decompress_ns)?
+            } else {
+                self.metrics.io_bytes = add(self.metrics.io_bytes, p.raw_bytes)?
+            }
+            // Service in place: tidak mempromosikan bila kapasitas/budget tidak tersedia.
+            if !self.state.emergency
+                && p.eligible
+                && feasible(&self.state, p, Tier::Ram)?
+                && self.engine.migrations < self.engine.config.max_migrations
+                && self.engine.tick_migrations < self.engine.config.rate_limit_per_tick
+                && !p
+                    .last_migration_tick
+                    .is_some_and(|x| self.tick - x < self.engine.config.cooldown_ticks)
+            {
+                self.metrics.peak_total_bytes = self
+                    .metrics
+                    .peak_total_bytes
+                    .max(add(physical_usage(&self.state)?, p.raw_bytes)?);
+                self.metrics.peak_temporary_bytes =
+                    self.metrics.peak_temporary_bytes.max(p.raw_bytes);
+                self.state.used_bytes[p.tier.index()] = self.state.used_bytes[p.tier.index()]
+                    .checked_sub(p.bytes(p.tier))
+                    .ok_or(Error::Capacity)?;
+                self.state.used_bytes[0] = add(self.state.used_bytes[0], p.raw_bytes)?;
+                if p.last_migration_tick
+                    .is_some_and(|x| self.tick - x < self.engine.config.cooldown_ticks)
+                {
+                    self.metrics.oscillations = add(self.metrics.oscillations, 1)?
+                }
+                p.tier = Tier::Ram;
+                p.last_migration_tick = Some(self.tick);
+                self.metrics.migrations = add(self.metrics.migrations, 1)?;
+                self.engine.migrations = add(self.engine.migrations, 1)?;
+                self.engine.tick_migrations = 1;
+            } else {
+                self.metrics.stall_ns =
+                    add(self.metrics.stall_ns, self.engine.config.stall_penalty_ns)?;
+            }
+        }
+        Ok((cpu_limit, io_limit))
+    }
+    pub(crate) fn complete_candidate(
+        &mut self,
+        candidate: usize,
+        limits: (u64, u64),
+    ) -> Result<Decision, Error> {
+        if candidate >= self.pages.len() {
+            return Err(Error::InvalidInput);
+        }
+        let pressure = self.state.pressure_permille;
+        let (cpu_limit, io_limit) = limits;
+        self.metrics.last_feasible_mask = 0;
+        self.metrics.last_capacity_rejections = 0;
+        self.metrics.last_budget_rejections = 0;
+        let candidate_profile = &self.pages[candidate];
+        let next_tick = self.tick;
+        let guards = candidate_profile.eligible
+            && !self.state.emergency
+            && self.engine.migrations < self.engine.config.max_migrations
+            && self.engine.tick_migrations < self.engine.config.rate_limit_per_tick
+            && !candidate_profile
+                .last_migration_tick
+                .is_some_and(|x| next_tick.saturating_sub(x) < self.engine.config.cooldown_ticks);
+        if guards {
+            for (bit, target) in [Tier::Ram, Tier::Compressed, Tier::Backing]
+                .into_iter()
+                .enumerate()
+            {
+                if target == candidate_profile.tier {
+                    continue;
+                }
+                if feasible(&self.state, candidate_profile, target)? {
+                    self.metrics.last_feasible_mask |= 1 << bit;
+                } else {
+                    let mut unbudgeted = self.state.clone();
+                    unbudgeted.cpu_budget_ns = u64::MAX;
+                    unbudgeted.io_budget_bytes = u64::MAX;
+                    unbudgeted.temporary_budget_bytes = u64::MAX;
+                    if feasible(&unbudgeted, candidate_profile, target)? {
+                        self.metrics.last_budget_rejections =
+                            add(self.metrics.last_budget_rejections, 1)?;
+                    } else {
+                        self.metrics.last_capacity_rejections =
+                            add(self.metrics.last_capacity_rejections, 1)?;
+                    }
+                }
+            }
+        }
+        let p = &mut self.pages[candidate];
+        let decision = self.engine.decide(&self.state, p, self.tick)?;
+        if decision == Decision::Fallback
+            || (self.engine.policy == Policy::Aura
+                && p.confidence_permille < self.engine.config.confidence_min)
+        {
+            self.metrics.fallbacks = add(self.metrics.fallbacks, 1)?
+        }
+        if let Some(t) = decision.tier() {
+            if !feasible(&self.state, p, t)? {
+                return Err(Error::Capacity);
+            }
+            self.metrics.peak_total_bytes = self
+                .metrics
+                .peak_total_bytes
+                .max(add(physical_usage(&self.state)?, p.bytes(t))?);
+            self.metrics.peak_temporary_bytes = self.metrics.peak_temporary_bytes.max(p.bytes(t));
+            self.state.used_bytes[p.tier.index()] = self.state.used_bytes[p.tier.index()]
+                .checked_sub(p.bytes(p.tier))
+                .ok_or(Error::Capacity)?;
+            self.state.used_bytes[t.index()] = add(self.state.used_bytes[t.index()], p.bytes(t))?;
+            if t == Tier::Compressed {
+                self.metrics.compressions = add(self.metrics.compressions, 1)?;
+                self.metrics.cpu_ns = add(self.metrics.cpu_ns, p.compress_ns)?
+            }
+            if t == Tier::Backing {
+                self.metrics.io_bytes = add(self.metrics.io_bytes, p.raw_bytes)?
+            }
+            p.tier = t;
+            p.last_migration_tick = Some(self.tick);
+            self.metrics.migrations = add(self.metrics.migrations, 1)?;
+            self.engine.migrations = add(self.engine.migrations, 1)?;
+            self.engine.tick_migrations = add(self.engine.tick_migrations, 1)?;
+        }
+        if pressure >= self.engine.config.enter_pressure
+            && (if self.state.stall_raw_only {
+                self.state.used_bytes[0]
+            } else {
+                physical_usage(&self.state)?
+            }) > self
+                .state
+                .stall_budget_override
+                .unwrap_or(self.state.physical_budget_bytes)
+                - self
+                    .state
+                    .stall_budget_override
+                    .unwrap_or(self.state.physical_budget_bytes)
+                    / 4
+        {
+            self.metrics.stall_ns =
+                add(self.metrics.stall_ns, self.engine.config.stall_penalty_ns)?;
+        }
+        for i in 0..3 {
+            self.metrics.peak_bytes[i] = self.metrics.peak_bytes[i].max(self.state.used_bytes[i]);
+        }
+        self.metrics.peak_physical_bytes = self
+            .metrics
+            .peak_physical_bytes
+            .max(physical_usage(&self.state)?);
+        if physical_usage(&self.state)? > self.state.physical_budget_bytes {
+            return Err(Error::Capacity);
+        }
+        self.state.cpu_budget_ns = cpu_limit;
+        self.state.io_budget_bytes = io_limit;
+        Ok(decision)
+    }
+    pub(crate) fn inspect_prepared(
+        &mut self,
+        candidate: usize,
+        limits: (u64, u64),
+    ) -> Result<(Decision, Metrics), Error> {
+        if candidate >= self.pages.len() {
+            return Err(Error::InvalidInput);
+        }
+        let saved = (
+            self.state.clone(),
+            self.engine.clone(),
+            self.metrics.clone(),
+            self.pages[candidate].clone(),
+        );
+        let result = self
+            .complete_candidate(candidate, limits)
+            .map(|decision| (decision, self.metrics.clone()));
+        self.state = saved.0;
+        self.engine = saved.1;
+        self.metrics = saved.2;
+        self.pages[candidate] = saved.3;
+        result
+    }
 }
 
 /// Konfigurasi eksperimen sintetis, bukan hasil kalibrasi hardware.
