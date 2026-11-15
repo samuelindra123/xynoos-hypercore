@@ -4,6 +4,7 @@ use std::{
     io::{Read, Write},
     path::Path,
     process::{Child, Command, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
 };
 use xynoos_pressureiq::{cgroup_pressure, system, workload};
@@ -65,19 +66,178 @@ fn worker(kind: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+static CANCELLED: AtomicBool = AtomicBool::new(false);
+
+extern "C" fn cancel_handler(_: libc::c_int) {
+    CANCELLED.store(true, Ordering::Relaxed);
+}
+
+fn install_cancellation() -> Result<(), String> {
+    // SAFETY: sigaction is initialized before use and the handler only stores an atomic flag.
+    unsafe {
+        let mut action: libc::sigaction = std::mem::zeroed();
+        action.sa_sigaction = cancel_handler as *const () as usize;
+        libc::sigemptyset(&mut action.sa_mask);
+        for signal in [libc::SIGINT, libc::SIGTERM] {
+            if libc::sigaction(signal, &action, std::ptr::null_mut()) != 0 {
+                return Err(format!(
+                    "install signal handler: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+fn cancellation_check() -> Result<(), String> {
+    if CANCELLED.load(Ordering::Relaxed) {
+        Err("cancelled".into())
+    } else {
+        Ok(())
+    }
+}
+
+// On failure return after a bounded interval; the caller must preserve the target.
+fn stop_and_reap(child: &mut Child) -> Result<(), String> {
+    if child
+        .try_wait()
+        .map_err(|e| format!("child status: {e}"))?
+        .is_some()
+    {
+        return Ok(());
+    }
+    let kill_error = child.kill().err();
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return Ok(()),
+            Err(e) => {
+                return Err(format!(
+                    "cannot verify child reaping: {e}; kill error: {kill_error:?}"
+                ))
+            }
+            Ok(None) if Instant::now() >= deadline => {
+                return Err(format!(
+                    "child termination not verified; kill error: {kill_error:?}"
+                ))
+            }
+            Ok(None) => std::thread::sleep(Duration::from_millis(10)),
+        }
+    }
+}
+
 // The worker blocks on a pipe before allocating memory or performing work.
-fn gated_memory_worker() -> Result<(), Box<dyn std::error::Error>> {
+fn gated_memory_worker(passes: usize) -> Result<(), Box<dyn std::error::Error>> {
     let mut release = [0u8; 1];
     std::io::stdin().read_exact(&mut release)?;
     if release != [1] {
         return Err("invalid release".into());
     }
     let mut memory = vec![0u8; 32 * 1024 * 1024];
-    for _ in 0..128 {
+    for _ in 0..passes {
         for byte in memory.iter_mut().step_by(4096) {
             *byte = byte.wrapping_add(1);
         }
         std::hint::black_box(&memory);
+    }
+    Ok(())
+}
+
+// Observation only: two identical bounded processes; no policy is applied.
+fn memory_repeatability() -> Result<(), Box<dyn std::error::Error>> {
+    for repeat in 0..3 {
+        for sampled in if repeat % 2 == 0 {
+            [false, true]
+        } else {
+            [true, false]
+        } {
+            let mut competitor = Guard(
+                Command::new(std::env::current_exe()?)
+                    .arg("gated-memory-competitor")
+                    .stdin(Stdio::piped())
+                    .spawn()?,
+            );
+            let mut worker = Guard(
+                Command::new(std::env::current_exe()?)
+                    .arg("gated-memory-worker")
+                    .stdin(Stdio::piped())
+                    .spawn()?,
+            );
+            let mut sample_ns = 0;
+            let mut pressure_before = None;
+            if sampled {
+                let t = Instant::now();
+                pressure_before = system::collect_system()
+                    .memory
+                    .psi
+                    .result
+                    .ok()
+                    .map(|p| p.some.total_us);
+                sample_ns += t.elapsed().as_nanos();
+            }
+            competitor
+                .0
+                .stdin
+                .take()
+                .ok_or("competitor pipe")?
+                .write_all(&[1])?;
+            let start = Instant::now();
+            worker
+                .0
+                .stdin
+                .take()
+                .ok_or("worker pipe")?
+                .write_all(&[1])?;
+            let status = loop {
+                if let Some(status) = worker.0.try_wait()? {
+                    break status;
+                }
+                if start.elapsed() > Duration::from_secs(10) {
+                    return Err("worker timeout".into());
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            };
+            let elapsed = start.elapsed().as_nanos();
+            if !status.success() {
+                return Err("worker failed".into());
+            }
+            let competitor_running_at_finish = competitor.0.try_wait()?.is_none();
+            let mut pressure_after = None;
+            if sampled {
+                let t = Instant::now();
+                pressure_after = system::collect_system()
+                    .memory
+                    .psi
+                    .result
+                    .ok()
+                    .map(|p| p.some.total_us);
+                sample_ns += t.elapsed().as_nanos();
+            }
+            // Both workers have fixed work; wait only until the same bounded deadline.
+            loop {
+                if let Some(status) = competitor.0.try_wait()? {
+                    if !status.success() {
+                        return Err("competitor failed".into());
+                    }
+                    break;
+                }
+                if start.elapsed() > Duration::from_secs(10) {
+                    return Err("competitor timeout".into());
+                }
+                std::thread::sleep(Duration::from_millis(1));
+            }
+            println!(
+                "{}",
+                serde_json::json!({"record":"memory_repeatability", "repeat":repeat,
+                "sampled":sampled, "worker_passes":128, "competitor_passes":512,
+                "memory_bytes_per_process":33554432, "completion_ns":elapsed,
+                "competitor_running_at_worker_finish":competitor_running_at_finish,
+                "collection_ns":sample_ns, "visible_system_memory_psi_some_total_before_us":pressure_before,
+                "visible_system_memory_psi_some_total_after_us":pressure_after,
+                "kernel_intervention":false, "performance_effect":"NOT ESTABLISHED"})
+            );
+        }
     }
     Ok(())
 }
@@ -87,8 +247,15 @@ fn controlled(parent: &Path) -> Result<(), Box<dyn std::error::Error>> {
         transaction::{Backend, DisposableCgroup, Outcome},
         Action,
     };
+    install_cancellation()?;
+    cancellation_check()?;
     let snapshot = system::collect_system();
+    cancellation_check()?;
     let mut group = DisposableCgroup::create(parent, true)?;
+    if let Err(e) = cancellation_check() {
+        let cleanup = group.cleanup();
+        return Err(format!("{e}; disposable target cleanup: {cleanup:?}").into());
+    }
     let action = Action::MemoryLow {
         bytes: 32 * 1024 * 1024,
     };
@@ -99,41 +266,52 @@ fn controlled(parent: &Path) -> Result<(), Box<dyn std::error::Error>> {
         action,
         true,
         |target| {
-            let mut child = Guard(
-                Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
-                    .arg("gated-memory-worker")
-                    .stdin(Stdio::piped())
-                    .stdout(Stdio::null())
-                    .spawn()
-                    .map_err(|e| e.to_string())?,
-            );
-            target.place_child(&child.0)?;
-            target.verify_child()?;
-            xynoos_linux_control::validate_telemetry(&snapshot, Instant::now(), action)?;
-            if target.read_low()? != 32 * 1024 * 1024 {
-                return Err("control changed before release".into());
-            }
-            let started = Instant::now();
-            child
-                .0
-                .stdin
-                .take()
-                .ok_or("missing release pipe")?
-                .write_all(&[1])
-                .map_err(|e| e.to_string())?;
-            loop {
-                if let Some(status) = child.0.try_wait().map_err(|e| e.to_string())? {
-                    execution_ns = Some(started.elapsed().as_nanos());
-                    if !status.success() {
-                        return Err(format!("worker failed: {status}"));
+            cancellation_check()?;
+            let mut child = Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
+                .arg("gated-memory-worker")
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .spawn()
+                .map_err(|e| format!("worker spawn: {e}"))?;
+            let result = (|| -> Result<(), String> {
+                cancellation_check()?;
+                target.place_child(&child)?;
+                cancellation_check()?;
+                target.verify_child()?;
+                xynoos_linux_control::validate_telemetry(&snapshot, Instant::now(), action)?;
+                if target.read_low()? != 32 * 1024 * 1024 {
+                    return Err("control changed before release".into());
+                }
+                cancellation_check()?;
+                let started = Instant::now();
+                child
+                    .stdin
+                    .take()
+                    .ok_or("missing release pipe")?
+                    .write_all(&[1])
+                    .map_err(|e| e.to_string())?;
+                loop {
+                    cancellation_check()?;
+                    if let Some(status) = child.try_wait().map_err(|e| e.to_string())? {
+                        execution_ns = Some(started.elapsed().as_nanos());
+                        if !status.success() {
+                            return Err(format!("worker failed: {status}"));
+                        }
+                        return Ok(());
                     }
-                    return Ok(());
+                    if started.elapsed() > Duration::from_secs(10) {
+                        return Err("worker timeout".into());
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
                 }
-                if started.elapsed() > Duration::from_secs(10) {
-                    return Err("worker timeout".into());
-                }
-                std::thread::sleep(Duration::from_millis(5));
+            })();
+            if let Err(e) = stop_and_reap(&mut child) {
+                target.mark_unresolved();
+                return Err(format!(
+                    "{result:?}; {e}; target preserved and restoration blocked"
+                ));
             }
+            result
         },
     );
     let cleanup = if matches!(report.outcome, Outcome::Conflict | Outcome::RollbackFailed) {
@@ -164,7 +342,13 @@ fn validate_mode(mode: &str) -> Result<(), &'static str> {
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
     if args.len() == 2 && args[1] == "gated-memory-worker" {
-        return gated_memory_worker();
+        return gated_memory_worker(128);
+    }
+    if args.len() == 2 && args[1] == "gated-memory-competitor" {
+        return gated_memory_worker(512);
+    }
+    if args.len() == 2 && args[1] == "memory-repeatability" {
+        return memory_repeatability();
     }
     if args.get(1).is_some_and(|x| x == "controlled") {
         if args.len() != 5 || args[2] != "--authorize" || args[3] != "--parent" {
@@ -293,7 +477,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 #[cfg(test)]
 mod tests {
-    use super::validate_mode;
+    use super::{stop_and_reap, validate_mode};
+    use std::process::{Command, Stdio};
+    #[test]
+    fn stop_reaps_child_and_is_idempotent() {
+        let mut child = Command::new("sleep")
+            .arg("30")
+            .stdin(Stdio::null())
+            .spawn()
+            .unwrap();
+        stop_and_reap(&mut child).unwrap();
+        stop_and_reap(&mut child).unwrap();
+        assert!(child.try_wait().unwrap().is_some());
+    }
     #[test]
     fn modes_fail_closed() {
         assert!(validate_mode("observe").is_ok());

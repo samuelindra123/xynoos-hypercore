@@ -26,6 +26,10 @@ pub trait Backend {
     fn identity(&mut self) -> Result<Identity, String>;
     fn read_low(&mut self) -> Result<u64, String>;
     fn write_low(&mut self, value: u64) -> Result<(), String>;
+    /// Refuse restoration while a controlled process might still be running.
+    fn ready_to_restore(&mut self) -> Result<(), String> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -153,6 +157,12 @@ pub fn run_during<B: Backend>(
             report.events.push("operation completed".into());
         }
     }
+    // Never restore while a workload may still be running.
+    if let Err(e) = backend.ready_to_restore() {
+        report.outcome = Outcome::Conflict;
+        report.events.push(format!("restoration blocked: {e}"));
+        return report;
+    }
     // Revalidate immediately before restoring; never intentionally overwrite a known change.
     if let Err(e) = check(backend, id, bytes) {
         report.outcome = Outcome::Conflict;
@@ -201,6 +211,7 @@ pub struct DisposableCgroup {
     id: Identity,
     cleanup_on_drop: bool,
     member: Option<xynoos_pressureiq::workload::Identity>,
+    unresolved: bool,
 }
 impl DisposableCgroup {
     /// Creates an empty child only after authorization and ownership/delegation checks.
@@ -303,6 +314,7 @@ impl DisposableCgroup {
                 id,
                 cleanup_on_drop: true,
                 member: None,
+                unresolved: false,
             })
         })();
         if let Err(error) = result {
@@ -377,6 +389,12 @@ impl DisposableCgroup {
         Ok(())
     }
 
+    /// Prevent all further control writes when child termination cannot be verified.
+    pub fn mark_unresolved(&mut self) {
+        self.unresolved = true;
+        self.cleanup_on_drop = false;
+    }
+
     /// Preserve the target for operator inspection after ambiguous state or rollback failure.
     pub fn preserve(mut self) {
         self.cleanup_on_drop = false;
@@ -403,6 +421,9 @@ impl DisposableCgroup {
 }
 impl Backend for DisposableCgroup {
     fn identity(&mut self) -> Result<Identity, String> {
+        if self.unresolved {
+            return Err("worker termination unresolved; target preserved".into());
+        }
         let current = openat(
             self.parent.as_raw_fd(),
             &self.name,
@@ -442,6 +463,13 @@ impl Backend for DisposableCgroup {
             return Err("cgroup identity changed".into());
         }
         Ok(id)
+    }
+    fn ready_to_restore(&mut self) -> Result<(), String> {
+        self.identity()?;
+        if !read_at(&self.dir, c"cgroup.procs")?.trim().is_empty() {
+            return Err("controlled target still populated".into());
+        }
+        Ok(())
     }
     fn read_low(&mut self) -> Result<u64, String> {
         read_at(&self.dir, c"memory.low")?

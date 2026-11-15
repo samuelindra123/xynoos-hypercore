@@ -21,6 +21,7 @@ struct Fixture {
     change_read: Option<(usize, u64)>,
     identities: usize,
     fail_identity: Option<usize>,
+    unresolved: bool,
 }
 impl Fixture {
     fn new() -> Self {
@@ -40,6 +41,7 @@ impl Fixture {
             change_read: None,
             identities: 0,
             fail_identity: None,
+            unresolved: false,
         }
     }
     fn value(&self) -> u64 {
@@ -67,6 +69,13 @@ impl Backend for Fixture {
             inode: d.ino(),
             control_inode: f.ino(),
         })
+    }
+    fn ready_to_restore(&mut self) -> Result<(), String> {
+        if self.unresolved {
+            Err("injected unreaped worker".into())
+        } else {
+            Ok(())
+        }
     }
     fn read_low(&mut self) -> Result<u64, String> {
         self.reads += 1;
@@ -262,4 +271,21 @@ fn operation_conflict_is_not_overwritten() {
     assert_eq!(report.outcome, Outcome::Conflict);
     assert_eq!(f.value(), 12288);
     assert_eq!(f.writes, 1);
+}
+
+#[test]
+fn unreaped_worker_blocks_restoration_and_preserves_control() {
+    use xynoos_linux_control::transaction::run_during;
+    let mut f = Fixture::new();
+    let report = run_during(&mut f, &collect_system(), action(), true, |target| {
+        target.unresolved = true;
+        Err("injected termination failure".into())
+    });
+    assert_eq!(report.outcome, Outcome::Conflict);
+    assert_eq!(f.value(), 8192);
+    assert_eq!(f.writes, 1);
+    assert!(report
+        .events
+        .iter()
+        .any(|s| s.contains("restoration blocked")));
 }
