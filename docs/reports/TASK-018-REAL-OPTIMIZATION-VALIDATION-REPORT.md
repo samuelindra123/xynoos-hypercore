@@ -1,5 +1,36 @@
 # TASK 018 — Real optimization validation (partial)
 
+## TASK 018B update — partial, not ready for real intervention
+
+The TASK 018 observations below are historical; statements there that controlled mode always refuses describe the earlier commit. The new experimental path creates a random disposable child only under an explicitly authorized parent and launches its own worker blocked on a release pipe. It checks process start time, membership and cgroup device/inode, checks `memory.low` and fresh telemetry before releasing the worker, then waits with a timeout. The transaction now spans the callback and checks identity and value again before restoration. Worker errors are reported separately; a known conflict or rollback failure preserves the cgroup for inspection rather than deleting it. Unexpected membership and descendants cause refusal. Each experiment owns a unique target; there is no API to reopen an existing target. These checks are sequential, not atomic.
+
+**Lifecycle: PARTIAL; placement: PARTIAL; transaction spanning execution: PARTIAL.** The transaction callback is exercised in fixtures, including authorization, read-back and write refusal, operation failure, conflicts and rollback failure. Creation, process placement, timeout/cancellation and cleanup fault injection are incomplete, and real placement and the transaction around a real worker have not been validated. SIGTERM cancellation is not handled; abrupt termination, SIGKILL, power loss and concurrent writers can leave a child or a modified control. The process identity and membership checks are point-in-time and cannot establish continuous isolation. Do not run the controlled command until the missing lifecycle and fault-injection gates have been completed and reviewed. No claims of real writes or improvement are made. The controlled workload is fixed work (32 MiB, 128 passes), but no bounded competitor, repeated baseline/intervention comparison, scoped PSI or CPU accounting is implemented. It does not establish meaningful memory pressure.
+
+Codespaces recheck: PID 1 is `docker-init`; `/proc/self/cgroup` is `0::/init`. The mount root remains codespace:root mode 755 and `/sys/fs/cgroup/init` root:root mode 755. No safe delegated parent was identified, no write attempted. A live read-only cgroup probe succeeded and classified the cgroup as shared. Workspace tests, the 13 transaction fixtures, focused runner test, formatting, Clippy, check and rustdoc passed. Physical MX Linux validation remains **NOT VERIFIED**.
+
+### Standalone artifact and MX Linux preparation
+
+Build on a compatible x86-64 Linux machine with a glibc version no newer than the target, then copy the executable to the N5000 (or build in a compatible older distribution/container):
+
+```sh
+cargo build --release -p xynoos-decision --example optimization_experiment
+ldd target/release/examples/optimization_experiment
+# Copy target/release/examples/optimization_experiment to the test machine.
+./optimization_experiment observe > observe.jsonl
+./optimization_experiment dry-run > dry-run.jsonl
+```
+
+The binary is dynamically linked; match architecture and libc, and check `ldd` on the target. These read-only commands need no Rust installation. Detect actual service environment and delegation rather than assuming systemd:
+
+```sh
+cat /proc/1/comm
+findmnt -t cgroup2 -o TARGET,OPTIONS
+cat /proc/self/cgroup
+cat /sys/fs/cgroup/cgroup.controllers
+```
+
+An administrator must explicitly prepare an exclusive disposable cgroup v2 parent for the non-root test user, distinct from the mount root, with memory enabled in its `cgroup.subtree_control`, owner-only write access and no unrelated workloads or competing writers. On systemd, delegation may be provided by an administrator-managed delegated unit; MX Linux may instead use SysV init, in which case arrange delegation through that environment or use an explicitly prepared parent. The runner does not create privileged delegation or alter boot, swap, zram or CPU settings. Verify ownership, mount and controller files read-only, and keep a recovery session. The eventual opt-in syntax is `./optimization_experiment controlled --authorize --parent /absolute/delegated/parent`; it is **not yet approved for physical testing** because the safety gates above remain open. After a future run, verify no `xynoos-test-*` directory remains; investigate preserved targets and original values before any manual cleanup. Remove the administrator-created parent only after all child processes are gone and state has been checked; follow the host's delegation manager procedure. No automated privileged setup or teardown is supplied.
+
 Baseline `aa831f9a1206307c6280ac352401ce0a6b36afa2`. **Integration: PARTIAL. Real kernel write: NOT VERIFIED. Workload intervention: NOT VERIFIED. Performance improvement: NOT ESTABLISHED.** This is an observation and dry-run foundation, not an optimizer. Controlled mode deliberately refuses before any write; safe process placement and a transaction that remains applied while a workload runs have not been implemented.
 
 ## Environment and feasibility

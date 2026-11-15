@@ -1,7 +1,8 @@
 //! Bounded read-only repeatability experiment; JSON lines on stdout.
 use std::{
     fs::{self, OpenOptions},
-    io::Write,
+    io::{Read, Write},
+    path::Path,
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
 };
@@ -64,6 +65,94 @@ fn worker(kind: &str) -> Result<(), Box<dyn std::error::Error>> {
     }
     Ok(())
 }
+// The worker blocks on a pipe before allocating memory or performing work.
+fn gated_memory_worker() -> Result<(), Box<dyn std::error::Error>> {
+    let mut release = [0u8; 1];
+    std::io::stdin().read_exact(&mut release)?;
+    if release != [1] {
+        return Err("invalid release".into());
+    }
+    let mut memory = vec![0u8; 32 * 1024 * 1024];
+    for _ in 0..128 {
+        for byte in memory.iter_mut().step_by(4096) {
+            *byte = byte.wrapping_add(1);
+        }
+        std::hint::black_box(&memory);
+    }
+    Ok(())
+}
+
+fn controlled(parent: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    use xynoos_linux_control::{
+        transaction::{Backend, DisposableCgroup, Outcome},
+        Action,
+    };
+    let snapshot = system::collect_system();
+    let mut group = DisposableCgroup::create(parent, true)?;
+    let action = Action::MemoryLow {
+        bytes: 32 * 1024 * 1024,
+    };
+    let mut execution_ns = None;
+    let report = xynoos_linux_control::transaction::run_during(
+        &mut group,
+        &snapshot,
+        action,
+        true,
+        |target| {
+            let mut child = Guard(
+                Command::new(std::env::current_exe().map_err(|e| e.to_string())?)
+                    .arg("gated-memory-worker")
+                    .stdin(Stdio::piped())
+                    .stdout(Stdio::null())
+                    .spawn()
+                    .map_err(|e| e.to_string())?,
+            );
+            target.place_child(&child.0)?;
+            target.verify_child()?;
+            xynoos_linux_control::validate_telemetry(&snapshot, Instant::now(), action)?;
+            if target.read_low()? != 32 * 1024 * 1024 {
+                return Err("control changed before release".into());
+            }
+            let started = Instant::now();
+            child
+                .0
+                .stdin
+                .take()
+                .ok_or("missing release pipe")?
+                .write_all(&[1])
+                .map_err(|e| e.to_string())?;
+            loop {
+                if let Some(status) = child.0.try_wait().map_err(|e| e.to_string())? {
+                    execution_ns = Some(started.elapsed().as_nanos());
+                    if !status.success() {
+                        return Err(format!("worker failed: {status}"));
+                    }
+                    return Ok(());
+                }
+                if started.elapsed() > Duration::from_secs(10) {
+                    return Err("worker timeout".into());
+                }
+                std::thread::sleep(Duration::from_millis(5));
+            }
+        },
+    );
+    let cleanup = if matches!(report.outcome, Outcome::Conflict | Outcome::RollbackFailed) {
+        group.preserve();
+        Err("target preserved after conflict or rollback failure".to_string())
+    } else {
+        group.cleanup()
+    };
+    let success = report.outcome == Outcome::Restored && cleanup.is_ok();
+    println!(
+        "{}",
+        serde_json::json!({"record":"controlled", "execution_ns":execution_ns, "transaction":report, "cleanup":cleanup, "performance_effect":"NOT VERIFIED: no valid comparator"})
+    );
+    if !success {
+        return Err("controlled experiment failed; see transaction and cleanup report".into());
+    }
+    Ok(())
+}
+
 fn validate_mode(mode: &str) -> Result<(), &'static str> {
     match mode {
         "observe" | "dry-run" => Ok(()),
@@ -74,6 +163,15 @@ fn validate_mode(mode: &str) -> Result<(), &'static str> {
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<_> = std::env::args().collect();
+    if args.len() == 2 && args[1] == "gated-memory-worker" {
+        return gated_memory_worker();
+    }
+    if args.get(1).is_some_and(|x| x == "controlled") {
+        if args.len() != 5 || args[2] != "--authorize" || args[3] != "--parent" {
+            return Err("usage: controlled --authorize --parent /absolute/delegated/parent".into());
+        }
+        return controlled(Path::new(&args[4]));
+    }
     if args.len() == 3 && args[1] == "worker" {
         return worker(&args[2]);
     }

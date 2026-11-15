@@ -204,3 +204,62 @@ fn rollback_verification_failure_is_reported() {
     assert_eq!(report.outcome, Outcome::RollbackFailed);
     assert_eq!(f.value(), 12288);
 }
+
+#[test]
+fn operation_runs_only_while_verified_policy_is_active() {
+    use xynoos_linux_control::transaction::run_during;
+    let mut f = Fixture::new();
+    let report = run_during(&mut f, &collect_system(), action(), true, |target| {
+        assert_eq!(target.read_low()?, 8192);
+        Ok(())
+    });
+    assert_eq!(report.outcome, Outcome::Restored);
+    assert_eq!(f.value(), 4096);
+    assert!(report.events.iter().any(|e| e == "operation completed"));
+}
+
+#[test]
+fn failed_operation_restores_and_reports_failure() {
+    use xynoos_linux_control::transaction::run_during;
+    let mut f = Fixture::new();
+    let report = run_during(&mut f, &collect_system(), action(), true, |_| {
+        Err("worker timeout".into())
+    });
+    assert_eq!(report.outcome, Outcome::OperationFailed);
+    assert_eq!(f.value(), 4096);
+    assert!(report.events.iter().any(|e| e.contains("worker timeout")));
+}
+
+#[test]
+fn failed_authorization_and_verification_never_release_worker() {
+    use xynoos_linux_control::transaction::run_during;
+    for (authorized, fail_write, change_read) in [
+        (false, None, None),
+        (true, Some(1), None),
+        (true, None, Some((3, 4096))),
+    ] {
+        let mut f = Fixture::new();
+        f.fail_write = fail_write;
+        f.change_read = change_read;
+        let mut called = false;
+        let report = run_during(&mut f, &collect_system(), action(), authorized, |_| {
+            called = true;
+            Ok(())
+        });
+        assert!(!called);
+        assert_ne!(report.outcome, Outcome::Restored);
+    }
+}
+
+#[test]
+fn operation_conflict_is_not_overwritten() {
+    use xynoos_linux_control::transaction::run_during;
+    let mut f = Fixture::new();
+    let report = run_during(&mut f, &collect_system(), action(), true, |target| {
+        fs::write(target.dir.join("memory.low"), "12288").map_err(|e| e.to_string())?;
+        Ok(())
+    });
+    assert_eq!(report.outcome, Outcome::Conflict);
+    assert_eq!(f.value(), 12288);
+    assert_eq!(f.writes, 1);
+}

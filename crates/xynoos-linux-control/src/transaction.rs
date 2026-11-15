@@ -36,6 +36,7 @@ pub enum Outcome {
     ApplyFailed,
     VerificationFailed,
     RollbackFailed,
+    OperationFailed,
 }
 #[derive(Debug, Serialize)]
 pub struct TransactionReport {
@@ -53,6 +54,18 @@ pub fn run<B: Backend>(
     snapshot: &SystemSnapshot,
     action: Action,
     authorized: bool,
+) -> TransactionReport {
+    run_during(backend, snapshot, action, authorized, |_| Ok(()))
+}
+
+/// Invoke a bounded operation only after verified apply; always attempt guarded restoration.
+/// The callback must stop all workload processes before returning, including on error.
+pub fn run_during<B: Backend>(
+    backend: &mut B,
+    snapshot: &SystemSnapshot,
+    action: Action,
+    authorized: bool,
+    operation: impl FnOnce(&mut B) -> Result<(), String>,
 ) -> TransactionReport {
     let Action::MemoryLow { bytes } = action;
     let mut report = TransactionReport {
@@ -100,7 +113,8 @@ pub fn run<B: Backend>(
         report.outcome = Outcome::Restored;
         report
             .events
-            .push("already at requested value; no write".into());
+            .push("already at requested value; no write; operation declined".into());
+        report.outcome = Outcome::Declined;
         return report;
     }
     let applied = backend.write_low(bytes);
@@ -129,6 +143,16 @@ pub fn run<B: Backend>(
         }
         return report;
     }
+    // Never release a workload after a failed write, even if the requested value appeared.
+    let mut operation_failed = false;
+    if applied.is_ok() {
+        if let Err(e) = operation(backend) {
+            operation_failed = true;
+            report.events.push(format!("operation failed: {e}"));
+        } else {
+            report.events.push("operation completed".into());
+        }
+    }
     // Revalidate immediately before restoring; never intentionally overwrite a known change.
     if let Err(e) = check(backend, id, bytes) {
         report.outcome = Outcome::Conflict;
@@ -147,6 +171,8 @@ pub fn run<B: Backend>(
     }
     report.outcome = if applied.is_err() {
         Outcome::ApplyFailed
+    } else if operation_failed {
+        Outcome::OperationFailed
     } else {
         Outcome::Restored
     };
@@ -174,6 +200,7 @@ pub struct DisposableCgroup {
     name: std::ffi::CString,
     id: Identity,
     cleanup_on_drop: bool,
+    member: Option<xynoos_pressureiq::workload::Identity>,
 }
 impl DisposableCgroup {
     /// Creates an empty child only after authorization and ownership/delegation checks.
@@ -275,6 +302,7 @@ impl DisposableCgroup {
                 name: name.clone(),
                 id,
                 cleanup_on_drop: true,
+                member: None,
             })
         })();
         if let Err(error) = result {
@@ -306,6 +334,54 @@ impl DisposableCgroup {
     }
 }
 impl DisposableCgroup {
+    /// Place a child owned by this process. The caller must keep it gated until
+    /// `verify_child` succeeds and must kill and reap it on every error path.
+    pub fn place_child(&mut self, child: &std::process::Child) -> Result<(), String> {
+        if self.member.is_some() {
+            return Err("target already used".into());
+        }
+        self.identity()?;
+        let id = xynoos_pressureiq::workload::identify(child.id())
+            .map_err(|e| format!("child identity: {e:?}"))?;
+        let control = openat(self.dir.as_raw_fd(), c"cgroup.procs", libc::O_WRONLY)?;
+        use std::os::unix::fs::FileExt;
+        let text = id.pid.to_string();
+        let written = control
+            .write_at(text.as_bytes(), 0)
+            .map_err(|e| format!("placement: {e}"))?;
+        if written != text.len() {
+            return Err("short placement write".into());
+        }
+        self.member = Some(id);
+        self.verify_child()
+    }
+
+    /// Verify exact single-process membership, process start time and cgroup identity.
+    pub fn verify_child(&mut self) -> Result<(), String> {
+        let id = self.member.clone().ok_or("no child placed")?;
+        if xynoos_pressureiq::workload::identify(id.pid)
+            .map_err(|e| format!("child identity: {e:?}"))?
+            != id
+        {
+            return Err("child identity changed".into());
+        }
+        let snapshot = xynoos_pressureiq::cgroup_pressure::collect(&id)
+            .map_err(|e| format!("membership: {e:?}"))?;
+        if snapshot.cgroup.device != self.id.device || snapshot.cgroup.inode != self.id.inode {
+            return Err("child cgroup identity mismatch".into());
+        }
+        self.identity()?;
+        if read_at(&self.dir, c"cgroup.procs")?.trim() != id.pid.to_string() {
+            return Err("target does not contain exactly the child".into());
+        }
+        Ok(())
+    }
+
+    /// Preserve the target for operator inspection after ambiguous state or rollback failure.
+    pub fn preserve(mut self) {
+        self.cleanup_on_drop = false;
+    }
+
     /// Remove the empty disposable target explicitly and report cleanup errors.
     pub fn cleanup(mut self) -> Result<(), String> {
         // A failed explicit cleanup must not be followed by an unreported retry in Drop.
@@ -335,12 +411,27 @@ impl Backend for DisposableCgroup {
         let dm = current.metadata().map_err(|e| e.to_string())?;
         let control = openat(current.as_raw_fd(), c"memory.low", libc::O_RDONLY)?;
         let cm = control.metadata().map_err(|e| e.to_string())?;
-        if !read_at(&current, c"cgroup.procs")?.trim().is_empty()
+        let members = read_at(&current, c"cgroup.procs")?;
+        let members = members.trim();
+        let allowed = match &self.member {
+            None => members.is_empty(),
+            Some(id) if members == id.pid.to_string() => {
+                xynoos_pressureiq::workload::identify(id.pid).is_ok_and(|current| current == *id)
+            }
+            Some(id) if members.is_empty() => {
+                matches!(
+                    xynoos_pressureiq::workload::identify(id.pid),
+                    Err(xynoos_pressureiq::Error::Unsupported)
+                )
+            }
+            Some(_) => false,
+        };
+        if !allowed
             || !read_at(&current, c"cgroup.stat")?
                 .lines()
                 .any(|l| l.trim() == "nr_descendants 0")
         {
-            return Err("cgroup no longer empty or has descendants".into());
+            return Err("unexpected cgroup membership or descendants".into());
         }
         let id = Identity {
             device: dm.dev(),

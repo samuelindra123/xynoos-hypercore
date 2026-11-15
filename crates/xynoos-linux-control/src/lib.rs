@@ -85,7 +85,7 @@ pub fn discover() -> Capabilities {
     }
 }
 
-fn validate_telemetry(
+pub fn validate_telemetry(
     snapshot: &SystemSnapshot,
     now: Instant,
     action: Action,
