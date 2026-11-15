@@ -43,6 +43,7 @@ name = "xynoos-cli"
 version = "0.1.0"
 dependencies = [
  "xynoos-hypermemory",
+ "xynoos-pressureiq",
 ]
 
 [[package]]
@@ -57,3 +58,7 @@ dependencies = [
  "lz4_flex",
  "xynoos-core",
 ]
+
+[[package]]
+name = "xynoos-pressureiq"
+version = "0.1.0"

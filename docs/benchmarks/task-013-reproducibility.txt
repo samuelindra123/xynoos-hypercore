@@ -1,0 +1,1 @@
+Dua eksekusi parser fixture memiliki kasus dan jumlah iterasi identik. Waktu dan telemetry live berubah; output live 5 baris tervalidasi dengan 21 kolom. Seluruh sumber tersedia pada pengamatan ini.

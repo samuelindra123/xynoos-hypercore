@@ -1,0 +1,15 @@
+metric,value,unit,samples_or_iterations,scope
+read_psi_ns,27582,ns,5,live
+parse_psi_ns,4107,ns,5,live
+read_mem_ns,32591,ns,5,live
+parse_mem_ns,6993,ns,5,live
+read_vm_ns,62897,ns,5,live
+parse_vm_ns,19566,ns,5,live
+snapshot_ns,170498,ns,5,live
+fixture_psi,610,ns_per_parse,10000,syntetis
+fixture_mem,189,ns_per_parse,10000,syntetis
+fixture_vm,239,ns_per_parse,10000,syntetis
+cpu_total,2180000.0,ns,5,seluruh_proses
+peak_rss,15360,KiB,5,seluruh_proses
+wall_total,803013457,ns,5,seluruh_proses
+csv_size,904,byte,5,live
