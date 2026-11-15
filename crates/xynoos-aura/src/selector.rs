@@ -332,6 +332,52 @@ mod fast_tests {
         }
     }
     #[test]
+    fn six_sizes_budget_and_fallback() {
+        for n in [1usize, 4, 8, 16, 32, 64] {
+            for mode in 0..4 {
+                let base = fixture(Policy::Aura);
+                let mut pages = Vec::new();
+                for i in 0..n {
+                    let mut p = base.pages[i % 16].clone();
+                    p.id = i as u64;
+                    if mode == 2 {
+                        p.confidence_permille = 0;
+                    }
+                    pages.push(p);
+                }
+                let mut state = base.state.clone();
+                state.used_bytes = [n as u64 * 4096, 0, 0];
+                state.capacity_bytes[0] = state.used_bytes[0];
+                state.capacity_bytes[1] = n as u64 * 4096;
+                state.capacity_bytes[2] = n as u64 * 8192;
+                state.metadata_bytes = n as u64 * 80;
+                state.physical_budget_bytes = state.used_bytes[0] + state.metadata_bytes;
+                if mode == 1 {
+                    state.cpu_budget_ns = 0;
+                    state.io_budget_bytes = 0;
+                }
+                if mode == 3 {
+                    state.temporary_budget_bytes = 0;
+                }
+                let mut a = Simulator::new(state, pages, base.engine).unwrap();
+                let mut b = a.clone();
+                let mut x = Selector::default();
+                let mut y = x.clone();
+                let order: Vec<_> = (0..n).collect();
+                for i in 0..128 {
+                    let idx = i % n;
+                    let pressure = if i % 2 == 0 { 690 } else { 800 };
+                    assert_eq!(
+                        reference(&mut x, &mut a, idx, pressure, &order),
+                        y.fast_event(&mut b, idx, pressure, &order)
+                    );
+                    assert_eq!(a, b);
+                    assert_eq!(x, y);
+                }
+            }
+        }
+    }
+    #[test]
     fn failures_atomic() {
         for case in 0..5 {
             let mut a = fixture(Policy::Aura);
