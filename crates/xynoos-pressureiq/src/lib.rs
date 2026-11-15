@@ -480,4 +480,5 @@ mod delta_tests {
 }
 pub mod system;
 
+pub mod cgroup_pressure;
 pub mod workload;

@@ -5,7 +5,7 @@ use std::{
     process::{Child, Command, Stdio},
     time::{Duration, Instant},
 };
-use xynoos_pressureiq::{system, workload};
+use xynoos_pressureiq::{cgroup_pressure, system, workload};
 struct Guard(Child);
 impl Drop for Guard {
     fn drop(&mut self) {
@@ -87,6 +87,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let mut first = None;
                 let mut last = None;
                 let mut engine = xynoos_decision::Engine::default();
+                let mut scoped_engine = xynoos_decision::WorkloadEngine::default();
                 let mut decisions = Vec::new();
                 let mut collection_ns = 0u128;
                 let mut next_sample = Instant::now();
@@ -101,10 +102,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         next_sample = Instant::now() + Duration::from_millis(200);
                         let t = Instant::now();
                         let p = workload::collect(&id);
+                        let cg = cgroup_pressure::collect(&id);
+                        let scoped = cg.as_ref().map(|c| {
+                            scoped_engine.evaluate(
+                                c,
+                                &xynoos_decision::WorkloadScope::Shared,
+                                Instant::now(),
+                            )
+                        });
                         let s = system::collect_system();
                         let d = engine.evaluate(&s, Instant::now(), None);
                         collection_ns += t.elapsed().as_nanos();
-                        decisions.push(format!("{:?}:{:?}", d.kind, d.pressure_percent));
+                        decisions.push(format!(
+                            "system={:?}:{:?} cgroup={:?}",
+                            d.kind, d.pressure_percent, scoped
+                        ));
                         if first.is_none() {
                             first = Some(p.clone());
                         }
