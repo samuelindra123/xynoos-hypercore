@@ -1,0 +1,1 @@
+PASS: epoch, pra/pasca scope, realloc tracked/untracked, reuse/tombstone/table-full, ZST, 4 thread x100 operasi. Realloc same-address diuji metadata register; System tidak dijamin memilih alamat sama.

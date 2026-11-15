@@ -246,7 +246,7 @@ impl Selector {
             seen[i] = true;
         }
         hook(0)?;
-        let mut prepared = sim.clone();
+        let mut prepared = sim.try_clone_metadata()?;
         let limits = prepared.prepare_access(index, pressure)?;
         hook(1)?;
         let inspection_start = inspection_ns.as_ref().map(|_| std::time::Instant::now());
@@ -471,6 +471,24 @@ mod injected_tests {
         }
     }
     #[test]
+    fn targeted_reservation_atomic() {
+        let mut s = fixture(Policy::Aura);
+        let before = s.clone();
+        let mut selector = Selector::default();
+        let initial = selector.clone();
+        let order: Vec<_> = (0..16).collect();
+        let r = selector.fast_event_hook(&mut s, 0, 800, &order, None, |phase| {
+            if phase == 0 {
+                Err(Error::AllocationReservation)
+            } else {
+                Ok(())
+            }
+        });
+        assert_eq!(r, Err(Error::AllocationReservation));
+        assert_eq!(s, before);
+        assert_eq!(selector, initial);
+    }
+    #[test]
     fn controlled_allocation_rejection() {
         let mut s = fixture(Policy::Aura);
         let before = s.clone();
@@ -486,5 +504,53 @@ mod injected_tests {
         });
         assert_eq!(r, Err(Error::Capacity));
         assert_eq!(s, before);
+    }
+}
+
+#[cfg(test)]
+mod reservation_tests {
+    use super::*;
+    use crate::physical::{fixture, Error, Policy};
+    #[test]
+    fn injected_reservation() {
+        let s = fixture(Policy::Aura);
+        let before = s.clone();
+        let r = s.try_clone_metadata_with(|_, n| {
+            assert_eq!(n, 16);
+            Err(Error::AllocationReservation)
+        });
+        assert_eq!(r, Err(Error::AllocationReservation));
+        assert_eq!(s, before);
+        assert_eq!(
+            s.try_clone_metadata_with(|_, _| Ok(())),
+            Err(Error::AllocationReservation)
+        );
+    }
+    #[test]
+    fn reserve_overflow_is_distinct() {
+        let s = fixture(Policy::Aura);
+        let r = s.try_clone_metadata_with(|pages, _| {
+            pages
+                .try_reserve_exact(usize::MAX)
+                .map_err(|_| Error::AllocationReservation)
+        });
+        assert_eq!(r, Err(Error::AllocationReservation));
+        assert_eq!(s.try_clone_metadata().unwrap(), s);
+    }
+    #[test]
+    fn same_candidate_and_access() {
+        let mut a = fixture(Policy::Aura);
+        let mut b = a.clone();
+        let mut x = Selector::default();
+        let mut y = x.clone();
+        let order: Vec<_> = (0..16).collect();
+        for tick in 0..128 {
+            let p = tick % 16;
+            let (c, stats) = x.state_aware(&a, p, 800, &order).unwrap();
+            let d = a.event_candidate(p, 800, c.unwrap_or(p)).unwrap();
+            assert_eq!(y.fast_event(&mut b, p, 800, &order).unwrap(), (c, stats, d));
+            assert_eq!(a, b);
+            assert_eq!(x, y);
+        }
     }
 }
