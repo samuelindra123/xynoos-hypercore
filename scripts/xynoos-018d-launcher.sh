@@ -10,6 +10,7 @@ case "${1:-}" in
   unit-preflight)
     # This starts a transient user service; it does not activate controllers itself.
     unit="xynoos-018d-$$-$(date +%s)"
+    echo "transient unit: $unit.service" >&2
     output=$(mktemp)
     trap 'rm -f "$output"' EXIT HUP INT TERM
     if systemd-run --user --wait --pipe --collect --unit="$unit" \
@@ -21,23 +22,28 @@ case "${1:-}" in
       status=$?
     fi
     cat "$output"
-    # Verify the unit is inactive or collected; failures remain visible.
-    if ! state=$(systemctl --user show "$unit.service" --property=LoadState --property=ActiveState); then
+    # Always check termination and cleanup, even if the diagnostic failed.
+    checks_failed=0
+    if state=$(systemctl --user show "$unit.service" --property=LoadState --property=ActiveState); then
+      case "$state" in
+        *'LoadState=not-found'*|*'ActiveState=inactive'*)
+          echo "unit inactive or collected: $unit.service" >&2 ;;
+        *'ActiveState=failed'*) echo "unit failed: $unit.service" >&2; checks_failed=1 ;;
+        *) echo "unit termination unverified: $unit.service ($state)" >&2; checks_failed=1 ;;
+      esac
+    else
       echo "unit termination unverified: $unit.service" >&2
-      exit 1
+      checks_failed=1
     fi
-    case "$state" in
-      *'LoadState=not-found'*|*'ActiveState=inactive'*)
-        echo "unit inactive or collected: $unit.service" >&2 ;;
-      *'ActiveState=failed'*) echo "unit failed: $unit.service; cgroup removal not verified" >&2; exit 1 ;;
-      *) echo "unit termination unverified: $unit.service ($state)" >&2; exit 1 ;;
-    esac
     if ! python3 - "$output" "$unit.service" <<'PYCODE'
 import json, os, sys, time
 try:
     with open(sys.argv[1], encoding="utf-8") as stream:
         records = [json.loads(line) for line in stream if line.strip().startswith("{")]
-    record, = [r for r in records if r.get("record") == "manager_preflight"]
+    matches = [r for r in records if isinstance(r, dict) and r.get("record") == "manager_preflight"]
+    if len(matches) != 1:
+        raise ValueError("no unique manager diagnostic record; cgroup path unavailable")
+    record = matches[0]
     path = record["parent_path"]
     if not os.path.isabs(path) or os.path.basename(path) != sys.argv[2]:
         raise ValueError("unexpected parent path")
@@ -56,9 +62,14 @@ except (OSError, ValueError, KeyError, TypeError) as error:
     sys.exit(1)
 PYCODE
     then
-      exit 1
+      checks_failed=1
     fi
-    exit "$status"
+    if [ "$status" -ne 0 ]; then
+      echo "diagnostic failed with status $status" >&2
+      exit "$status"
+    fi
+    if [ "$checks_failed" -ne 0 ]; then exit 1; fi
+    exit 0
     ;;
   *)
     echo 'Usage: xynoos-018d-launcher.sh preflight|unit-preflight' >&2

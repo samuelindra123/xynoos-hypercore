@@ -1,5 +1,11 @@
 # TASK 018 — Real optimization validation (partial)
 
+## TASK 018E-1A — physical failure and decoding fix
+
+**LIVE SYSTEMD BINDING: NOT VERIFIED.** The reported MX Linux run failed before emitting the manager record: the D-Bus decoder assumed every `data` value was a single-element array, and the launcher then produced a secondary unpacking error when no record existed. Method object replies now require their explicit one-argument framing; properties require their exact scalar or 16-byte-array shapes and signatures. The launcher records the unit name independently, checks termination even on failure, preserves the diagnostic exit status and reports cleanup unverified when no unique path is available. It never removes cgroups.
+
+Realistic D-Bus fixtures cover valid MX reply shapes and malformed, missing and wrong-signature values. Launcher fixtures cover an early exit without JSON, original stderr and status, termination checking and missing cleanup evidence. Focused and workspace tests, all-target Clippy and check, rustdoc, formatting and static musl release build passed. The existing duplicate-example-name workspace warning remains. No physical rerun has been performed. See the [MX retry handoff](TASK-018E-1A-MX-HANDOFF.md).
+
 ## TASK 018E-1A — live binding diagnostic prepared
 
 **LIVE SYSTEMD BINDING: NOT VERIFIED.** The existing manager preflight now reports the typed D-Bus identity, invocation, state and delegation, PID/start ticks, actual membership, and held parent/manager device and inode, after final binding revalidation. This remains a sequential, read-only observation and grants no authority for a kernel write. The launcher checks service termination and the reported parent cgroup's disappearance; unavailable state or cleanup evidence fails closed. The service itself is a temporary systemd user unit. [MX handoff](TASK-018E-1A-MX-HANDOFF.md) contains exact steps and pass criteria.

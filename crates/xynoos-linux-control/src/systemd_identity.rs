@@ -23,7 +23,13 @@ struct Unit {
     pid: u32,
 }
 
-fn bus(args: &[&str], signature: &str) -> Result<Value, String> {
+#[derive(Clone, Copy)]
+enum ReplyKind {
+    Method,
+    Property,
+}
+
+fn bus(args: &[&str], signature: &str, kind: ReplyKind) -> Result<Value, String> {
     let out = Command::new("busctl")
         .args(["--user", "--json=short"])
         .args(args)
@@ -32,21 +38,51 @@ fn bus(args: &[&str], signature: &str) -> Result<Value, String> {
     if !out.status.success() {
         return Err(format!("D-Bus inspection failed (user bus unavailable, unit exited, or property lookup failed): {}", String::from_utf8_lossy(&out.stderr).trim()));
     }
-    parse_reply(&out.stdout, signature)
+    parse_reply(&out.stdout, signature, kind)
 }
-fn parse_reply(bytes: &[u8], signature: &str) -> Result<Value, String> {
+fn parse_reply(bytes: &[u8], signature: &str, kind: ReplyKind) -> Result<Value, String> {
     let v: Value = serde_json::from_slice(bytes).map_err(|e| format!("D-Bus JSON: {e}"))?;
     if v.get("type").and_then(Value::as_str) != Some(signature) {
         return Err("unexpected D-Bus signature".into());
     }
-    let data = v
-        .get("data")
-        .and_then(Value::as_array)
-        .ok_or("missing D-Bus data")?;
-    if data.len() != 1 {
-        return Err("unexpected D-Bus data".into());
-    }
-    Ok(data[0].clone())
+    let data = v.get("data").ok_or("missing D-Bus data")?;
+    let value = match (kind, signature) {
+        (ReplyKind::Method, "o") => {
+            let args = data.as_array().ok_or("invalid method reply framing")?;
+            if args.len() != 1 {
+                return Err("invalid method reply framing".into());
+            }
+            let path = args[0].as_str().ok_or("invalid object path")?;
+            if !path.starts_with('/')
+                || (path != "/"
+                    && path[1..].split('/').any(|part| {
+                        part.is_empty()
+                            || !part.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+                    }))
+            {
+                return Err("invalid object path".into());
+            }
+            &args[0]
+        }
+        (ReplyKind::Property, "s") if data.is_string() => data,
+        (ReplyKind::Property, "b") if data.is_boolean() => data,
+        (ReplyKind::Property, "u") if data.as_u64().is_some_and(|n| u32::try_from(n).is_ok()) => {
+            data
+        }
+        (ReplyKind::Property, "ay") => {
+            let bytes = data.as_array().ok_or("invalid invocation array")?;
+            if bytes.len() != 16
+                || bytes
+                    .iter()
+                    .any(|v| !v.as_u64().is_some_and(|n| u8::try_from(n).is_ok()))
+            {
+                return Err("invalid invocation bytes".into());
+            }
+            data
+        }
+        _ => return Err("unexpected D-Bus data shape or signature".into()),
+    };
+    Ok(value.clone())
 }
 fn unit(name: &str) -> Result<Unit, String> {
     const DEST: &str = "org.freedesktop.systemd1";
@@ -61,12 +97,17 @@ fn unit(name: &str) -> Result<Unit, String> {
             name,
         ],
         "o",
+        ReplyKind::Method,
     )?
     .as_str()
     .ok_or("invalid unit object")?
     .to_owned();
     let prop = |interface: &str, key: &str, sig: &str| {
-        bus(&["get-property", DEST, &object, interface, key], sig)
+        bus(
+            &["get-property", DEST, &object, interface, key],
+            sig,
+            ReplyKind::Property,
+        )
     };
     let text = |interface, key| -> Result<String, String> {
         Ok(prop(interface, key, "s")?
@@ -341,20 +382,72 @@ mod tests {
         assert_eq!(d["delegate"], true);
     }
     #[test]
-    fn missing_or_invalid_dbus_properties_fail() {
-        for data in [
-            r#"{}"#,
-            r#"{"type":"s"}"#,
-            r#"{"type":"b","data":[true]}"#,
-            r#"{"type":"s","data":[]}"#,
-            "garbage",
-        ] {
-            assert!(parse_reply(data.as_bytes(), "s").is_err());
-        }
+    fn busctl_mx_reply_fixtures() {
+        let parse = |s: &str, sig, kind| parse_reply(s.as_bytes(), sig, kind);
         assert_eq!(
-            parse_reply(br#"{"type":"s","data":["ok"]}"#, "s").unwrap(),
-            "ok"
+            parse(
+                r#"{"type":"o","data":["/org/freedesktop/systemd1/unit/test_2eservice"]}"#,
+                "o",
+                ReplyKind::Method
+            )
+            .unwrap(),
+            "/org/freedesktop/systemd1/unit/test_2eservice"
         );
+        assert_eq!(
+            parse(
+                r#"{"type":"ay","data":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,255]}"#,
+                "ay",
+                ReplyKind::Property
+            )
+            .unwrap()
+            .as_array()
+            .unwrap()
+            .len(),
+            16
+        );
+        assert_eq!(
+            parse(r#"{"type":"s","data":"active"}"#, "s", ReplyKind::Property).unwrap(),
+            "active"
+        );
+        assert_eq!(
+            parse(r#"{"type":"b","data":true}"#, "b", ReplyKind::Property).unwrap(),
+            true
+        );
+        assert_eq!(
+            parse(r#"{"type":"u","data":42}"#, "u", ReplyKind::Property).unwrap(),
+            42
+        );
+        for (data, sig, kind) in [
+            (r#"{}"#, "s", ReplyKind::Property),
+            (r#"{"type":"s"}"#, "s", ReplyKind::Property),
+            (r#"{"type":"b","data":true}"#, "s", ReplyKind::Property),
+            (
+                r#"{"type":"s","data":["active"]}"#,
+                "s",
+                ReplyKind::Property,
+            ),
+            (r#"{"type":"o","data":"/unit"}"#, "o", ReplyKind::Method),
+            (
+                r#"{"type":"o","data":["/unit","/other"]}"#,
+                "o",
+                ReplyKind::Method,
+            ),
+            (
+                r#"{"type":"o","data":["/bad-path"]}"#,
+                "o",
+                ReplyKind::Method,
+            ),
+            (r#"{"type":"ay","data":[1]}"#, "ay", ReplyKind::Property),
+            (
+                r#"{"type":"ay","data":[0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,256]}"#,
+                "ay",
+                ReplyKind::Property,
+            ),
+            (r#"{"type":"u","data":-1}"#, "u", ReplyKind::Property),
+            ("garbage", "s", ReplyKind::Property),
+        ] {
+            assert!(parse(data, sig, kind).is_err(), "accepted {data}");
+        }
     }
     #[test]
     fn real_read_only_linux_discovery() {
