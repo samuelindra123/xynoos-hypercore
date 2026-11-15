@@ -1,0 +1,1 @@
+81 baris; dua eksekusi identik pada semua kolom kecuali waktu nyata event_execution_ns dan decision_probe_ns. Seed: 1,42,2026.

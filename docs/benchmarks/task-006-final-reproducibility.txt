@@ -1,0 +1,1 @@
+567 baris; dua proses identik selain event_ns. Journal dan clone identik untuk seluruh kolom non-timing pada81 kombinasi. Invariant occupancy dan peak diperiksa.

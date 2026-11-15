@@ -1,0 +1,6 @@
+dataset,compressed_bytes_per_page,compress_proxy_ns,decompress_proxy_ns
+zero,27,718,1978
+pattern,39,727,4412
+structured,1381,3236,2612
+entropy,4114,1354,1977
+mixed,1390,1567,2816

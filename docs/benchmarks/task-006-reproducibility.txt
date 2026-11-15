@@ -1,0 +1,1 @@
+243 baris; dua proses identik pada seluruh kolom selain event_ns.
