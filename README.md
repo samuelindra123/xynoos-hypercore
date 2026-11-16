@@ -21,6 +21,15 @@ pressure; observe never changes controls or workload buffers. The static
 [Safety/recovery](docs/MVP-SAFETY-RECOVERY.md) · [Benchmark method](docs/MVP-BENCHMARK.md) ·
 [Measured results](docs/reports/MVP-RESULTS.md) · [N5000 validation](docs/MVP-N5000-VALIDATION.md)
 
+Phase 4 adds a real owned-workload baseline/observe A/B harness, component profiling,
+and a static N5000 handoff. See [exact physical commands](docs/PHASE4-N5000.md) and
+[performance evidence and arm decisions](docs/reports/PHASE4-PERFORMANCE.md).
+
+```sh
+cargo build --release -p xynoos-engine --bin xynoos-perf -p xynoos-cli --bin xynoos-mvp
+python3 scripts/benchmark_physical.py --environment Codespaces --label 'Codespaces session' --output /tmp/xynoos-physical-ab
+```
+
 Earlier research milestones follow; their standalone simulators and historical
 status notes should be read with the current MVP scope above.
 

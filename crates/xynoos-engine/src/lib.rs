@@ -2,6 +2,7 @@
 //! Live kernel mutation is unconditionally refused, including with authorization.
 #![forbid(unsafe_code)]
 
+pub mod observation;
 pub mod recovery;
 pub mod replay;
 

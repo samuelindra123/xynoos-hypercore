@@ -17,12 +17,15 @@ commands = [
     ["cargo", "clippy", "--workspace", "--all-targets", "--", "-D", "warnings"],
     ["cargo", "check", "--workspace", "--all-targets"],
     ["cargo", "test", "--workspace"],
+    ["cargo", "build", "--release", "-p", "xynoos-engine", "--bin", "xynoos-perf", "-p", "xynoos-cli", "--bin", "xynoos-mvp"],
+    ["python3", "-m", "unittest", "discover", "-s", "scripts/tests", "-p", "test_*.py", "-v"],
     ["cargo", "test", "-p", "xynoos-decision", "--example", "optimization_experiment"],
     ["cargo", "build", "--workspace", "--release"],
     ["cargo", "doc", "--workspace", "--no-deps"],
     ["sh", "scripts/tests/test-018e-launcher.sh"],
     ["cargo", "build", "-p", "xynoos-cli", "--bin", "xynoos-mvp", "--release", "--target", "x86_64-unknown-linux-musl"],
-    ["file", "target/x86_64-unknown-linux-musl/release/xynoos-mvp"],
+    ["cargo", "build", "-p", "xynoos-engine", "--bin", "xynoos-perf", "--release", "--target", "x86_64-unknown-linux-musl"],
+    ["file", "target/x86_64-unknown-linux-musl/release/xynoos-mvp", "target/x86_64-unknown-linux-musl/release/xynoos-perf"],
     ["git", "diff", "--check"],
 ]
 with log_path.open("x") as log:

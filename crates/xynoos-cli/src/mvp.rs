@@ -1,7 +1,7 @@
 use std::{
     error::Error,
     fs::OpenOptions,
-    io::Read,
+    io::{Read, Write},
     os::unix::fs::OpenOptionsExt,
     path::Path,
     time::{Duration, Instant},
@@ -76,17 +76,15 @@ pub fn run(args: &[String]) -> Result<(), Box<dyn Error>> {
                     Instant::now(),
                     Duration::from_secs(5),
                 );
-                let report = serde_json::json!({
-                    "schema_version":1, "evidence":"live_read_only", "sequential":true,
-                    "scope":"visible_namespace", "kernel_mutations":0,
-                    "owned_buffer_mutations":0, "plan":plan, "decision_ns":decision_ns,
-                    "telemetry":contract,
-                });
                 if human {
                     println!("PressureIQ → AURA: {:?}; {:?}; {:?}. Kernel writes locked. No workload buffers changed. Collection {} ns; decision {} ns.",
                         plan.action, plan.reason, plan.outcome, snapshot.elapsed_ns, decision_ns);
                 } else {
-                    println!("{}", serde_json::to_string(&report)?);
+                    let stdout = std::io::stdout();
+                    let mut output = std::io::BufWriter::new(stdout.lock());
+                    xynoos_engine::observation::write(&mut output, &plan, decision_ns, &contract)?;
+                    output.write_all(b"\n")?;
+                    output.flush()?;
                 }
             }
             if command == "controlled" {
