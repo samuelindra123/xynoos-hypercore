@@ -125,6 +125,7 @@ mod bound_child;
 pub mod child_memory;
 pub mod controller;
 pub mod empty_child_coordinator;
+pub mod safety;
 pub mod systemd_identity;
 pub mod transaction;
 
