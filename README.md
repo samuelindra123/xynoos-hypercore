@@ -2,7 +2,7 @@
 
 # Xynoos HyperCore
 
-**Experimental Linux system intelligence, built around evidence and bounded action.**
+**Experimental Developer Preview · Linux resource intelligence, built around evidence.**
 
 [![License: GPL-3.0-only](https://img.shields.io/badge/license-GPL--3.0--only-365a69.svg)](LICENSE)
 [![Status: experimental](https://img.shields.io/badge/status-experimental-365a69.svg)](docs/README.md)
@@ -11,7 +11,43 @@ Xynoos HyperCore is a Rust workspace investigating Linux resource telemetry, pol
 
 > **Experimental research software; not production-ready.** No reproducible desktop-wide performance benefit has been demonstrated. Physical kernel mutation remains **NO-GO** for production use; active ZRAM tuning is not implemented.
 
-[Get started](#quick-start) · [Architecture](docs/ARCHITECTURE.md) · [Safety](#safety-and-limitations) · [Evidence](#experimental-evidence) · [Documentation](docs/README.md)
+[Install the preview](#install-the-developer-preview) · [Architecture](docs/ARCHITECTURE.md) · [Safety](#safety-and-limitations) · [Evidence](#experimental-evidence) · [Documentation](docs/README.md)
+
+## Install the developer preview
+
+Published Linux x86_64 preview. The public release installation lifecycle has been
+verified in a disposable HOME on Ubuntu 24.04 Codespaces. Debian 13 / XFCE on the
+Pentium Silver N5000 remains the primary **untested hardware target**.
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/main/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"
+```
+
+```sh
+xynoos doctor
+xynoos status
+xynoos diagnose --count 10 --interval-ms 1000 --json
+xynoos update
+xynoos rollback
+```
+
+Installs for your user without sudo, a source checkout, Rust, manual extraction or
+GitHub login. Requires curl, Python 3.9+, OpenSSL 3 and CA certificates. The final
+PATH assignment makes `xynoos` available immediately in this terminal.
+
+The small HTTPS bootstrap pins installer source. The installer verifies a pinned
+Ed25519 release signature, signed provenance identity, binary SHA256, platform and
+executable identity **before** activation. Initial bootstrap trust is GitHub/TLS and
+repository control; checksum sidecars alone are not authenticated provenance.
+
+[Release notes and assets](https://github.com/samuelindra123/xynoos-hypercore/releases) ·
+[Trust model and pinned alternative](docs/INSTALL.md#pinned-auditable-alternative) ·
+[N5000 OpenCode validation protocol](docs/N5000-PREVIEW-VALIDATION.md)
+
+`update` chooses published compatible previews with SemVer-aware discovery.
+`rollback` works offline after a previous verified version has been retained.
+`uninstall` removes owned releases and preserves diagnostic evidence. No daemon or
+active optimizer starts. Other distributions are compatibility targets, not promises.
 
 ## What exists today
 
@@ -43,7 +79,7 @@ These are research components with distinct interfaces; this diagram does not im
 | Active ZRAM tuning | Not implemented |
 | Desktop-wide optimization | No reproducible benefit demonstrated |
 
-## Quick start
+## Development builds
 
 Install a Rust toolchain and Cargo. Live telemetry requires Linux. From the repository root:
 

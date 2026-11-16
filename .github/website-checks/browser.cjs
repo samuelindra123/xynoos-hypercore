@@ -11,6 +11,11 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'no horizontal overflow '+width);assertions++;
    assert.ok(await page.evaluate(()=>document.fonts.check('500 24px "Space Grotesk"')),'self-hosted typeface');assertions++;
    await page.screenshot({path:path.join(artifacts,'studio-'+width+'.png')});
+   await page.context().grantPermissions(['clipboard-read','clipboard-write']);
+   await page.locator('#copy-install').click();
+   await page.waitForFunction(()=>document.querySelector('#copy-install').textContent.includes('Copied'));
+   assert.match(await page.locator('#install-copy-status').textContent(),/Copied/);assertions++;
+   await page.locator('.install-section').screenshot({path:path.join(artifacts,'install-'+width+'.png')});
    if(width===375){await page.locator('.menu').click();assert.equal(await page.locator('.menu').getAttribute('aria-expanded'),'true');await page.keyboard.press('Escape');assert.equal(await page.locator('.menu').getAttribute('aria-expanded'),'false');assertions+=2}
    await page.locator('[data-layer="2"]').click();assert.match(await page.locator('#layer-title').textContent(),/Know when/);assertions++;
    await page.locator('#plate-toggle').click();assert.equal(await page.locator('#plate-toggle').getAttribute('aria-pressed'),'true');assertions++;

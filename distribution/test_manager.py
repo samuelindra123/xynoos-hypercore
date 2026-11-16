@@ -69,8 +69,9 @@ class DistributionTests(unittest.TestCase):
                 return self.inst.install("preview", tag)
 
     def test_real_signed_install_health_and_entry(self):
-        self.install(real_health=True)
-        self.assertEqual(self.inst.current(), "v0.1.0-preview.1")
+        tag = "v" + self.identity["version"]
+        self.install(tag, real_health=True)
+        self.assertEqual(self.inst.current(), tag)
         output = json.loads(subprocess.check_output([str(self.inst.entry), "--version", "--json"]))
         self.assertEqual(output["product"], "Xynoos HyperCore")
         with self.inst.locked(): self.inst.verify_local(self.inst.current())
@@ -143,7 +144,7 @@ class DistributionTests(unittest.TestCase):
 
     def test_lock_refuses_concurrent_subprocess(self):
         with self.inst.locked():
-            result = subprocess.run(["python3", "-I", str(Path(m.__file__).resolve()), "health", "--json"], capture_output=True, env=os.environ)
+            result = subprocess.run(["python3", "-I", str(Path(m.__file__).resolve()), "update", "--json"], capture_output=True, env=os.environ)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn(b"Another Xynoos", result.stderr)
 
@@ -192,10 +193,13 @@ class DistributionTests(unittest.TestCase):
         self.assertEqual(p.read_text(), "preserve")
 
     def test_health_failure_restores_previous(self):
-        self.install()
+        self.install(); self.install("v0.1.0-preview.2")
+        with self.inst.locked():
+            self.inst.switch("v0.1.0-preview.1")
+            m.atomic_json(self.inst.root / "history.json", {"previous": None})
         with patch.object(m, "health_binary", side_effect=m.Refusal("injected health failure")):
             with self.inst.locked():
-                with self.assertRaises(m.Refusal): self.inst.activate("v0.1.0-preview.1", "v0.1.0-preview.1")
+                with self.assertRaises(m.Refusal): self.inst.activate("v0.1.0-preview.2", "v0.1.0-preview.1")
         self.assertEqual(self.inst.current(), "v0.1.0-preview.1")
         self.assertFalse((self.inst.root / "transaction.json").exists())
 
@@ -221,6 +225,29 @@ class DistributionTests(unittest.TestCase):
             with patch.object(m.os, "replace", side_effect=OSError("power failure before rename")):
                 with self.assertRaises(OSError): m.atomic_json(p, {"previous": "v0.1.0-preview.1"})
             self.assertEqual(m.strict_json(p.read_bytes()), {"previous": None})
+
+    def test_sigkill_at_switch_boundaries_releases_lock_and_recovers(self):
+        self.install(); self.install("v0.1.0-preview.2")
+        code = '''
+import importlib.util, os, signal, sys
+spec = importlib.util.spec_from_file_location("manager", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+inst = m.Installation()
+with inst.locked():
+    m.atomic_json(inst.root / "transaction.json", {"before":"v0.1.0-preview.1", "previous":None})
+    if sys.argv[2] != "journal": inst.switch("v0.1.0-preview.2")
+    if sys.argv[2] == "history": m.atomic_json(inst.root / "history.json", {"previous":"v0.1.0-preview.1"})
+    os.kill(os.getpid(), signal.SIGKILL)
+'''
+        for point in ("journal", "switch", "history"):
+            with self.inst.locked():
+                self.inst.switch("v0.1.0-preview.1")
+                m.atomic_json(self.inst.root / "history.json", {"previous": None})
+            child = subprocess.run(["python3", "-I", "-c", code, str(Path(m.__file__).resolve()), point], capture_output=True)
+            self.assertEqual(child.returncode, -9)
+            with self.inst.locked(): pass
+            self.assertEqual(self.inst.current(), "v0.1.0-preview.1")
+            self.assertIsNone(self.inst.history()["previous"])
 
     def test_crashed_staging_is_cleaned_under_lock(self):
         self.install()

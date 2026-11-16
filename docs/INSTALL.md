@@ -1,7 +1,10 @@
 # Xynoos HyperCore — Experimental Developer Preview
 
-Publication and the public one-line installation are release gates. Until a release
-passes public read-back, do not describe the bootstrap as a working installation.
+The public one-line installation and rootless lifecycle were verified against
+published `v0.1.0-preview.1` on Ubuntu 24.04 Codespaces. See
+[captured output](reports/preview-public-lifecycle-1.txt). Debian/N5000 hardware
+validation remains pending. Publication and public read-back remain gates for each
+new release; a workflow file alone is not evidence of working distribution.
 
 ## Supported baseline
 

@@ -5,6 +5,33 @@
   font-display: swap;
   src: url(assets/font-0.ttf) format('truetype');
 }
+
+/* Release installation follows the existing Studio typography and warm accents. */
+.install-section { padding-top: 100px; padding-bottom: 72px; }
+.install-console { border: 1px solid #44312c; border-radius: 8px; background: #101115; box-shadow: 0 20px 90px #0002; overflow: hidden; }
+.install-console-top, .install-console-bottom { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 20px 24px; }
+.install-console-top { border-bottom: 1px solid #ffffff0c; }
+.install-console-top .mono { font-size: 10px; color: #c2a397; letter-spacing: .08em; }
+#copy-install { flex-shrink: 0; cursor: pointer; color: #ffb58f; background: #fa956810; border: 1px solid #b57b5f50; border-radius: 4px; padding: 10px 14px; font: inherit; font-size: 12px; }
+#copy-install:hover { background: #fa956820; }
+#copy-install:focus-visible, .install-console pre:focus-visible { outline: 2px solid #ffb58f; outline-offset: -3px; }
+.install-console pre { margin: 0; padding: 26px 24px; overflow-x: auto; color: #f5e9e3; font-size: 13px; line-height: 1.8; tab-size: 2; }
+.install-console code { font-family: monospace; white-space: pre; }
+.install-console-bottom { border-top: 1px solid #ffffff0c; color: #9c9290; font-size: 10px; line-height: 1.6; letter-spacing: .04em; }
+#install-copy-status { color: #e4ae93; text-align: right; letter-spacing: 0; }
+.install-followup { display: grid; grid-template-columns: 1fr 1fr; gap: 30px; padding: 26px 0; }
+.install-followup .mono { display: block; margin-bottom: 12px; font-size: 10px; color: #c2a397; }
+.install-followup code { display: inline-block; color: #ddd2cd; font: 13px monospace; padding: 9px 15px; border: 1px solid #ffffff14; margin: 0 8px 8px 0; border-radius: 4px; }
+.install-followup p, .install-trust { color: #9c9290; font-size: 12px; line-height: 1.8; }
+.install-links { display: flex; flex-wrap: wrap; gap: 16px 30px; }
+.install-trust { margin-top: 20px; max-width: 800px; }
+@media (max-width: 680px) {
+ .install-section { padding-top: 65px; }
+ .install-console-top, .install-console-bottom { padding: 15px; flex-wrap: wrap; }
+ .install-console pre { padding: 20px 15px; font-size: 12px; }
+ .install-followup { grid-template-columns: 1fr; gap: 8px; }
+ #install-copy-status { text-align: left; }
+}
 @font-face {
   font-family: 'Manrope';
   font-style: normal;

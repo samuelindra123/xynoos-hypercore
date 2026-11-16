@@ -127,3 +127,21 @@ filmMotionObserver.observe(document.body,{attributes:true,attributeFilter:['clas
 motionQuery.addEventListener?.('change',()=>{if(!filmMotionAllowed())pauseFilm();else syncFilmControls()});
 document.addEventListener('visibilitychange',()=>{if(document.hidden)pauseFilm()});
 showFilmScene(0);
+
+// The command is literal published product documentation, never assembled from input.
+const copyInstall=document.querySelector('#copy-install');
+const installCopyStatus=document.querySelector('#install-copy-status');
+copyInstall?.addEventListener('click',async()=>{
+ const command=document.querySelector('#install-command').textContent;
+ try{
+  if(!navigator.clipboard?.writeText)throw new Error('Clipboard unavailable');
+  await navigator.clipboard.writeText(command);
+  copyInstall.textContent='Copied ✓';
+  installCopyStatus.textContent='Copied. Paste into your Linux terminal.';
+ }catch{
+  copyInstall.textContent='Select command';
+  installCopyStatus.textContent='Clipboard unavailable. Select and copy the command above.';
+  const selection=window.getSelection();
+  if(selection){const range=document.createRange();range.selectNodeContents(document.querySelector('#install-command'));selection.removeAllRanges();selection.addRange(range)}
+ }
+});

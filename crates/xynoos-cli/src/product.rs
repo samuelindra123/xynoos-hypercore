@@ -48,13 +48,19 @@ fn manager(args: &[String]) -> Result<Value, Box<dyn Error>> {
     }
     Ok(serde_json::from_slice(&out.stdout)?)
 }
+fn availability<T>(result: &Result<T, xynoos_pressureiq::Error>) -> &'static str {
+    match result {
+        Ok(_) => "AVAILABLE",
+        Err(xynoos_pressureiq::Error::Permission) => "NOT AUTHORIZED",
+        Err(_) => "UNAVAILABLE",
+    }
+}
 fn capabilities(s: &SystemSnapshot) -> Value {
-    let availability = |ok: bool| if ok { "AVAILABLE" } else { "UNAVAILABLE" };
     json!({
-        "read_only_telemetry": availability(s.memory.mem.result.is_ok()),
-        "memory_psi": availability(s.memory.psi.result.is_ok()),
-        "cpu_psi": availability(s.cpu_psi.is_ok()), "io_psi": availability(s.io_psi.is_ok()),
-        "cgroup_v2_observation": availability(s.cgroup.is_ok()),
+        "read_only_telemetry": availability(&s.memory.mem.result),
+        "memory_psi": availability(&s.memory.psi.result),
+        "cpu_psi": availability(&s.cpu_psi), "io_psi": availability(&s.io_psi),
+        "cgroup_v2_observation": availability(&s.cgroup),
         "policy_simulation": "EXPERIMENTAL", "cooperative_owned_memory": "EXPERIMENTAL",
         "physical_kernel_mutation": "NOT AUTHORIZED", "active_zram_tuning": "UNAVAILABLE",
         "desktop_optimization": "UNAVAILABLE"
@@ -103,7 +109,23 @@ fn render(command: &str, v: &Value, color: bool) {
     println!("{accent} /X/  XYNOOS HYPERCORE{reset}");
     println!("      Linux Resource Intelligence");
     println!("      {VERSION} · Experimental Developer Preview\n");
-    if command == "help" || command == "overview" {
+    if command == "overview" {
+        let h = &v["host"];
+        println!(
+            "  Linux {} / {} logical CPUs",
+            text(&h["architecture"]),
+            h["logical_cpus"]
+        );
+        println!(
+            "  Memory: {} available / {} total",
+            human_bytes(&h["memory_available_bytes"]),
+            human_bytes(&h["memory_total_bytes"])
+        );
+        println!("  Read-only observation. No daemon or active intervention.\n");
+        println!("  xynoos doctor   Check host support and release integrity\n  xynoos status   Inspect current pressure and swap\n  xynoos help     Explore all commands");
+        return;
+    }
+    if command == "help" {
         println!("Observe first. Physical kernel mutation: DISABLED.\n");
         println!("  doctor        Check host support and release integrity\n  status        Inspect pressure, swap and engine state\n  capabilities  Show available and experimental features\n  diagnose      Capture bounded read-only telemetry\n  benchmark     Measure telemetry overhead (no workload tuning)\n  update        Install the latest verified preview\n  rollback      Restore the previous verified version offline\n  uninstall     Remove owned software; preserve evidence\n");
         println!("Use --json for structured output; --no-color for plain text.");
@@ -115,7 +137,7 @@ fn render(command: &str, v: &Value, color: bool) {
     if command == "capabilities" {
         if let Some(c) = v["capabilities"].as_object() {
             for (k, x) in c {
-                println!("  {k:<30} {}", text(x));
+                println!("  {k:<30} {}", semantic_status(x, color));
             }
         }
         return;
@@ -169,7 +191,7 @@ fn render(command: &str, v: &Value, color: bool) {
         if let Some(c) = v["host"]["capabilities"].as_object() {
             println!();
             for (k, x) in c {
-                println!("  {k:<30} {}", text(x));
+                println!("  {k:<30} {}", semantic_status(x, color));
             }
         }
         println!("\n  Permissions   read-only; root does not authorize intervention");
@@ -194,6 +216,25 @@ fn render(command: &str, v: &Value, color: bool) {
     if command == "benchmark" {
         println!("  Measurement   {}", v["measurement"]);
     }
+    if let Some(error) = v.get("evidence_save_error") {
+        println!(
+            "  Warning       Diagnostic evidence was not saved: {}",
+            text(error)
+        );
+    }
+}
+
+fn semantic_status(value: &Value, color: bool) -> String {
+    let status = text(value);
+    if !color {
+        return status;
+    }
+    let code = match status.as_str() {
+        "AVAILABLE" => "32",
+        "UNAVAILABLE" => "2",
+        _ => "33",
+    };
+    format!("\x1b[{code}m{status}\x1b[0m")
 }
 
 pub fn run(args: &[String]) -> Result<bool, Box<dyn Error>> {
@@ -268,10 +309,21 @@ pub fn run(args: &[String]) -> Result<bool, Box<dyn Error>> {
             "rollback",
             "uninstall"
         ]);
+        if command == "overview" {
+            v["host"] = snapshot(&collect_system());
+        }
         if json_output {
             println!("{v}");
         } else {
-            render("help", &v, color);
+            render(
+                if command == "overview" {
+                    "overview"
+                } else {
+                    "help"
+                },
+                &v,
+                color,
+            );
         }
         return Ok(true);
     }

@@ -1,0 +1,105 @@
+
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      Experimental Developer Preview
+
+  Checked Linux x86_64             PASS
+  Resolved release                 v0.1.0-preview.1
+  Verified release signature       PASS
+  Verified binary integrity        PASS
+  Installed verified binary        PASS
+
+Xynoos is ready.
+v0.1.0-preview.1 · /tmp/xynoos-public-home-kwxscfgt/.local/bin/xynoos
+
+Next: xynoos doctor
+      xynoos status
+      xynoos update
+
+Add ~/.local/bin to PATH or run: /tmp/xynoos-public-home-kwxscfgt/.local/bin/xynoos
+
+Trust: pinned Ed25519 release key + SHA256. No kernel settings changed.
+Xynoos HyperCore 0.1.0-preview.1 (6c249d12a43e251378eb3a075b1c9440b24e6125) — Experimental Developer Preview
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      0.1.0-preview.1 · Experimental Developer Preview
+
+  Host          codespaces-28594f / x86_64
+  Kernel        6.8.0-1070-azure
+  Distribution  Ubuntu 24.04.5 LTS
+  Memory        12.40 GiB available / 15.62 GiB total
+  Swap          0.00 GiB total / 0.00 GiB free
+  ZRAM          []
+  PSI some 10s  CPU 37.13% / memory 0.0% / I/O 3.83%
+  Engine        on-demand observation; no daemon
+  Intervention  none; physical kernel mutation DISABLED
+  Installation  AVAILABLE
+  Release       v0.1.0-preview.1 / preview
+  Integrity     Ed25519 signature + SHA256 VERIFIED
+
+  active_zram_tuning             UNAVAILABLE
+  cgroup_v2_observation          AVAILABLE
+  cooperative_owned_memory       EXPERIMENTAL
+  cpu_psi                        AVAILABLE
+  desktop_optimization           UNAVAILABLE
+  io_psi                         AVAILABLE
+  memory_psi                     AVAILABLE
+  physical_kernel_mutation       NOT AUTHORIZED
+  policy_simulation              EXPERIMENTAL
+  read_only_telemetry            AVAILABLE
+
+  Permissions   read-only; root does not authorize intervention
+  Support       Linux x86_64; Debian 13 N5000 validation pending
+  Last capture  none
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      0.1.0-preview.1 · Experimental Developer Preview
+
+  Host          codespaces-28594f / x86_64
+  Kernel        6.8.0-1070-azure
+  Distribution  Ubuntu 24.04.5 LTS
+  Memory        12.40 GiB available / 15.62 GiB total
+  Swap          0.00 GiB total / 0.00 GiB free
+  ZRAM          []
+  PSI some 10s  CPU 37.13% / memory 0.0% / I/O 3.83%
+  Engine        on-demand observation; no daemon
+  Intervention  none; physical kernel mutation DISABLED
+  Installation  AVAILABLE
+  Release       v0.1.0-preview.1 / preview
+  Integrity     Ed25519 signature + SHA256 VERIFIED
+  Last capture  none
+{"channel":"preview","diagnostic":{"count":2,"elapsed_ms":101,"inference":"Counters alone do not establish an application bottleneck or performance benefit.","samples":[{"architecture":"x86_64","capabilities":{"active_zram_tuning":"UNAVAILABLE","cgroup_v2_observation":"AVAILABLE","cooperative_owned_memory":"EXPERIMENTAL","cpu_psi":"AVAILABLE","desktop_optimization":"UNAVAILABLE","io_psi":"AVAILABLE","memory_psi":"AVAILABLE","physical_kernel_mutation":"NOT AUTHORIZED","policy_simulation":"EXPERIMENTAL","read_only_telemetry":"AVAILABLE"},"collection_ns":873852,"cpu_psi_some_avg10_pct":37.13,"distribution":"PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo","hostname":"codespaces-28594f","io_psi_some_avg10_pct":3.83,"kernel":"6.8.0-1070-azure","load_one":0.87,"logical_cpus":4,"memory_available_bytes":13312778240,"memory_psi_some_avg10_pct":0.0,"memory_total_bytes":16770469888,"sequential":true,"swap_free_bytes":0,"swap_observation":"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority","swap_total_bytes":0,"zram_devices":[]},{"architecture":"x86_64","capabilities":{"active_zram_tuning":"UNAVAILABLE","cgroup_v2_observation":"AVAILABLE","cooperative_owned_memory":"EXPERIMENTAL","cpu_psi":"AVAILABLE","desktop_optimization":"UNAVAILABLE","io_psi":"AVAILABLE","memory_psi":"AVAILABLE","physical_kernel_mutation":"NOT AUTHORIZED","policy_simulation":"EXPERIMENTAL","read_only_telemetry":"AVAILABLE"},"collection_ns":1410304,"cpu_psi_some_avg10_pct":37.13,"distribution":"PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo","hostname":"codespaces-28594f","io_psi_some_avg10_pct":3.83,"kernel":"6.8.0-1070-azure","load_one":0.87,"logical_cpus":4,"memory_available_bytes":13310763008,"memory_psi_some_avg10_pct":0.0,"memory_total_bytes":16770469888,"observed_cpu_utilization_pct":27.058823529411764,"sequential":true,"swap_free_bytes":0,"swap_observation":"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority","swap_total_bytes":0,"zram_devices":[]}],"summary":"Read-only counters captured; missing fields remain null.","timestamp_unix_s":1794844248},"host":{"architecture":"x86_64","capabilities":{"active_zram_tuning":"UNAVAILABLE","cgroup_v2_observation":"AVAILABLE","cooperative_owned_memory":"EXPERIMENTAL","cpu_psi":"AVAILABLE","desktop_optimization":"UNAVAILABLE","io_psi":"AVAILABLE","memory_psi":"AVAILABLE","physical_kernel_mutation":"NOT AUTHORIZED","policy_simulation":"EXPERIMENTAL","read_only_telemetry":"AVAILABLE"},"collection_ns":873852,"cpu_psi_some_avg10_pct":37.13,"distribution":"PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo","hostname":"codespaces-28594f","io_psi_some_avg10_pct":3.83,"kernel":"6.8.0-1070-azure","load_one":0.87,"logical_cpus":4,"memory_available_bytes":13312778240,"memory_psi_some_avg10_pct":0.0,"memory_total_bytes":16770469888,"sequential":true,"swap_free_bytes":0,"swap_observation":"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority","swap_total_bytes":0,"zram_devices":[]},"installation":{"channel":"preview","integrity":"Ed25519 signature + SHA256 VERIFIED","path":"/tmp/xynoos-public-home-kwxscfgt/.local/bin/xynoos","source_commit":"6c249d12a43e251378eb3a075b1c9440b24e6125","status":"AVAILABLE","version":"v0.1.0-preview.1"},"intervention_active":false,"last_diagnostic":null,"physical_kernel_mutation":false,"product":"Xynoos HyperCore","schema_version":1,"source_commit":"6c249d12a43e251378eb3a075b1c9440b24e6125","version":"0.1.0-preview.1"}
+
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      Experimental Developer Preview
+
+  Checked Linux x86_64             PASS
+  Resolved release                 v0.1.0-preview.1
+
+Already up to date; installed signature and checksum verified.
+v0.1.0-preview.1 · /tmp/xynoos-public-home-kwxscfgt/.local/bin/xynoos
+
+Uninstalled owned releases and executable; diagnostic evidence preserved.
+
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      Experimental Developer Preview
+
+  Checked Linux x86_64             PASS
+  Resolved release                 v0.1.0-preview.1
+  Verified release signature       PASS
+  Verified binary integrity        PASS
+  Installed verified binary        PASS
+
+Xynoos is ready.
+v0.1.0-preview.1 · /tmp/xynoos-public-home-kwxscfgt/.local/bin/xynoos
+
+Next: xynoos doctor
+      xynoos status
+      xynoos update
+
+Add ~/.local/bin to PATH or run: /tmp/xynoos-public-home-kwxscfgt/.local/bin/xynoos
+
+Trust: pinned Ed25519 release key + SHA256. No kernel settings changed.
+PUBLIC LIFECYCLE PASS: install, identity, doctor, status, diagnose, update, uninstall/evidence, reinstall; rollback requires a prior release
