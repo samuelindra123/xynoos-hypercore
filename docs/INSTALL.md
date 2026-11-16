@@ -45,14 +45,13 @@ GitHub CLI is not required to install or run Xynoos.
 
 ## Pinned, auditable alternative
 
-Obtain an exact reviewed source commit and installer SHA256 from a trusted record,
-fetch `distribution/manager.py` at that immutable commit, inspect it, and verify
-that digest locally **before** running Python. For example, replacing both
-placeholders with values obtained through your trusted channel:
+Pin the reviewed installer source below, inspect it, and verify the digest locally
+**before** running Python. Confirm the commit/digest through your trusted channel;
+copying both from a compromised page would not provide independent authentication.
 
 ```sh
-curl --proto '=https' --tlsv1.2 -fsSLo xynoos-installer.py https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/REVIEWED_COMMIT/distribution/manager.py
-printf '%s  %s\n' TRUSTED_INSTALLER_SHA256 xynoos-installer.py | sha256sum -c -
+curl --proto '=https' --tlsv1.2 -fsSLo xynoos-installer.py https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/12e4ac1ea7e3153853cb0553e3afc19865c162b3/distribution/manager.py
+printf '%s  %s\n' 4b40a9f891c6f015244be211563ed0ae523ebaba32c51a06a7f70ac258b575c9 xynoos-installer.py | sha256sum -c -
 # Run this only after the check above succeeds and you have inspected the script:
 python3 -I xynoos-installer.py install --version v0.1.0-preview.1
 ```
