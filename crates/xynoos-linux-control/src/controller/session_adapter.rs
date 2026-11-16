@@ -39,6 +39,7 @@ pub struct ControllerSessionAdapter {
     #[cfg(test)]
     fixture_mutations: bool,
 }
+const MAX_EVIDENCE_PER_KIND: usize = 128;
 fn fault(kind: FaultKind, message: impl Into<String>) -> Fault {
     Fault::new(kind, message)
 }
@@ -58,6 +59,23 @@ fn low_kind(e: &MemoryLowError) -> FaultKind {
     }
 }
 impl ControllerSessionAdapter {
+    fn evidence_capacity(&self) -> Result<(), Fault> {
+        if [
+            self.safety_evidence.len(),
+            self.session_evidence.len(),
+            self.mutation_evidence.len(),
+            self.low_errors.len(),
+        ]
+        .into_iter()
+        .any(|n| n >= MAX_EVIDENCE_PER_KIND)
+        {
+            return Err(fault(
+                FaultKind::Unavailable,
+                "bounded evidence capacity reached; preserve adapter and inspect manually",
+            ));
+        }
+        Ok(())
+    }
     pub fn new(session: ControllerSession, thresholds: SafetyThresholds) -> Self {
         Self {
             session,
@@ -88,6 +106,7 @@ impl ControllerSessionAdapter {
         adapter
     }
     fn safety(&mut self, stage: Stage, recovery: bool) -> Result<(), Fault> {
+        self.evidence_capacity()?;
         let o = (self.telemetry)(self.thresholds);
         let eligible = o.decision == SafetyDecision::Eligible;
         self.safety_evidence.push((stage, o));
@@ -122,6 +141,7 @@ impl ControllerSessionAdapter {
         if !enabled {
             return Err(fault(FaultKind::Before, "live adapter mutations disabled"));
         }
+        self.evidence_capacity()?;
         self.safety(stage, recovery_stage(stage)).map_err(|mut e| {
             if recovery_stage(stage) {
                 e.kind = FaultKind::Unavailable;
@@ -201,6 +221,7 @@ impl ControllerSessionAdapter {
 }
 impl Backend for ControllerSessionAdapter {
     fn inspect(&mut self, stage: Stage) -> Result<Observation, Fault> {
+        self.evidence_capacity()?;
         let o = self.session.observe();
         self.session_evidence.push((stage, o.clone()));
         if o.activation_unresolved || o.child_unresolved || o.memory_low_unresolved {

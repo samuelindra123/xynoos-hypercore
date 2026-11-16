@@ -1,5 +1,29 @@
 # Xynoos HyperCore
 
+Live PressureIQ observation → deterministic pressure decisions → AURA policy →
+typed safety gate → private HyperMemory workload → verified outcomes and JSON.
+Physical kernel mutation remains **NO-GO / NOT VERIFIED**. Desktop performance
+improvement and production readiness have not been established.
+
+```sh
+cargo build --workspace --release
+./target/release/xynoos-cli mvp observe --count 5 --interval-ms 1000
+./target/release/xynoos-cli mvp simulate
+./target/release/xynoos-cli mvp recovery --human
+python3 scripts/benchmark_mvp.py --repeats 12 --output /tmp/xynoos-mvp-new.json
+```
+
+Simulation uses real compression on a fixed 256-KiB owned corpus and synthetic
+pressure; observe never changes controls or workload buffers. The static
+`xynoos-mvp` package exposes only observe, simulate and read-only recovery.
+
+[Exact commands](docs/MVP-QUICKSTART.md) · [Architecture](docs/MVP-ARCHITECTURE.md) ·
+[Safety/recovery](docs/MVP-SAFETY-RECOVERY.md) · [Benchmark method](docs/MVP-BENCHMARK.md) ·
+[Measured results](docs/reports/MVP-RESULTS.md) · [N5000 validation](docs/MVP-N5000-VALIDATION.md)
+
+Earlier research milestones follow; their standalone simulators and historical
+status notes should be read with the current MVP scope above.
+
 Fondasi riset userspace untuk optimasi sumber daya Linux pada perangkat terbatas. Milestone TASK 002 menyediakan simulasi penyimpanan halaman terkompresi dan kebijakan AURA baseline; ini bukan pengganti memory manager, swap, atau zram dan belum siap produksi.
 
 ## Menjalankan

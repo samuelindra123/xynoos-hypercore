@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "steps": [
+    {"at_ms":0,"age_ms":0,"cpu_psi":0,"memory_psi":0,"io_psi":0,"total_kib":4194304,"available_kib":2097152,"swap_in_pages":0,"swap_out_pages":0},
+    {"at_ms":1000,"age_ms":0,"cpu_psi":0,"memory_psi":15,"io_psi":0,"total_kib":4194304,"available_kib":1048576,"swap_in_pages":0,"swap_out_pages":0},
+    {"at_ms":2000,"age_ms":0,"cpu_psi":0,"memory_psi":20,"io_psi":0,"total_kib":4194304,"available_kib":524288,"swap_in_pages":1,"swap_out_pages":2},
+    {"at_ms":3000,"age_ms":0,"cpu_psi":0,"memory_psi":25,"io_psi":0,"total_kib":4194304,"available_kib":524288,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":4000,"age_ms":0,"cpu_psi":20,"memory_psi":20,"io_psi":0,"total_kib":4194304,"available_kib":524288,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":5000,"age_ms":0,"cpu_psi":20,"memory_psi":20,"io_psi":0,"total_kib":4194304,"available_kib":524288,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":6000,"age_ms":6000,"cpu_psi":0,"memory_psi":30,"io_psi":0,"total_kib":4194304,"available_kib":524288,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":7000,"age_ms":0,"cpu_psi":0,"memory_psi":null,"io_psi":0,"total_kib":4194304,"available_kib":524288,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":8000,"age_ms":0,"cpu_psi":0,"memory_psi":20,"io_psi":0,"total_kib":4194304,"available_kib":524288,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":9000,"age_ms":0,"cpu_psi":0,"memory_psi":20,"io_psi":0,"total_kib":4194304,"available_kib":524288,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":10000,"age_ms":0,"cpu_psi":0,"memory_psi":0,"io_psi":0,"total_kib":4194304,"available_kib":2097152,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":15000,"age_ms":0,"cpu_psi":0,"memory_psi":0,"io_psi":0,"total_kib":4194304,"available_kib":2097152,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":19000,"age_ms":0,"cpu_psi":0,"memory_psi":0,"io_psi":0,"total_kib":4194304,"available_kib":2097152,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":20000,"age_ms":0,"cpu_psi":15,"memory_psi":20,"io_psi":0,"total_kib":4194304,"available_kib":524288,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":21000,"age_ms":0,"cpu_psi":20,"memory_psi":20,"io_psi":0,"total_kib":4194304,"available_kib":524288,"swap_in_pages":2,"swap_out_pages":3},
+    {"at_ms":22000,"age_ms":0,"cpu_psi":20,"memory_psi":20,"io_psi":0,"total_kib":4194304,"available_kib":524288,"swap_in_pages":2,"swap_out_pages":3}
+  ]
+}

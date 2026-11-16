@@ -1,0 +1,204 @@
+{
+  "schema_version": 1,
+  "evidence": "Codespaces userspace measurements; pressure replay is simulation; no physical A/B",
+  "repeats_per_arm": 12,
+  "arms": {
+    "baseline": {
+      "process_wall_ns": {
+        "count": 12,
+        "p50": 4578893,
+        "p95": 5988408,
+        "p99": 5988408
+      },
+      "engine_workload_total_ns": {
+        "count": 12,
+        "p50": 2369627,
+        "p95": 3049563,
+        "p99": 3049563
+      },
+      "process_cpu_ns": {
+        "count": 12,
+        "p50": 4186000,
+        "p95": 5058000,
+        "p99": 5058000
+      },
+      "process_peak_rss_kib": {
+        "count": 12,
+        "p50": 21716,
+        "p95": 22228,
+        "p99": 22228
+      },
+      "sampled_loaded_rss_kib": {
+        "count": 192,
+        "p50": 3060,
+        "p95": 3180,
+        "p99": 3180
+      },
+      "decision_ns": {
+        "count": 192,
+        "p50": 60,
+        "p95": 131,
+        "p99": 160
+      },
+      "response_ns": {
+        "count": 192,
+        "p50": 135773,
+        "p95": 223817,
+        "p99": 273039
+      },
+      "workload_ns": {
+        "count": 192,
+        "p50": 131735,
+        "p95": 213938,
+        "p99": 261817
+      },
+      "stored_payload_bytes": {
+        "count": 192,
+        "p50": 262144,
+        "p95": 262144,
+        "p99": 262144
+      },
+      "safety_refusals": 0,
+      "private_buffer_verifications": 192,
+      "compression_steps": 0
+    },
+    "observe": {
+      "process_wall_ns": {
+        "count": 12,
+        "p50": 4596586,
+        "p95": 4712620,
+        "p99": 4712620
+      },
+      "engine_workload_total_ns": {
+        "count": 12,
+        "p50": 2137574,
+        "p95": 2434367,
+        "p99": 2434367
+      },
+      "process_cpu_ns": {
+        "count": 12,
+        "p50": 3902000,
+        "p95": 4510000,
+        "p99": 4510000
+      },
+      "process_peak_rss_kib": {
+        "count": 12,
+        "p50": 21716,
+        "p95": 22228,
+        "p99": 22228
+      },
+      "sampled_loaded_rss_kib": {
+        "count": 192,
+        "p50": 3084,
+        "p95": 3188,
+        "p99": 3196
+      },
+      "decision_ns": {
+        "count": 192,
+        "p50": 9427,
+        "p95": 19085,
+        "p99": 41367
+      },
+      "response_ns": {
+        "count": 192,
+        "p50": 144880,
+        "p95": 247561,
+        "p99": 318113
+      },
+      "workload_ns": {
+        "count": 192,
+        "p50": 130613,
+        "p95": 216995,
+        "p99": 283859
+      },
+      "stored_payload_bytes": {
+        "count": 192,
+        "p50": 262144,
+        "p95": 262144,
+        "p99": 262144
+      },
+      "safety_refusals": 24,
+      "private_buffer_verifications": 192,
+      "compression_steps": 0
+    },
+    "simulate": {
+      "process_wall_ns": {
+        "count": 12,
+        "p50": 5737492,
+        "p95": 7008834,
+        "p99": 7008834
+      },
+      "engine_workload_total_ns": {
+        "count": 12,
+        "p50": 3055083,
+        "p95": 4214084,
+        "p99": 4214084
+      },
+      "process_cpu_ns": {
+        "count": 12,
+        "p50": 4925000,
+        "p95": 6427000,
+        "p99": 6427000
+      },
+      "process_peak_rss_kib": {
+        "count": 12,
+        "p50": 21716,
+        "p95": 22228,
+        "p99": 22228
+      },
+      "sampled_loaded_rss_kib": {
+        "count": 192,
+        "p50": 3096,
+        "p95": 3216,
+        "p99": 3236
+      },
+      "decision_ns": {
+        "count": 192,
+        "p50": 10219,
+        "p95": 19908,
+        "p99": 36067
+      },
+      "response_ns": {
+        "count": 192,
+        "p50": 166971,
+        "p95": 311200,
+        "p99": 445520
+      },
+      "workload_ns": {
+        "count": 192,
+        "p50": 149318,
+        "p95": 283508,
+        "p99": 420894
+      },
+      "stored_payload_bytes": {
+        "count": 192,
+        "p50": 262144,
+        "p95": 262144,
+        "p99": 262144
+      },
+      "safety_refusals": 24,
+      "private_buffer_verifications": 192,
+      "compression_steps": 60
+    }
+  },
+  "live_observe_separate": {
+    "collection_ns": {
+      "count": 12,
+      "p50": 635555,
+      "p95": 856135,
+      "p99": 856135
+    },
+    "decision_ns": {
+      "count": 12,
+      "p50": 31880,
+      "p95": 59541,
+      "p99": 59541
+    },
+    "process_cpu_ns": {
+      "count": 12,
+      "p50": 1728000,
+      "p95": 2124000,
+      "p99": 2124000
+    }
+  }
+}

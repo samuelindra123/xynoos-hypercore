@@ -198,6 +198,12 @@ pub fn prepare(snapshot: &SystemSnapshot, now: Instant, target: &Path, action: A
 /// Kernel writes are explicitly unavailable, including with caller authorization.
 /// This prevents silently treating path ownership as exclusive delegation.
 pub fn execute(_prepared: &Audit, authorized: bool) -> Decision {
+    physical_admission(authorized)
+}
+
+/// One unconditional physical admission policy, also used by the integrated MVP.
+/// Explicit authorization cannot establish exclusive delegation or crash recovery.
+pub fn physical_admission(authorized: bool) -> Decision {
     if !authorized {
         Decision::Declined("explicit authorization required".into())
     } else {

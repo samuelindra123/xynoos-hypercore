@@ -131,6 +131,8 @@ name = "xynoos-bench"
 version = "0.1.0"
 dependencies = [
  "lz4_flex",
+ "serde_json",
+ "xynoos-engine",
  "xynoos-hypermemory",
 ]
 
@@ -138,9 +140,12 @@ dependencies = [
 name = "xynoos-cli"
 version = "0.1.0"
 dependencies = [
+ "libc",
  "serde_json",
  "xynoos-decision",
+ "xynoos-engine",
  "xynoos-hypermemory",
+ "xynoos-linux-control",
  "xynoos-pressureiq",
 ]
 
@@ -155,6 +160,22 @@ dependencies = [
  "libc",
  "serde",
  "serde_json",
+ "xynoos-linux-control",
+ "xynoos-pressureiq",
+]
+
+[[package]]
+name = "xynoos-engine"
+version = "0.1.0"
+dependencies = [
+ "crc32fast",
+ "libc",
+ "serde",
+ "serde_json",
+ "xynoos-aura",
+ "xynoos-core",
+ "xynoos-decision",
+ "xynoos-hypermemory",
  "xynoos-linux-control",
  "xynoos-pressureiq",
 ]

@@ -1,5 +1,9 @@
 # Arsitektur milestone 0.1
 
+Current integrated MVP: [architecture](MVP-ARCHITECTURE.md) and
+[safety/recovery contract](MVP-SAFETY-RECOVERY.md). The milestone notes below are
+historical component/research details; physical control remains disabled.
+
 Alur data: caller → PageStore → LZ4 block → HashMap<PageId, Entry>. Pengambilan mendekompresi ke buffer baru; data asli tidak disimpan permanen. ID monoton per instance, tidak digunakan ulang, dan dapat habis. Penghapusan membebaskan buffer milik entri. Store tidak menyediakan persistensi atau sinkronisasi sendiri.
 
 AURA menerima tekanan dan estimasi biaya melalui trait `DecisionPolicy`; baseline memilih memory saat tekanan rendah dan compressed pada tekanan sedang/tinggi, tanpa menggunakan estimasi biaya. Tier adalah representasi keputusan, bukan backend terintegrasi. Interface dapat diperluas untuk eksperimen HyperTier, RefaultSense, dan PageFusion; implementasinya belum ada.

@@ -934,6 +934,19 @@ mod adapter_integration {
         assert_eq!(s.low, Ok(4096));
     }
     #[test]
+    fn integrated_evidence_budget_refuses_without_discarding_history_or_writing() {
+        let (mut a, state, _) = adapter();
+        for _ in 0..128 {
+            a.inspect(Stage::Binding).unwrap();
+        }
+        assert_eq!(a.session_evidence.len(), 128);
+        assert!(a.inspect(Stage::Binding).is_err());
+        assert!(a.activate(&["cpu".into(), "pids".into()].into()).is_err());
+        assert_eq!(a.session_evidence.len(), 128);
+        assert!(a.mutation_evidence.is_empty());
+        clean(&state);
+    }
+    #[test]
     fn transient_telemetry_refusal_recovers_without_reopening_forward_authority() {
         // Refuse at the guard, after activation, after creation and after low apply.
         for refused_read in [3, 4, 6, 10] {
