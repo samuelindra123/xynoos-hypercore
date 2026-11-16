@@ -11,7 +11,7 @@ tag = sys.argv[2]
 subprocess.run([sys.executable, "scripts/verify-release.py", str(directory)], check=True)
 m = json.loads((directory / "manifest.json").read_bytes())
 assert m["version"] == tag
-subprocess.run([sys.executable, "scripts/release-source-gate.py", tag], check=True)
+subprocess.run([sys.executable, "scripts/release-source-gate.py", tag, "--source-commit", m["source_commit"]], check=True)
 repo = m["repository"]
 ref = subprocess.run(["gh", "api", f"repos/{repo}/git/ref/tags/{tag}"], capture_output=True)
 if ref.returncode == 0:
