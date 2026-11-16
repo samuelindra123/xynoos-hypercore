@@ -10,7 +10,7 @@ pub struct ParentIdentity {
 
 /// All reads and writes must be relative to the same verified directory.
 /// A backend must reject replacement or loss of the designated unit binding.
-pub trait ControllerBackend {
+trait ControllerBackend {
     fn verify_unit(&mut self) -> Result<ParentIdentity, String>;
     fn processes(&mut self) -> Result<String, String>;
     fn available(&mut self) -> Result<String, String>;
@@ -35,7 +35,8 @@ fn controllers(value: &str) -> Result<BTreeSet<&str>, String> {
 
 /// Enables memory only on a backend which independently verifies its unit.
 /// A failed write or read-back is reported as ambiguous; there is no blind retry.
-pub fn activate_memory<B: ControllerBackend>(
+#[cfg(test)]
+fn activate_memory<B: ControllerBackend>(
     backend: &mut B,
     authorized: bool,
 ) -> Result<Activation, String> {
@@ -108,7 +109,7 @@ fn activate_memory_expected<B: ControllerBackend>(
 }
 
 /// Restore only the state recorded by a successful activation. No retry is made on failure.
-pub fn restore_memory<B: ControllerBackend>(
+fn restore_memory<B: ControllerBackend>(
     backend: &mut B,
     activation: &Activation,
     authorized: bool,
@@ -353,6 +354,39 @@ fn mutation_result(
 
 /// An activation held in memory until one explicit restoration attempt.
 /// Dropping this value never writes to the kernel.
+/// Production consumers cannot invoke the private mutation operations:
+/// ```compile_fail
+/// use xynoos_linux_control::{controller::ControllerSession, child_memory::ChildIdentity};
+/// fn bypass(s: &mut ControllerSession, child: ChildIdentity) { s.activate_prepared(); }
+/// ```
+/// ```compile_fail
+/// use xynoos_linux_control::{controller::ControllerSession, child_memory::ChildIdentity};
+/// fn bypass(s: &mut ControllerSession, child: ChildIdentity) { s.restore(true); }
+/// ```
+/// ```compile_fail
+/// use xynoos_linux_control::{controller::ControllerSession, child_memory::ChildIdentity};
+/// fn bypass(s: &mut ControllerSession, child: ChildIdentity) { s.create_empty_child(); }
+/// ```
+/// ```compile_fail
+/// use xynoos_linux_control::{controller::ControllerSession, child_memory::ChildIdentity};
+/// fn bypass(s: &mut ControllerSession, child: ChildIdentity) { s.remove_empty_child(); }
+/// ```
+/// ```compile_fail
+/// use xynoos_linux_control::{controller::ControllerSession, child_memory::ChildIdentity};
+/// fn bypass(s: &mut ControllerSession, child: ChildIdentity) { s.change_child_memory_low(child, 0, 4096, true, false); }
+/// ```
+/// Nor construct the private permit or fixture capability:
+/// ```compile_fail
+/// use xynoos_linux_control::controller::session_adapter::MutationPermit;
+/// ```
+/// ```compile_fail
+/// use xynoos_linux_control::controller::session_adapter::fixture_permit;
+/// ```
+/// The former convenience activation entry point is absent:
+/// ```compile_fail
+/// use xynoos_linux_control::controller::ControllerSession;
+/// let _ = ControllerSession::activate;
+/// ```
 pub struct ControllerSession {
     backend: LinuxController,
     activation: Option<Activation>,
@@ -430,25 +464,6 @@ fn controller_set(text: String) -> Result<BTreeSet<String>, String> {
     }
     Ok(set)
 }
-/// Failed convenience activation retains the session for diagnostics and recovery.
-pub struct ActivationFailure {
-    pub outcome: MutationOutcome,
-    pub session: Option<Box<ControllerSession>>,
-}
-impl std::fmt::Debug for ActivationFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ActivationFailure")
-            .field("outcome", &self.outcome)
-            .field("session_retained", &self.session.is_some())
-            .finish()
-    }
-}
-impl std::fmt::Display for ActivationFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.outcome.fmt(f)
-    }
-}
-impl std::error::Error for ActivationFailure {}
 fn activate_with_tracking<B: ControllerBackend>(
     backend: &mut B,
     original: &mut Option<Vec<String>>,
@@ -1141,35 +1156,12 @@ impl ControllerSession {
             low_unresolved: false,
         })
     }
-    /// Prepare and activate, retaining the session after any activation failure.
-    pub fn activate(
-        binding: crate::systemd_identity::Binding,
-        authorized: bool,
-    ) -> Result<Self, ActivationFailure> {
-        let mut session =
-            Self::prepare(binding, authorized).map_err(|error| ActivationFailure {
-                outcome: mutation_result(
-                    MutationOperation::Activate,
-                    MutationStatus::RefusedBeforeMutation,
-                    Some(false),
-                    None,
-                    None,
-                    None,
-                    Some(error),
-                ),
-                session: None,
-            })?;
-        match session.activate_prepared() {
-            Ok(_) => Ok(session),
-            Err(outcome) => Err(ActivationFailure {
-                outcome,
-                session: Some(Box::new(session)),
-            }),
-        }
-    }
     /// Capture initial state before activation. A failed attempt remains unresolved;
     /// no automatic retry or rollback is performed on an ambiguous write.
-    pub fn activate_prepared(&mut self) -> Result<MutationOutcome, MutationOutcome> {
+    fn activate_prepared(
+        &mut self,
+        _permit: session_adapter::MutationPermit,
+    ) -> Result<MutationOutcome, MutationOutcome> {
         activate_typed(
             &mut self.backend,
             &mut self.activation,
@@ -1214,8 +1206,9 @@ impl ControllerSession {
         crate::child_memory::read(&mut SessionLow(self), child)
     }
     /// Validate a requested change. Physical memory.low writes are disabled even when authorized.
-    pub fn change_child_memory_low(
+    fn change_child_memory_low(
         &mut self,
+        _permit: session_adapter::MutationPermit,
         child: crate::child_memory::ChildIdentity,
         expected: u64,
         value: u64,
@@ -1236,7 +1229,11 @@ impl ControllerSession {
         result
     }
     /// A failed authorized attempt is never retried automatically.
-    pub fn restore(&mut self, authorized: bool) -> Result<MutationOutcome, MutationOutcome> {
+    fn restore(
+        &mut self,
+        _permit: session_adapter::MutationPermit,
+        authorized: bool,
+    ) -> Result<MutationOutcome, MutationOutcome> {
         let child_present = self.backend.registered_child().is_some();
         let child_unresolved = self.backend.child_unresolved;
         restore_typed(
@@ -1250,7 +1247,10 @@ impl ControllerSession {
         )
     }
     /// Create one empty, session-registered child. Unknown effects remain latched.
-    pub fn create_empty_child(&mut self) -> Result<MutationOutcome, MutationOutcome> {
+    fn create_empty_child(
+        &mut self,
+        _permit: session_adapter::MutationPermit,
+    ) -> Result<MutationOutcome, MutationOutcome> {
         create_child_typed(
             &mut self.backend,
             self.activation.is_some() && !self.activation_unresolved,
@@ -1262,7 +1262,10 @@ impl ControllerSession {
         self.backend.io.child_controllers(id)
     }
     /// Remove only the registered, still-empty child; failed cleanup blocks restoration.
-    pub fn remove_empty_child(&mut self) -> Result<MutationOutcome, MutationOutcome> {
+    fn remove_empty_child(
+        &mut self,
+        _permit: session_adapter::MutationPermit,
+    ) -> Result<MutationOutcome, MutationOutcome> {
         remove_child_typed(&mut self.backend, self.low_unresolved)
     }
 }
@@ -2041,7 +2044,10 @@ mod observation_tests {
         assert!(o.activation_unresolved);
         assert_eq!(o.validity, ObservationValidity::Unknown);
         assert!(f.session.verify_for_mutation().is_err());
-        assert!(f.session.activate_prepared().is_err());
+        assert!(f
+            .session
+            .activate_prepared(session_adapter::fixture_permit())
+            .is_err());
         f.session.activation_unresolved = false;
         f.activate();
         f.child();
@@ -2054,14 +2060,27 @@ mod observation_tests {
         let child = f.session.backend.registered_child().unwrap();
         assert!(f
             .session
-            .change_child_memory_low(child, 4096, 8192, true, false)
+            .change_child_memory_low(
+                session_adapter::fixture_permit(),
+                child,
+                4096,
+                8192,
+                true,
+                false
+            )
             .is_err());
         assert_eq!(
             fs::read_to_string(f.path.join("child/memory.low")).unwrap(),
             "4096"
         );
-        assert!(f.session.remove_empty_child().is_err());
-        assert!(f.session.restore(true).is_err());
+        assert!(f
+            .session
+            .remove_empty_child(session_adapter::fixture_permit())
+            .is_err());
+        assert!(f
+            .session
+            .restore(session_adapter::fixture_permit(), true)
+            .is_err());
     }
     #[test]
     fn stale_hierarchy_and_failed_reads_are_visible() {

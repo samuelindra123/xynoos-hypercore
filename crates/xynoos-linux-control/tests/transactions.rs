@@ -153,7 +153,7 @@ fn apply_failure_and_verification_mismatch() {
     let mut f = Fixture::new();
     f.fail_write = Some(1);
     let r = run(&mut f, &collect_system(), action(), true);
-    assert_eq!(r.outcome, Outcome::ApplyFailed);
+    assert_eq!(r.outcome, Outcome::Ambiguous);
     assert_eq!(f.value(), 4096);
     let mut f = Fixture::new();
     f.change_read = Some((3, 4096));
@@ -196,13 +196,14 @@ fn real_backend_refuses_unauthorized_and_non_cgroup_parent() {
 }
 
 #[test]
-fn failed_apply_after_mutation_is_restored() {
+fn failed_apply_after_mutation_is_preserved_without_rollback() {
     let mut f = Fixture::new();
     f.fail_after_write = Some(1);
     let report = run(&mut f, &collect_system(), action(), true);
-    assert_eq!(report.outcome, Outcome::ApplyFailed);
-    assert_eq!(f.value(), 4096);
-    assert_eq!(f.writes, 2);
+    assert_eq!(report.outcome, Outcome::Ambiguous);
+    assert_eq!(f.value(), 8192);
+    assert_eq!(f.writes, 1);
+    assert!(report.events.iter().any(|e| e.contains("unresolved")));
 }
 
 #[test]

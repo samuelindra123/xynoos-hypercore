@@ -36,6 +36,7 @@ pub enum Outcome {
     Declined,
     Conflict,
     ApplyFailed,
+    Ambiguous,
     VerificationFailed,
     RollbackFailed,
     OperationFailed,
@@ -122,6 +123,11 @@ pub fn run_during<B: Backend>(
     let applied = backend.write_low(bytes);
     if let Err(e) = &applied {
         report.events.push(format!("apply failed: {e}"));
+        report.outcome = Outcome::Ambiguous;
+        report
+            .events
+            .push("write effect unresolved; no callback, retry or rollback authorized".into());
+        return report;
     }
     let verification = check(backend, id, bytes);
     if let Err(e) = &verification {
@@ -211,10 +217,15 @@ pub struct DisposableCgroup {
     member: Option<xynoos_pressureiq::workload::Identity>,
     unresolved: bool,
 }
+/// No production or fixture caller may enable physical cgroup mutation.
+pub(crate) fn physical_mutation_disabled() -> Result<(), String> {
+    Err("physical cgroup mutation disabled in all builds".into())
+}
 impl DisposableCgroup {
     /// Creates an empty child only after authorization and ownership/delegation checks.
     /// A non-root effective uid is required; no elevation is attempted.
     pub fn create(parent: &Path, authorized: bool) -> Result<Self, String> {
+        physical_mutation_disabled()?;
         if !authorized {
             return Err("explicit authorization required".into());
         }
@@ -347,6 +358,7 @@ impl DisposableCgroup {
     /// Place a child owned by this process. The caller must keep it gated until
     /// `verify_child` succeeds and must kill and reap it on every error path.
     pub fn place_child(&mut self, child: &std::process::Child) -> Result<(), String> {
+        physical_mutation_disabled()?;
         if self.member.is_some() {
             return Err("target already used".into());
         }
@@ -400,6 +412,7 @@ impl DisposableCgroup {
 
     /// Remove the empty disposable target explicitly and report cleanup errors.
     pub fn cleanup(mut self) -> Result<(), String> {
+        physical_mutation_disabled()?;
         // A failed explicit cleanup must not be followed by an unreported retry in Drop.
         self.cleanup_on_drop = false;
         self.ready_to_restore()?;
@@ -476,6 +489,7 @@ impl Backend for DisposableCgroup {
             .map_err(|_| "invalid memory.low".into())
     }
     fn write_low(&mut self, value: u64) -> Result<(), String> {
+        physical_mutation_disabled()?;
         use std::os::unix::fs::FileExt;
         let s = value.to_string();
         let n = self
@@ -490,7 +504,7 @@ impl Backend for DisposableCgroup {
 }
 impl Drop for DisposableCgroup {
     fn drop(&mut self) {
-        if !self.cleanup_on_drop {
+        if physical_mutation_disabled().is_err() || !self.cleanup_on_drop {
             return;
         }
         // Do not deliberately remove a replacement target. The final check/removal is not atomic.

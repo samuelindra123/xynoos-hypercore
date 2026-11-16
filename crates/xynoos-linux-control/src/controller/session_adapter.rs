@@ -8,6 +8,21 @@ use crate::{
     safety::{self, SafetyDecision, SafetyObservation, SafetyThresholds},
 };
 
+// A consumed, non-Clone permit. Only this module can construct one in production.
+// Its constructor is the mandatory policy boundary; no environment or CLI opt-in.
+pub(super) struct MutationPermit {
+    _private: (),
+}
+#[cfg(test)]
+pub(super) fn fixture_permit() -> MutationPermit {
+    MutationPermit { _private: () }
+}
+fn recovery_stage(stage: Stage) -> bool {
+    matches!(
+        stage,
+        Stage::RecoveryRestoreLow | Stage::RecoveryRemoveChild | Stage::RecoveryRestoreControllers
+    )
+}
 /// Uses the existing coordinator and session protocols; no second state machine.
 /// Evidence remains owned by the adapter even if a coordinator Fault is coarser.
 /// Production construction never enables mutation, even for an authorized session.
@@ -16,6 +31,7 @@ pub struct ControllerSessionAdapter {
     thresholds: SafetyThresholds,
     telemetry: Box<dyn FnMut(SafetyThresholds) -> SafetyObservation>,
     safety_refused: bool,
+    child_original_low: Option<(ChildIdentity, u64)>,
     pub safety_evidence: Vec<(Stage, SafetyObservation)>,
     pub session_evidence: Vec<(Stage, SessionObservation)>,
     pub mutation_evidence: Vec<(Stage, MutationOutcome)>,
@@ -48,6 +64,7 @@ impl ControllerSessionAdapter {
             thresholds,
             telemetry: Box::new(safety::check_boundary),
             safety_refused: false,
+            child_original_low: None,
             safety_evidence: Vec::new(),
             session_evidence: Vec::new(),
             mutation_evidence: Vec::new(),
@@ -70,14 +87,14 @@ impl ControllerSessionAdapter {
         adapter.fixture_mutations = true;
         adapter
     }
-    fn safety(&mut self, stage: Stage) -> Result<(), Fault> {
+    fn safety(&mut self, stage: Stage, recovery: bool) -> Result<(), Fault> {
         let o = (self.telemetry)(self.thresholds);
         let eligible = o.decision == SafetyDecision::Eligible;
         self.safety_evidence.push((stage, o));
         if !eligible {
             self.safety_refused = true;
         }
-        if self.safety_refused {
+        if !eligible || (self.safety_refused && !recovery) {
             return Err(fault(
                 FaultKind::Before,
                 "safety telemetry refused; mutation blocked for this adapter",
@@ -85,7 +102,7 @@ impl ControllerSessionAdapter {
         }
         Ok(())
     }
-    fn guard(&mut self, stage: Stage) -> Result<(), Fault> {
+    fn guard(&mut self, stage: Stage) -> Result<MutationPermit, Fault> {
         if !self.session.backend.authorized {
             return Err(fault(
                 FaultKind::Before,
@@ -105,11 +122,16 @@ impl ControllerSessionAdapter {
         if !enabled {
             return Err(fault(FaultKind::Before, "live adapter mutations disabled"));
         }
-        self.safety(stage)?;
+        self.safety(stage, recovery_stage(stage)).map_err(|mut e| {
+            if recovery_stage(stage) {
+                e.kind = FaultKind::Unavailable;
+            }
+            e
+        })?;
         self.session
             .verify_for_mutation()
             .map_err(|e| fault(FaultKind::Unavailable, e))?;
-        Ok(())
+        Ok(MutationPermit { _private: () })
     }
     fn mutation(
         &mut self,
@@ -145,6 +167,24 @@ impl ControllerSessionAdapter {
             return Err(fault(FaultKind::Conflict, "registered child mismatch"));
         }
         Ok(c)
+    }
+    fn active_controllers(&mut self) -> Result<(), Fault> {
+        let mut expected: BTreeSet<_> = self
+            .session
+            .original_controllers()
+            .iter()
+            .cloned()
+            .collect();
+        expected.insert("memory".into());
+        let current = self
+            .session
+            .backend
+            .enabled()
+            .map_err(|e| fault(FaultKind::Unavailable, e))?;
+        if controller_set(current).map_err(|e| fault(FaultKind::Conflict, e))? != expected {
+            return Err(fault(FaultKind::Conflict, "active controller set changed"));
+        }
+        Ok(())
     }
     fn low_error(&mut self, stage: Stage, error: MemoryLowError) -> Fault {
         // A post-write identity failure is ambiguous even though its typed cause
@@ -182,7 +222,7 @@ impl Backend for ControllerSessionAdapter {
             .verify_for_mutation()
             .map_err(|e| fault(FaultKind::Unavailable, e))?;
         // Inspect still collects evidence after a refusal; it never clears the latch.
-        let safety_satisfied = self.safety(stage).is_ok();
+        let safety_satisfied = self.safety(stage, false).is_ok();
         let child = if let Some(c) = o.registered_child {
             let inherited = self
                 .session
@@ -222,22 +262,31 @@ impl Backend for ControllerSessionAdapter {
         })
     }
     fn activate(&mut self, expected: &BTreeSet<String>) -> Result<(), Fault> {
-        self.guard(Stage::Activate)?;
+        let permit = self.guard(Stage::Activate)?;
         let o = self.session.observe();
         if o.enabled_controllers.as_ref().ok() != Some(expected) {
             return Err(fault(FaultKind::Conflict, "controller capture changed"));
         }
-        let result = self.session.activate_prepared();
+        let result = self.session.activate_prepared(permit);
         self.mutation(Stage::Activate, result)
     }
     fn create_child(&mut self) -> Result<String, Fault> {
-        self.guard(Stage::CreateChild)?;
-        let result = self.session.create_empty_child();
+        let permit = self.guard(Stage::CreateChild)?;
+        self.active_controllers()?;
+        let result = self.session.create_empty_child(permit);
         self.mutation(Stage::CreateChild, result)?;
-        self.session
+        let child = self
+            .session
             .registered_child_identity()
-            .map(child_key)
-            .map_err(|e| fault(FaultKind::Ambiguous, e))
+            .map_err(|e| fault(FaultKind::Ambiguous, e))?;
+        // Capture independently of coordinator progress so direct trait calls cannot
+        // remove a child whose low value was modified and never restored.
+        let low = self
+            .session
+            .read_child_memory_low(child)
+            .map_err(|e| self.low_error(Stage::CreateChild, e))?;
+        self.child_original_low = Some((child, low));
+        Ok(child_key(child))
     }
     fn write_low(
         &mut self,
@@ -246,18 +295,38 @@ impl Backend for ControllerSessionAdapter {
         expected: u64,
         value: u64,
     ) -> Result<(), Fault> {
-        self.guard(stage)?;
+        if !matches!(
+            stage,
+            Stage::ApplyLow | Stage::RestoreLow | Stage::RecoveryRestoreLow
+        ) {
+            return Err(fault(FaultKind::Before, "invalid memory.low stage"));
+        }
+        let permit = self.guard(stage)?;
         let child = self.child(identity)?;
         let restoring = matches!(stage, Stage::RestoreLow | Stage::RecoveryRestoreLow);
         self.session
-            .change_child_memory_low(child, expected, value, true, restoring)
+            .change_child_memory_low(permit, child, expected, value, true, restoring)
             .map(|_| ())
             .map_err(|e| self.low_error(stage, e))
     }
     fn remove_child(&mut self, stage: Stage, identity: &str) -> Result<(), Fault> {
-        self.guard(stage)?;
-        self.child(identity)?;
-        let result = self.session.remove_empty_child();
+        if !matches!(stage, Stage::RemoveChild | Stage::RecoveryRemoveChild) {
+            return Err(fault(FaultKind::Before, "invalid removal stage"));
+        }
+        let permit = self.guard(stage)?;
+        let child = self.child(identity)?;
+        self.active_controllers()?;
+        let low = self
+            .session
+            .read_child_memory_low(child)
+            .map_err(|e| self.low_error(stage, e))?;
+        if self.child_original_low != Some((child, low)) {
+            return Err(fault(
+                FaultKind::Conflict,
+                "original child memory.low not verified before removal",
+            ));
+        }
+        let result = self.session.remove_empty_child(permit);
         self.mutation(stage, result)
     }
     fn restore_controllers(
@@ -265,7 +334,16 @@ impl Backend for ControllerSessionAdapter {
         stage: Stage,
         original: &BTreeSet<String>,
     ) -> Result<(), Fault> {
-        self.guard(stage)?;
+        if !matches!(
+            stage,
+            Stage::RestoreControllers | Stage::RecoveryRestoreControllers
+        ) {
+            return Err(fault(
+                FaultKind::Before,
+                "invalid controller restoration stage",
+            ));
+        }
+        let permit = self.guard(stage)?;
         if self
             .session
             .original_controllers()
@@ -279,7 +357,7 @@ impl Backend for ControllerSessionAdapter {
                 "original controller record mismatch",
             ));
         }
-        let result = self.session.restore(true);
+        let result = self.session.restore(permit, true);
         self.mutation(stage, result)
     }
 }

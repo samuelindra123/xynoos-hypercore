@@ -439,7 +439,10 @@ fn controlled(parent: &Path) -> Result<(), Box<dyn std::error::Error>> {
             result
         },
     );
-    let cleanup = if matches!(report.outcome, Outcome::Conflict | Outcome::RollbackFailed) {
+    let cleanup = if matches!(
+        report.outcome,
+        Outcome::Conflict | Outcome::RollbackFailed | Outcome::Ambiguous
+    ) {
         group.preserve();
         Err("target preserved after conflict or rollback failure".to_string())
     } else {

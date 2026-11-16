@@ -21,6 +21,7 @@ enum WriteMode {
     #[default]
     Apply,
     ErrorAfterApply,
+    ShortWrite,
     Mismatch,
     ReadBackError,
 }
@@ -164,7 +165,10 @@ impl SessionIo for FixtureIo {
                 _ => panic!("unexpected controller command"),
             };
         }
-        if matches!(s.write_mode, WriteMode::ErrorAfterApply) {
+        if matches!(
+            s.write_mode,
+            WriteMode::ErrorAfterApply | WriteMode::ShortWrite
+        ) {
             return Err("injected error after possible write".into());
         }
         Ok(())
@@ -254,6 +258,10 @@ impl SessionIo for FixtureIo {
                 s.low = Ok(12288);
                 Ok(bytes.len())
             }
+            Some("identity") => {
+                s.child_entry.inode += 1;
+                Ok(bytes.len())
+            }
             Some("readback") => {
                 s.low = Err("injected readback error".into());
                 Ok(bytes.len())
@@ -290,14 +298,18 @@ impl Fixture {
     }
     fn activate(&mut self) {
         applied(
-            self.session.activate_prepared().unwrap(),
+            self.session
+                .activate_prepared(session_adapter::fixture_permit())
+                .unwrap(),
             MutationOperation::Activate,
         );
     }
     fn child(&mut self) {
         self.activate();
         applied(
-            self.session.create_empty_child().unwrap(),
+            self.session
+                .create_empty_child(session_adapter::fixture_permit())
+                .unwrap(),
             MutationOperation::CreateChild,
         );
         assert_eq!(self.session.registered_child_identity(), Ok(CHILD));
@@ -364,11 +376,15 @@ fn valid_session_observation_and_verified_lifecycle() {
     assert_eq!(f.session.child_controllers(), Ok("cpu memory pids".into()));
     assert_eq!(f.session.read_child_memory_low(CHILD), Ok(4096));
     applied(
-        f.session.remove_empty_child().unwrap(),
+        f.session
+            .remove_empty_child(session_adapter::fixture_permit())
+            .unwrap(),
         MutationOperation::RemoveChild,
     );
     applied(
-        f.session.restore(true).unwrap(),
+        f.session
+            .restore(session_adapter::fixture_permit(), true)
+            .unwrap(),
         MutationOperation::RestoreControllers,
     );
     observation(
@@ -393,7 +409,9 @@ fn controller_read_failure_is_unknown_and_refuses_activation() {
     );
     assert!(o.enabled_controllers.is_err());
     failed(
-        &f.session.activate_prepared().unwrap_err(),
+        &f.session
+            .activate_prepared(session_adapter::fixture_permit())
+            .unwrap_err(),
         MutationOperation::Activate,
         MutationStatus::RefusedBeforeMutation,
         Some(false),
@@ -418,7 +436,9 @@ fn controller_change_between_observations_is_not_cached_authority() {
     assert_eq!(o.activation, ObservedActivation::NotActive);
     assert!(o.enabled_controllers.unwrap().contains("memory"));
     failed(
-        &f.session.activate_prepared().unwrap_err(),
+        &f.session
+            .activate_prepared(session_adapter::fixture_permit())
+            .unwrap_err(),
         MutationOperation::Activate,
         MutationStatus::RefusedBeforeMutation,
         Some(false),
@@ -451,7 +471,9 @@ fn parent_identity_mismatch_invalidates_and_refuses() {
     assert_eq!(o.identity.parent, (PARENT.device, PARENT.inode));
     assert!(f.session.verify_for_mutation().is_err());
     failed(
-        &f.session.activate_prepared().unwrap_err(),
+        &f.session
+            .activate_prepared(session_adapter::fixture_permit())
+            .unwrap_err(),
         MutationOperation::Activate,
         MutationStatus::RefusedBeforeMutation,
         Some(false),
@@ -478,13 +500,17 @@ fn registered_child_inode_mismatch_preserves_child() {
         crate::child_memory::ErrorKind::IdentityConflict
     );
     failed(
-        &f.session.remove_empty_child().unwrap_err(),
+        &f.session
+            .remove_empty_child(session_adapter::fixture_permit())
+            .unwrap_err(),
         MutationOperation::RemoveChild,
         MutationStatus::Conflict,
         Some(false),
     );
     failed(
-        &f.session.restore(true).unwrap_err(),
+        &f.session
+            .restore(session_adapter::fixture_permit(), true)
+            .unwrap_err(),
         MutationOperation::RestoreControllers,
         MutationStatus::CleanupRequired,
         Some(false),
@@ -527,7 +553,9 @@ fn pre_write_refusal_uses_real_hierarchy_and_population_checks() {
         }
         assert!(f.session.verify_for_mutation().is_err(), "case {case}");
         failed(
-            &f.session.activate_prepared().unwrap_err(),
+            &f.session
+                .activate_prepared(session_adapter::fixture_permit())
+                .unwrap_err(),
             MutationOperation::Activate,
             MutationStatus::RefusedBeforeMutation,
             Some(false),
@@ -539,7 +567,10 @@ fn pre_write_refusal_uses_real_hierarchy_and_population_checks() {
 fn ambiguous_controller_write_retains_expected_and_observed_certainty() {
     let mut f = Fixture::new();
     f.state.lock().unwrap().write_mode = WriteMode::ErrorAfterApply;
-    let e = f.session.activate_prepared().unwrap_err();
+    let e = f
+        .session
+        .activate_prepared(session_adapter::fixture_permit())
+        .unwrap_err();
     failed(
         &e,
         MutationOperation::Activate,
@@ -569,7 +600,10 @@ fn ambiguous_controller_write_retains_expected_and_observed_certainty() {
 fn controller_write_readback_mismatch_is_ambiguous_with_observed_state() {
     let mut f = Fixture::new();
     f.state.lock().unwrap().write_mode = WriteMode::Mismatch;
-    let e = f.session.activate_prepared().unwrap_err();
+    let e = f
+        .session
+        .activate_prepared(session_adapter::fixture_permit())
+        .unwrap_err();
     failed(
         &e,
         MutationOperation::Activate,
@@ -587,7 +621,10 @@ fn controller_write_readback_mismatch_is_ambiguous_with_observed_state() {
 fn controller_readback_error_is_ambiguous_with_unknown_observed_state() {
     let mut f = Fixture::new();
     f.state.lock().unwrap().write_mode = WriteMode::ReadBackError;
-    let e = f.session.activate_prepared().unwrap_err();
+    let e = f
+        .session
+        .activate_prepared(session_adapter::fixture_permit())
+        .unwrap_err();
     failed(
         &e,
         MutationOperation::Activate,
@@ -602,7 +639,10 @@ fn child_cleanup_failure_latches_and_blocks_controller_restoration() {
     let mut f = Fixture::new();
     f.child();
     f.state.lock().unwrap().fail_remove = true;
-    let e = f.session.remove_empty_child().unwrap_err();
+    let e = f
+        .session
+        .remove_empty_child(session_adapter::fixture_permit())
+        .unwrap_err();
     failed(
         &e,
         MutationOperation::RemoveChild,
@@ -621,13 +661,17 @@ fn child_cleanup_failure_latches_and_blocks_controller_restoration() {
     );
     assert!(f.session.verify_for_mutation().is_err());
     failed(
-        &f.session.remove_empty_child().unwrap_err(),
+        &f.session
+            .remove_empty_child(session_adapter::fixture_permit())
+            .unwrap_err(),
         MutationOperation::RemoveChild,
         MutationStatus::CleanupRequired,
         Some(false),
     );
     failed(
-        &f.session.restore(true).unwrap_err(),
+        &f.session
+            .restore(session_adapter::fixture_permit(), true)
+            .unwrap_err(),
         MutationOperation::RestoreControllers,
         MutationStatus::CleanupRequired,
         Some(false),
@@ -641,7 +685,10 @@ fn controller_restoration_failure_before_write_is_not_retried() {
     let mut f = Fixture::new();
     f.activate();
     f.state.lock().unwrap().parent.inode += 1;
-    let e = f.session.restore(true).unwrap_err();
+    let e = f
+        .session
+        .restore(session_adapter::fixture_permit(), true)
+        .unwrap_err();
     failed(
         &e,
         MutationOperation::RestoreControllers,
@@ -655,7 +702,9 @@ fn controller_restoration_failure_before_write_is_not_retried() {
     f.state.lock().unwrap().parent = PARENT;
     assert!(f.session.observe().activation_unresolved);
     failed(
-        &f.session.restore(true).unwrap_err(),
+        &f.session
+            .restore(session_adapter::fixture_permit(), true)
+            .unwrap_err(),
         MutationOperation::RestoreControllers,
         MutationStatus::CleanupRequired,
         Some(false),
@@ -672,7 +721,10 @@ fn controller_restoration_write_failure_or_mismatch_stays_ambiguous() {
         let mut f = Fixture::new();
         f.activate();
         f.state.lock().unwrap().write_mode = mode;
-        let e = f.session.restore(true).unwrap_err();
+        let e = f
+            .session
+            .restore(session_adapter::fixture_permit(), true)
+            .unwrap_err();
         failed(
             &e,
             MutationOperation::RestoreControllers,
@@ -681,7 +733,9 @@ fn controller_restoration_write_failure_or_mismatch_stays_ambiguous() {
         );
         assert!(f.session.observe().activation_unresolved);
         failed(
-            &f.session.restore(true).unwrap_err(),
+            &f.session
+                .restore(session_adapter::fixture_permit(), true)
+                .unwrap_err(),
             MutationOperation::RestoreControllers,
             MutationStatus::CleanupRequired,
             Some(false),
@@ -694,7 +748,9 @@ fn unresolved_mutation_blocks_retry_even_after_valid_io_returns() {
     let mut f = Fixture::new();
     f.state.lock().unwrap().write_mode = WriteMode::ErrorAfterApply;
     failed(
-        &f.session.activate_prepared().unwrap_err(),
+        &f.session
+            .activate_prepared(session_adapter::fixture_permit())
+            .unwrap_err(),
         MutationOperation::Activate,
         MutationStatus::AmbiguousMutation,
         Some(true),
@@ -705,19 +761,25 @@ fn unresolved_mutation_blocks_retry_even_after_valid_io_returns() {
     assert_eq!(o.activation, ObservedActivation::Unresolved);
     assert!(f.session.verify_for_mutation().is_err());
     failed(
-        &f.session.activate_prepared().unwrap_err(),
+        &f.session
+            .activate_prepared(session_adapter::fixture_permit())
+            .unwrap_err(),
         MutationOperation::Activate,
         MutationStatus::RefusedBeforeMutation,
         Some(false),
     );
     failed(
-        &f.session.create_empty_child().unwrap_err(),
+        &f.session
+            .create_empty_child(session_adapter::fixture_permit())
+            .unwrap_err(),
         MutationOperation::CreateChild,
         MutationStatus::RefusedBeforeMutation,
         Some(false),
     );
     failed(
-        &f.session.restore(true).unwrap_err(),
+        &f.session
+            .restore(session_adapter::fixture_permit(), true)
+            .unwrap_err(),
         MutationOperation::RestoreControllers,
         MutationStatus::CleanupRequired,
         Some(false),
@@ -731,7 +793,9 @@ fn child_creation_failure_retains_ownership_and_blocks_retry() {
     f.activate();
     f.state.lock().unwrap().fail_create = true;
     failed(
-        &f.session.create_empty_child().unwrap_err(),
+        &f.session
+            .create_empty_child(session_adapter::fixture_permit())
+            .unwrap_err(),
         MutationOperation::CreateChild,
         MutationStatus::AmbiguousMutation,
         None,
@@ -739,13 +803,17 @@ fn child_creation_failure_retains_ownership_and_blocks_retry() {
     assert!(f.session.observe().child_unresolved);
     assert_eq!(f.state.lock().unwrap().child, Some(CHILD));
     failed(
-        &f.session.create_empty_child().unwrap_err(),
+        &f.session
+            .create_empty_child(session_adapter::fixture_permit())
+            .unwrap_err(),
         MutationOperation::CreateChild,
         MutationStatus::RefusedBeforeMutation,
         Some(false),
     );
     failed(
-        &f.session.restore(true).unwrap_err(),
+        &f.session
+            .restore(session_adapter::fixture_permit(), true)
+            .unwrap_err(),
         MutationOperation::RestoreControllers,
         MutationStatus::CleanupRequired,
         Some(false),
@@ -756,7 +824,10 @@ fn child_creation_failure_retains_ownership_and_blocks_retry() {
 fn identity_failure_after_write_is_ambiguous() {
     let mut f = Fixture::new();
     f.state.lock().unwrap().identity_failure_after_write = true;
-    let e = f.session.activate_prepared().unwrap_err();
+    let e = f
+        .session
+        .activate_prepared(session_adapter::fixture_permit())
+        .unwrap_err();
     failed(
         &e,
         MutationOperation::Activate,
@@ -781,7 +852,9 @@ fn observation_and_fixture_identity_cannot_enable_writes() {
     f.session.backend.authorized = true;
     f.child();
     failed(
-        &f.session.restore(false).unwrap_err(),
+        &f.session
+            .restore(session_adapter::fixture_permit(), false)
+            .unwrap_err(),
         MutationOperation::RestoreControllers,
         MutationStatus::RefusedBeforeMutation,
         Some(false),
@@ -789,7 +862,14 @@ fn observation_and_fixture_identity_cannot_enable_writes() {
     for authorized in [false, true] {
         let e = f
             .session
-            .change_child_memory_low(CHILD, 4096, 8192, authorized, false)
+            .change_child_memory_low(
+                session_adapter::fixture_permit(),
+                CHILD,
+                4096,
+                8192,
+                authorized,
+                false,
+            )
             .unwrap_err();
         assert_eq!(e.kind, crate::child_memory::ErrorKind::RefusedBeforeWrite);
         assert!(!f.session.observe().memory_low_unresolved);
@@ -809,7 +889,9 @@ fn populated_registered_child_refuses_cleanup_without_mutation() {
     );
     assert!(f.session.verify_for_mutation().is_err());
     failed(
-        &f.session.remove_empty_child().unwrap_err(),
+        &f.session
+            .remove_empty_child(session_adapter::fixture_permit())
+            .unwrap_err(),
         MutationOperation::RemoveChild,
         MutationStatus::RefusedBeforeMutation,
         Some(false),
@@ -850,6 +932,87 @@ mod adapter_integration {
         assert!(s.child.is_none());
         assert_eq!(s.enabled, "cpu pids");
         assert_eq!(s.low, Ok(4096));
+    }
+    #[test]
+    fn transient_telemetry_refusal_recovers_without_reopening_forward_authority() {
+        // Refuse at the guard, after activation, after creation and after low apply.
+        for refused_read in [3, 4, 6, 10] {
+            let f = Fixture::new();
+            f.state.lock().unwrap().enable_low = true;
+            let state = f.state.clone();
+            let mut reads = 0;
+            let mut a = ControllerSessionAdapter::fixture(f.session, move |thresholds| {
+                reads += 1;
+                safety::fixture_boundary(
+                    thresholds,
+                    if reads == refused_read { 0 } else { u64::MAX },
+                    false,
+                )
+            });
+            let r = run(&mut a);
+            assert_eq!(
+                r.outcome,
+                Outcome::RestoredAfterFailure,
+                "read {refused_read}: {r:?}"
+            );
+            clean(&state);
+            let expected: &[&str] = match refused_read {
+                3 => &[],
+                4 => &["+memory", "-memory"],
+                6 => &["+memory", "create", "remove", "-memory"],
+                _ => &[
+                    "+memory", "create", "low:8192", "low:4096", "remove", "-memory",
+                ],
+            };
+            assert_eq!(state.lock().unwrap().trace, expected);
+            let before = state.lock().unwrap().trace.clone();
+            assert_eq!(
+                a.activate(&BTreeSet::from(["cpu".into(), "pids".into()]))
+                    .unwrap_err()
+                    .kind,
+                FaultKind::Before
+            );
+            assert_eq!(state.lock().unwrap().trace, before);
+        }
+    }
+    #[test]
+    fn unavailable_recovery_telemetry_preserves_verified_resources() {
+        for failed in [
+            Stage::VerifyActivation,
+            Stage::VerifyChild,
+            Stage::VerifyApplied,
+        ] {
+            let (mut a, state, telemetry) = adapter();
+            let mut before = Vec::new();
+            let r = coordinator::run(&mut a, true, 8192, |stage| {
+                if stage == failed {
+                    *telemetry.lock().unwrap() = (0, true);
+                    before = state.lock().unwrap().trace.clone();
+                }
+                false
+            });
+            assert_eq!(r.outcome, Outcome::RecoveryUnavailable, "{failed:?}: {r:?}");
+            assert!(r.recovery_failed_transition.is_some());
+            assert_eq!(state.lock().unwrap().trace, before);
+            assert!(!a.session_observation().activation_unresolved);
+            assert_eq!(r.controller_restoration_verified, Certainty::Unknown);
+        }
+    }
+    #[test]
+    fn second_cancellation_is_deferred_during_bounded_recovery() {
+        let (mut a, state, _) = adapter();
+        let mut calls = Vec::new();
+        let r = coordinator::run(&mut a, true, 8192, |stage| {
+            calls.push(stage);
+            stage == Stage::VerifyApplied || stage == Stage::RecoveryRestoreLow
+        });
+        assert_eq!(r.outcome, Outcome::RestoredAfterFailure);
+        assert!(!calls.contains(&Stage::RecoveryRestoreLow));
+        clean(&state);
+        assert_eq!(
+            state.lock().unwrap().trace,
+            ["+memory", "create", "low:8192", "low:4096", "remove", "-memory"]
+        );
     }
     #[test]
     fn integrated_complete_lifecycle() {
@@ -965,6 +1128,79 @@ mod adapter_integration {
         );
     }
     #[test]
+    fn late_competing_changes_are_checked_at_child_operation_boundary() {
+        for failed in [Stage::CreateChild, Stage::RemoveChild] {
+            let (mut a, state, _) = adapter();
+            let r = coordinator::run(&mut a, true, 8192, |stage| {
+                if stage == failed {
+                    let mut s = state.lock().unwrap();
+                    if stage == Stage::CreateChild {
+                        s.enabled = "cpu memory".into();
+                    } else {
+                        s.low = Ok(12288);
+                    }
+                }
+                false
+            });
+            assert_eq!(r.outcome, Outcome::Conflict);
+            assert_eq!(r.failed_transition, Some(failed));
+            let s = state.lock().unwrap();
+            if failed == Stage::CreateChild {
+                assert_eq!(s.creates, 0);
+            } else {
+                assert_eq!(s.removes, 0);
+                assert_eq!(s.low, Ok(12288));
+            }
+            assert!(!s.trace.iter().any(|s| s == "-memory"));
+        }
+    }
+    #[test]
+    fn controller_short_write_is_ambiguous_and_never_retried() {
+        let (mut a, state, _) = adapter();
+        state.lock().unwrap().write_mode = WriteMode::ShortWrite;
+        let r = run(&mut a);
+        assert_eq!(r.outcome, Outcome::Ambiguous);
+        assert_eq!(state.lock().unwrap().writes.len(), 1);
+        assert!(a.session_observation().activation_unresolved);
+        assert!(a.activate(&BTreeSet::new()).is_err());
+        assert_eq!(state.lock().unwrap().trace, ["+memory"]);
+    }
+    #[test]
+    fn adapter_authorization_covers_every_operation() {
+        let mut f = Fixture::new();
+        f.session.backend.authorized = false;
+        let state = f.state.clone();
+        let mut a = ControllerSessionAdapter::fixture(f.session, |thresholds| {
+            safety::fixture_boundary(thresholds, u64::MAX, false)
+        });
+        let original = BTreeSet::from(["cpu".into(), "pids".into()]);
+        assert_eq!(a.activate(&original).unwrap_err().kind, FaultKind::Before);
+        assert_eq!(a.create_child().unwrap_err().kind, FaultKind::Before);
+        for stage in [
+            Stage::ApplyLow,
+            Stage::RestoreLow,
+            Stage::RecoveryRestoreLow,
+        ] {
+            assert_eq!(
+                a.write_low(stage, "7:13", 4096, 8192).unwrap_err().kind,
+                FaultKind::Before
+            );
+        }
+        for stage in [Stage::RemoveChild, Stage::RecoveryRemoveChild] {
+            assert_eq!(
+                a.remove_child(stage, "7:13").unwrap_err().kind,
+                FaultKind::Before
+            );
+        }
+        for stage in [Stage::RestoreControllers, Stage::RecoveryRestoreControllers] {
+            assert_eq!(
+                a.restore_controllers(stage, &original).unwrap_err().kind,
+                FaultKind::Before
+            );
+        }
+        assert!(state.lock().unwrap().trace.is_empty());
+    }
+    #[test]
     fn integrated_child_creation_failure_preserves_ownership() {
         let (mut a, s, _) = adapter();
         s.lock().unwrap().fail_create = true;
@@ -977,7 +1213,7 @@ mod adapter_integration {
     }
     #[test]
     fn integrated_low_ambiguity_and_readback_mismatch_never_retry() {
-        for mode in ["error", "short", "mismatch", "readback"] {
+        for mode in ["error", "short", "mismatch", "readback", "identity"] {
             let (mut a, s, _) = adapter();
             s.lock().unwrap().low_mode = Some((1, mode));
             let r = run(&mut a);
@@ -989,6 +1225,8 @@ mod adapter_integration {
                 a.low_errors[0].1.kind,
                 if mode == "mismatch" {
                     crate::child_memory::ErrorKind::ReadBackMismatch
+                } else if mode == "identity" {
+                    crate::child_memory::ErrorKind::IdentityConflict
                 } else {
                     crate::child_memory::ErrorKind::WriteOutcomeAmbiguous
                 }

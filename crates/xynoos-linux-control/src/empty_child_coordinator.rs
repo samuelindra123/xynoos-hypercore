@@ -196,6 +196,18 @@ fn no_child(o: &Observation) -> Result<(), Fault> {
         Ok(())
     }
 }
+// A telemetry refusal is known to precede mutation. Keep it distinct from a
+// competing-state conflict so already verified resources can enter recovery.
+fn forward_inspect<B: Backend>(b: &mut B, stage: Stage) -> Result<Observation, Fault> {
+    let o = b.inspect(stage)?;
+    if !o.safety_satisfied {
+        return Err(Fault::new(
+            FaultKind::Before,
+            "fresh safety telemetry refused",
+        ));
+    }
+    Ok(o)
+}
 fn forward<B: Backend>(
     b: &mut B,
     authorized: bool,
@@ -230,7 +242,7 @@ fn forward<B: Backend>(
             ))
         }
     );
-    let o = step!(Stage::Binding, b.inspect(Stage::Binding));
+    let o = step!(Stage::Binding, forward_inspect(b, Stage::Binding));
     p.original = Some(o.clone());
     if o.binding.is_empty()
         || !o.parent_empty
@@ -247,7 +259,7 @@ fn forward<B: Backend>(
     }
     let o = step!(
         Stage::CaptureControllers,
-        b.inspect(Stage::CaptureControllers)
+        forward_inspect(b, Stage::CaptureControllers)
     );
     validate_base(p, &o, false)
         .and_then(|_| no_child(&o))
@@ -260,13 +272,16 @@ fn forward<B: Backend>(
     }
     step!(Stage::Activate, b.activate(&original(p).controllers));
     p.activated = true;
-    let o = step!(Stage::VerifyActivation, b.inspect(Stage::VerifyActivation));
+    let o = step!(
+        Stage::VerifyActivation,
+        forward_inspect(b, Stage::VerifyActivation)
+    );
     validate_base(p, &o, true)
         .and_then(|_| no_child(&o))
         .map_err(|e| (Stage::VerifyActivation, e))?;
     let child = step!(Stage::CreateChild, b.create_child());
     p.child = Some(child);
-    let o = step!(Stage::VerifyChild, b.inspect(Stage::VerifyChild));
+    let o = step!(Stage::VerifyChild, forward_inspect(b, Stage::VerifyChild));
     validate_base(p, &o, true).map_err(|e| (Stage::VerifyChild, e))?;
     if !validate_child(p, &o)
         .map_err(|e| (Stage::VerifyChild, e))?
@@ -277,7 +292,7 @@ fn forward<B: Backend>(
             conflict("child lacks memory controller"),
         ));
     }
-    let o = step!(Stage::CaptureLow, b.inspect(Stage::CaptureLow));
+    let o = step!(Stage::CaptureLow, forward_inspect(b, Stage::CaptureLow));
     validate_base(p, &o, true).map_err(|e| (Stage::CaptureLow, e))?;
     let c = validate_child(p, &o).map_err(|e| (Stage::CaptureLow, e))?;
     let low = c.low.ok_or_else(|| {
@@ -293,9 +308,7 @@ fn forward<B: Backend>(
             Fault::new(FaultKind::Before, "test value equals original"),
         ));
     }
-    let o = b
-        .inspect(Stage::ApplyLow)
-        .map_err(|e| (Stage::ApplyLow, e))?;
+    let o = forward_inspect(b, Stage::ApplyLow).map_err(|e| (Stage::ApplyLow, e))?;
     validate_base(p, &o, true)
         .and_then(|_| validate_child(p, &o))
         .and_then(|c| ensure_low(c, low))
@@ -308,14 +321,15 @@ fn forward<B: Backend>(
         b.write_low(Stage::ApplyLow, p.child.as_deref().unwrap(), low, requested)
     );
     p.low_applied = true;
-    let o = step!(Stage::VerifyApplied, b.inspect(Stage::VerifyApplied));
+    let o = step!(
+        Stage::VerifyApplied,
+        forward_inspect(b, Stage::VerifyApplied)
+    );
     validate_base(p, &o, true)
         .and_then(|_| validate_child(p, &o))
         .and_then(|c| ensure_low(c, requested))
         .map_err(|e| (Stage::VerifyApplied, e))?;
-    let o = b
-        .inspect(Stage::RestoreLow)
-        .map_err(|e| (Stage::RestoreLow, e))?;
+    let o = forward_inspect(b, Stage::RestoreLow).map_err(|e| (Stage::RestoreLow, e))?;
     validate_base(p, &o, true)
         .and_then(|_| validate_child(p, &o))
         .and_then(|c| ensure_low(c, requested))
@@ -330,13 +344,16 @@ fn forward<B: Backend>(
         )
     );
     p.low_applied = false;
-    let o = step!(Stage::VerifyRestored, b.inspect(Stage::VerifyRestored));
+    let o = step!(
+        Stage::VerifyRestored,
+        forward_inspect(b, Stage::VerifyRestored)
+    );
     validate_base(p, &o, true)
         .and_then(|_| validate_child(p, &o))
         .and_then(|c| ensure_low(c, low))
         .map_err(|e| (Stage::VerifyRestored, e))?;
     p.low_verified_restored = true;
-    let o = step!(Stage::VerifyEmpty, b.inspect(Stage::VerifyEmpty));
+    let o = step!(Stage::VerifyEmpty, forward_inspect(b, Stage::VerifyEmpty));
     validate_base(p, &o, true)
         .and_then(|_| validate_child(p, &o))
         .and_then(|c| ensure_low(c, low))
@@ -346,9 +363,7 @@ fn forward<B: Backend>(
         b.remove_child(Stage::RemoveChild, p.child.as_deref().unwrap())
     );
     p.child_removed = true;
-    let o = b
-        .inspect(Stage::RemoveChild)
-        .map_err(|e| (Stage::RemoveChild, e))?;
+    let o = forward_inspect(b, Stage::RemoveChild).map_err(|e| (Stage::RemoveChild, e))?;
     validate_base(p, &o, true)
         .and_then(|_| no_child(&o))
         .map_err(|e| (Stage::RemoveChild, e))?;
@@ -357,7 +372,7 @@ fn forward<B: Backend>(
         b.restore_controllers(Stage::RestoreControllers, &original(p).controllers)
     );
     p.controllers_restored = true;
-    let o = step!(Stage::VerifyFinal, b.inspect(Stage::VerifyFinal));
+    let o = step!(Stage::VerifyFinal, forward_inspect(b, Stage::VerifyFinal));
     validate_base(p, &o, false)
         .and_then(|_| no_child(&o))
         .map_err(|e| (Stage::VerifyFinal, e))?;

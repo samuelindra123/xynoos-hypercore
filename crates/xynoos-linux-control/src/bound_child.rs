@@ -114,6 +114,7 @@ impl BoundChild {
     }
     // Only called after the containing session validates its held binding and hierarchy.
     pub(crate) fn create(parent: &File, expected: FileId) -> Result<Self, String> {
+        crate::transaction::physical_mutation_disabled()?;
         let mut random = [0u8; 16];
         File::open("/dev/urandom")
             .and_then(|mut f| f.read_exact(&mut random))
@@ -208,6 +209,7 @@ impl BoundChild {
         Ok(value)
     }
     pub(crate) fn remove(&self, parent: &File, expected: FileId) -> Result<(), String> {
+        crate::transaction::physical_mutation_disabled()?;
         self.remove_with(parent, expected, |parent, name| {
             // SAFETY: checked parent and name; rmdir also refuses populated cgroups.
             if unsafe { libc::unlinkat(parent.as_raw_fd(), name.as_ptr(), libc::AT_REMOVEDIR) } != 0

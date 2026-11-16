@@ -81,6 +81,7 @@ impl SessionIo for DescriptorIo {
         crate::transaction::read_at(self.binding.manager(), name)
     }
     fn write_controller(&mut self, command: &[u8]) -> Result<(), String> {
+        crate::transaction::physical_mutation_disabled()?;
         use std::os::{fd::AsRawFd, unix::fs::FileExt};
         let f = crate::transaction::openat(
             self.binding.parent().as_raw_fd(),
@@ -116,12 +117,14 @@ impl SessionIo for DescriptorIo {
             .controllers(self.binding.parent(), file_id(parent))
     }
     fn create_child(&mut self, parent: ParentIdentity) -> Result<ChildIdentity, String> {
+        crate::transaction::physical_mutation_disabled()?;
         let child = crate::bound_child::BoundChild::create(self.binding.parent(), file_id(parent))?;
         let identity = child.identity();
         self.child = Some(child);
         Ok(identity)
     }
     fn remove_child(&mut self, parent: ParentIdentity) -> Result<(), String> {
+        crate::transaction::physical_mutation_disabled()?;
         self.child()?
             .remove(self.binding.parent(), file_id(parent))?;
         self.child = None;
