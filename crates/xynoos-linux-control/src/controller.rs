@@ -273,6 +273,87 @@ impl ControllerInspectionSession {
         self.backend.binding.diagnostic()
     }
 }
+/// The session operation whose effect is reported.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MutationOperation {
+    Activate,
+    RestoreControllers,
+    CreateChild,
+    RemoveChild,
+}
+
+/// Certainty of a session mutation. An ambiguous result must never be retried blindly.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MutationStatus {
+    RefusedBeforeMutation,
+    AppliedAndVerified,
+    Conflict,
+    AmbiguousMutation,
+    CleanupRequired,
+    RestorationFailure,
+}
+
+/// Values verified or expected by a session operation. Missing values are unknown.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MutationState {
+    pub controllers: Option<Vec<String>>,
+    pub child: Option<crate::child_memory::ChildIdentity>,
+    /// Whether the registered child exists, if verified.
+    pub child_present: Option<bool>,
+}
+
+/// Underlying diagnostic supplied by the operation that failed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutationError {
+    pub operation: MutationOperation,
+    pub detail: String,
+}
+
+/// A mutation report. `mutation_attempted` is None when the underlying API cannot
+/// determine whether it reached the syscall. `verified` refers to the expected state.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MutationOutcome {
+    pub operation: MutationOperation,
+    pub status: MutationStatus,
+    pub last_verified: Option<Box<MutationState>>,
+    pub expected: Option<Box<MutationState>>,
+    pub observed: Option<Box<MutationState>>,
+    pub mutation_attempted: Option<bool>,
+    pub verified: bool,
+    pub error: Option<MutationError>,
+}
+impl std::fmt::Display for MutationOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{:?}: {:?}", self.operation, self.status)?;
+        if let Some(error) = &self.error {
+            write!(f, ": {}", error.detail)?;
+        }
+        Ok(())
+    }
+}
+impl std::error::Error for MutationOutcome {}
+
+fn mutation_result(
+    operation: MutationOperation,
+    status: MutationStatus,
+    attempted: Option<bool>,
+    last_verified: Option<MutationState>,
+    expected: Option<MutationState>,
+    observed: Option<MutationState>,
+    error: Option<String>,
+) -> MutationOutcome {
+    MutationOutcome {
+        operation,
+        status,
+        last_verified: last_verified.map(Box::new),
+        expected: expected.map(Box::new),
+        observed: observed.map(Box::new),
+        mutation_attempted: attempted,
+        verified: status == MutationStatus::AppliedAndVerified,
+        error: error.map(|detail| MutationError { operation, detail }),
+    }
+}
+
 /// An activation held in memory until one explicit restoration attempt.
 /// Dropping this value never writes to the kernel.
 pub struct ControllerSession {
@@ -282,6 +363,25 @@ pub struct ControllerSession {
     activation_unresolved: bool,
     low_unresolved: bool,
 }
+/// Failed convenience activation retains the session for diagnostics and recovery.
+pub struct ActivationFailure {
+    pub outcome: MutationOutcome,
+    pub session: Option<Box<ControllerSession>>,
+}
+impl std::fmt::Debug for ActivationFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ActivationFailure")
+            .field("outcome", &self.outcome)
+            .field("session_retained", &self.session.is_some())
+            .finish()
+    }
+}
+impl std::fmt::Display for ActivationFailure {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.outcome.fmt(f)
+    }
+}
+impl std::error::Error for ActivationFailure {}
 fn activate_with_tracking<B: ControllerBackend>(
     backend: &mut B,
     original: &mut Option<Vec<String>>,
@@ -305,6 +405,493 @@ fn activate_with_tracking<B: ControllerBackend>(
     *unresolved = false;
     Ok(activation)
 }
+// Records entry to the backend mutation method; backend errors after entry may have
+// changed kernel state, even when they report an error.
+struct TrackedController<'a, B> {
+    backend: &'a mut B,
+    attempted: bool,
+    observed_after_write: Option<Vec<String>>,
+}
+impl<B: ControllerBackend> ControllerBackend for TrackedController<'_, B> {
+    fn verify_unit(&mut self) -> Result<ParentIdentity, String> {
+        self.backend.verify_unit()
+    }
+    fn processes(&mut self) -> Result<String, String> {
+        self.backend.processes()
+    }
+    fn available(&mut self) -> Result<String, String> {
+        self.backend.available()
+    }
+    fn enabled(&mut self) -> Result<String, String> {
+        let value = self.backend.enabled()?;
+        if self.attempted {
+            let mut observed: Vec<String> = value.split_whitespace().map(str::to_owned).collect();
+            observed.sort();
+            self.observed_after_write = Some(observed);
+        }
+        Ok(value)
+    }
+    fn enable_memory(&mut self) -> Result<(), String> {
+        self.attempted = true;
+        self.backend.enable_memory()
+    }
+    fn disable_memory(&mut self) -> Result<(), String> {
+        self.attempted = true;
+        self.backend.disable_memory()
+    }
+}
+fn activate_typed<B: ControllerBackend>(
+    backend: &mut B,
+    activation: &mut Option<Activation>,
+    original: &mut Option<Vec<String>>,
+    unresolved: &mut bool,
+) -> Result<MutationOutcome, MutationOutcome> {
+    let op = MutationOperation::Activate;
+    if activation.is_some() || *unresolved || original.is_some() {
+        return Err(mutation_result(
+            op,
+            MutationStatus::RefusedBeforeMutation,
+            Some(false),
+            None,
+            None,
+            None,
+            Some("activation already attempted or unresolved".into()),
+        ));
+    }
+    let mut tracked = TrackedController {
+        backend,
+        attempted: false,
+        observed_after_write: None,
+    };
+    let result = activate_with_tracking(&mut tracked, original, unresolved);
+    let attempted = tracked.attempted;
+    let observed = tracked
+        .observed_after_write
+        .map(|controllers| MutationState {
+            controllers: Some(controllers),
+            ..Default::default()
+        });
+    let before = original.clone().map(|controllers| MutationState {
+        controllers: Some(controllers),
+        ..Default::default()
+    });
+    let expected = before.clone().map(|mut state| {
+        state.controllers.as_mut().unwrap().push("memory".into());
+        state.controllers.as_mut().unwrap().sort();
+        state
+    });
+    match result {
+        Ok(result_activation) => {
+            *activation = Some(result_activation);
+            Ok(mutation_result(
+                op,
+                MutationStatus::AppliedAndVerified,
+                Some(true),
+                before,
+                expected.clone(),
+                expected,
+                None,
+            ))
+        }
+        Err(error) => Err(mutation_result(
+            op,
+            if attempted {
+                MutationStatus::AmbiguousMutation
+            } else {
+                MutationStatus::RefusedBeforeMutation
+            },
+            Some(attempted),
+            before,
+            expected,
+            observed,
+            Some(error),
+        )),
+    }
+}
+fn restore_typed<B: ControllerBackend>(
+    backend: &mut B,
+    activation: &mut Option<Activation>,
+    unresolved: &mut bool,
+    low_unresolved: bool,
+    child_present: bool,
+    child_unresolved: bool,
+    authorized: bool,
+) -> Result<MutationOutcome, MutationOutcome> {
+    let op = MutationOperation::RestoreControllers;
+    let expected = activation.as_ref().map(|activation| {
+        let Activation::Enabled {
+            original_controllers,
+        } = activation;
+        MutationState {
+            controllers: Some(original_controllers.clone()),
+            child_present: Some(false),
+            ..Default::default()
+        }
+    });
+    if !authorized {
+        return Err(mutation_result(
+            op,
+            MutationStatus::RefusedBeforeMutation,
+            Some(false),
+            None,
+            expected,
+            None,
+            Some("explicit authorization required".into()),
+        ));
+    }
+    if *unresolved || low_unresolved || child_present || child_unresolved {
+        return Err(mutation_result(
+            op,
+            MutationStatus::CleanupRequired,
+            Some(false),
+            None,
+            expected,
+            None,
+            Some("child or controller state unresolved; restoration refused".into()),
+        ));
+    }
+    let Some(activation) = activation.take() else {
+        return Err(mutation_result(
+            op,
+            MutationStatus::RestorationFailure,
+            Some(false),
+            None,
+            expected,
+            None,
+            Some("restoration already attempted".into()),
+        ));
+    };
+    *unresolved = true;
+    let mut tracked = TrackedController {
+        backend,
+        attempted: false,
+        observed_after_write: None,
+    };
+    let result = restore_memory(&mut tracked, &activation, true);
+    let attempted = tracked.attempted;
+    let observed = tracked
+        .observed_after_write
+        .map(|controllers| MutationState {
+            controllers: Some(controllers),
+            ..Default::default()
+        });
+    match result {
+        Ok(()) => {
+            *unresolved = false;
+            Ok(mutation_result(
+                op,
+                MutationStatus::AppliedAndVerified,
+                Some(true),
+                None,
+                expected.clone(),
+                expected,
+                None,
+            ))
+        }
+        Err(error) => Err(mutation_result(
+            op,
+            if attempted {
+                MutationStatus::AmbiguousMutation
+            } else {
+                MutationStatus::RestorationFailure
+            },
+            Some(attempted),
+            None,
+            expected,
+            observed,
+            Some(error),
+        )),
+    }
+}
+// The same orchestration is used by the descriptor-backed implementation and fixtures.
+trait RegisteredChildBackend: ControllerBackend {
+    fn registered_child(&self) -> Option<crate::child_memory::ChildIdentity>;
+    fn child_unresolved(&self) -> bool;
+    fn child_identity_matches(&self) -> Result<bool, String>;
+    fn set_child_unresolved(&mut self, value: bool);
+    // Errors may follow mutation; callers latch unresolved before invoking these methods.
+    fn create_registered_child(
+        &mut self,
+        parent: ParentIdentity,
+    ) -> Result<crate::child_memory::ChildIdentity, String>;
+    fn remove_registered_child(&mut self, parent: ParentIdentity) -> Result<(), String>;
+}
+impl RegisteredChildBackend for LinuxController {
+    fn registered_child(&self) -> Option<crate::child_memory::ChildIdentity> {
+        self.child.as_ref().map(|c| c.identity())
+    }
+    fn child_unresolved(&self) -> bool {
+        self.child_unresolved
+    }
+    fn child_identity_matches(&self) -> Result<bool, String> {
+        let (dev, ino) = self.binding.parent_identity();
+        self.child
+            .as_ref()
+            .ok_or("no registered child")?
+            .identity_matches(
+                self.binding.parent(),
+                crate::bound_child::FileId { dev, ino },
+            )
+    }
+    fn set_child_unresolved(&mut self, value: bool) {
+        self.child_unresolved = value;
+    }
+    fn create_registered_child(
+        &mut self,
+        parent: ParentIdentity,
+    ) -> Result<crate::child_memory::ChildIdentity, String> {
+        let child = crate::bound_child::BoundChild::create(
+            self.binding.parent(),
+            crate::bound_child::FileId {
+                dev: parent.device,
+                ino: parent.inode,
+            },
+        )?;
+        let identity = child.identity();
+        self.child = Some(child);
+        Ok(identity)
+    }
+    fn remove_registered_child(&mut self, parent: ParentIdentity) -> Result<(), String> {
+        self.child.as_ref().ok_or("no registered child")?.remove(
+            self.binding.parent(),
+            crate::bound_child::FileId {
+                dev: parent.device,
+                ino: parent.inode,
+            },
+        )?;
+        self.child = None;
+        Ok(())
+    }
+}
+fn create_child_typed<B: RegisteredChildBackend>(
+    backend: &mut B,
+    activated: bool,
+) -> Result<MutationOutcome, MutationOutcome> {
+    let op = MutationOperation::CreateChild;
+    let expected = Some(MutationState {
+        child_present: Some(true),
+        ..Default::default()
+    });
+    if !activated || backend.registered_child().is_some() || backend.child_unresolved() {
+        return Err(mutation_result(
+            op,
+            MutationStatus::RefusedBeforeMutation,
+            Some(false),
+            None,
+            expected,
+            None,
+            Some("verified activation and no registered or unresolved child required".into()),
+        ));
+    }
+    let id = backend.verify_unit().map_err(|e| {
+        mutation_result(
+            op,
+            MutationStatus::RefusedBeforeMutation,
+            Some(false),
+            None,
+            expected.clone(),
+            None,
+            Some(e),
+        )
+    })?;
+    if !backend
+        .processes()
+        .map_err(|e| {
+            mutation_result(
+                op,
+                MutationStatus::RefusedBeforeMutation,
+                Some(false),
+                None,
+                expected.clone(),
+                None,
+                Some(e),
+            )
+        })?
+        .trim()
+        .is_empty()
+    {
+        return Err(mutation_result(
+            op,
+            MutationStatus::Conflict,
+            Some(false),
+            None,
+            expected,
+            None,
+            Some("parent populated".into()),
+        ));
+    }
+    let again = backend.verify_unit().map_err(|e| {
+        mutation_result(
+            op,
+            MutationStatus::RefusedBeforeMutation,
+            Some(false),
+            None,
+            expected.clone(),
+            None,
+            Some(e),
+        )
+    })?;
+    if id != again {
+        return Err(mutation_result(
+            op,
+            MutationStatus::Conflict,
+            Some(false),
+            None,
+            expected,
+            None,
+            Some("parent identity changed".into()),
+        ));
+    }
+    let before = Some(MutationState {
+        child_present: Some(false),
+        ..Default::default()
+    });
+    backend.set_child_unresolved(true);
+    let identity = backend.create_registered_child(id).map_err(|e| {
+        mutation_result(
+            op,
+            MutationStatus::AmbiguousMutation,
+            None,
+            before.clone(),
+            expected.clone(),
+            None,
+            Some(e),
+        )
+    })?;
+    backend.set_child_unresolved(false);
+    if let Err(e) = backend.verify_unit() {
+        backend.set_child_unresolved(true);
+        return Err(mutation_result(
+            op,
+            MutationStatus::AmbiguousMutation,
+            Some(true),
+            before,
+            expected,
+            None,
+            Some(e),
+        ));
+    }
+    let observed = Some(MutationState {
+        child: Some(identity),
+        child_present: Some(true),
+        ..Default::default()
+    });
+    Ok(mutation_result(
+        op,
+        MutationStatus::AppliedAndVerified,
+        Some(true),
+        before,
+        observed.clone(),
+        observed,
+        None,
+    ))
+}
+fn remove_child_typed<B: RegisteredChildBackend>(
+    backend: &mut B,
+    low_unresolved: bool,
+) -> Result<MutationOutcome, MutationOutcome> {
+    let op = MutationOperation::RemoveChild;
+    let expected = Some(MutationState {
+        child_present: Some(false),
+        ..Default::default()
+    });
+    if low_unresolved || backend.child_unresolved() {
+        return Err(mutation_result(
+            op,
+            MutationStatus::CleanupRequired,
+            Some(false),
+            None,
+            expected,
+            None,
+            Some("child or memory.low state unresolved; child preserved".into()),
+        ));
+    }
+    if backend.registered_child().is_some() {
+        let matches = backend.child_identity_matches().map_err(|e| {
+            mutation_result(
+                op,
+                MutationStatus::RefusedBeforeMutation,
+                Some(false),
+                None,
+                expected.clone(),
+                None,
+                Some(e),
+            )
+        })?;
+        if !matches {
+            return Err(mutation_result(
+                op,
+                MutationStatus::Conflict,
+                Some(false),
+                None,
+                expected,
+                None,
+                Some("registered child identity changed".into()),
+            ));
+        }
+    }
+    let id = backend.verify_unit().map_err(|e| {
+        mutation_result(
+            op,
+            MutationStatus::RefusedBeforeMutation,
+            Some(false),
+            None,
+            expected.clone(),
+            None,
+            Some(e),
+        )
+    })?;
+    let child = backend.registered_child().ok_or_else(|| {
+        mutation_result(
+            op,
+            MutationStatus::RefusedBeforeMutation,
+            Some(false),
+            None,
+            expected.clone(),
+            None,
+            Some("no registered child".into()),
+        )
+    })?;
+    let before = Some(MutationState {
+        child: Some(child),
+        child_present: Some(true),
+        ..Default::default()
+    });
+    backend.set_child_unresolved(true);
+    backend.remove_registered_child(id).map_err(|e| {
+        mutation_result(
+            op,
+            MutationStatus::AmbiguousMutation,
+            None,
+            before.clone(),
+            expected.clone(),
+            None,
+            Some(e),
+        )
+    })?;
+    backend.set_child_unresolved(false);
+    if let Err(e) = backend.verify_unit() {
+        backend.set_child_unresolved(true);
+        return Err(mutation_result(
+            op,
+            MutationStatus::AmbiguousMutation,
+            Some(true),
+            before,
+            expected,
+            None,
+            Some(e),
+        ));
+    }
+    Ok(mutation_result(
+        op,
+        MutationStatus::AppliedAndVerified,
+        Some(true),
+        before,
+        expected.clone(),
+        expected,
+        None,
+    ))
+}
 impl ControllerSession {
     /// Hold the validated binding before any controller write is attempted.
     pub fn prepare(
@@ -319,26 +906,41 @@ impl ControllerSession {
             low_unresolved: false,
         })
     }
+    /// Prepare and activate, retaining the session after any activation failure.
     pub fn activate(
         binding: crate::systemd_identity::Binding,
         authorized: bool,
-    ) -> Result<Self, String> {
-        let mut session = Self::prepare(binding, authorized)?;
-        session.activate_prepared()?;
-        Ok(session)
+    ) -> Result<Self, ActivationFailure> {
+        let mut session =
+            Self::prepare(binding, authorized).map_err(|error| ActivationFailure {
+                outcome: mutation_result(
+                    MutationOperation::Activate,
+                    MutationStatus::RefusedBeforeMutation,
+                    Some(false),
+                    None,
+                    None,
+                    None,
+                    Some(error),
+                ),
+                session: None,
+            })?;
+        match session.activate_prepared() {
+            Ok(_) => Ok(session),
+            Err(outcome) => Err(ActivationFailure {
+                outcome,
+                session: Some(Box::new(session)),
+            }),
+        }
     }
     /// Capture initial state before activation. A failed attempt remains unresolved;
     /// no automatic retry or rollback is performed on an ambiguous write.
-    pub fn activate_prepared(&mut self) -> Result<(), String> {
-        if self.activation.is_some() {
-            return Err("activation already attempted".into());
-        }
-        self.activation = Some(activate_with_tracking(
+    pub fn activate_prepared(&mut self) -> Result<MutationOutcome, MutationOutcome> {
+        activate_typed(
             &mut self.backend,
+            &mut self.activation,
             &mut self.original_before_attempt,
             &mut self.activation_unresolved,
-        )?);
-        Ok(())
+        )
     }
     /// The observed pre-attempt state does not by itself authorize recovery.
     pub fn activation_diagnostic(&self) -> serde_json::Value {
@@ -402,58 +1004,25 @@ impl ControllerSession {
         result
     }
     /// A failed authorized attempt is never retried automatically.
-    pub fn restore(&mut self, authorized: bool) -> Result<(), String> {
-        if !authorized {
-            return Err("explicit authorization required".into());
-        }
-        if self.activation_unresolved
-            || self.low_unresolved
-            || self.backend.child.is_some()
-            || self.backend.child_unresolved
-        {
-            return Err("child cleanup not verified; controller restoration refused".into());
-        }
-        let activation = self
-            .activation
-            .take()
-            .ok_or("restoration already attempted")?;
-        self.activation_unresolved = true;
-        restore_memory(&mut self.backend, &activation, true)?;
-        self.activation_unresolved = false;
-        Ok(())
+    pub fn restore(&mut self, authorized: bool) -> Result<MutationOutcome, MutationOutcome> {
+        let child_present = self.backend.child.is_some();
+        let child_unresolved = self.backend.child_unresolved;
+        restore_typed(
+            &mut self.backend,
+            &mut self.activation,
+            &mut self.activation_unresolved,
+            self.low_unresolved,
+            child_present,
+            child_unresolved,
+            authorized,
+        )
     }
-    /// Create one empty child relative to the held, validated parent descriptor.
-    /// A failed creation may leave a child; the session is then blocked from restoration.
-    pub fn create_empty_child(&mut self) -> Result<(), String> {
-        if self.activation.is_none() || self.activation_unresolved {
-            return Err("verified controller activation required".into());
-        }
-        if self.backend.child.is_some() || self.backend.child_unresolved {
-            return Err("child already registered or unresolved".into());
-        }
-        let id = self.backend.verify_unit()?;
-        if !self.backend.processes()?.trim().is_empty() {
-            return Err("parent populated".into());
-        }
-        if self.backend.verify_unit()? != id {
-            return Err("parent identity changed before child creation".into());
-        }
-        self.backend.child_unresolved = true;
-        let expected = crate::bound_child::FileId {
-            dev: id.device,
-            ino: id.inode,
-        };
-        let child =
-            crate::bound_child::BoundChild::create(self.backend.binding.parent(), expected)?;
-        self.backend.child = Some(child);
-        self.backend.child_unresolved = false;
-        if let Err(e) = self.backend.verify_unit() {
-            self.backend.child_unresolved = true;
-            return Err(format!(
-                "created child preserved; hierarchy validation failed: {e}"
-            ));
-        }
-        Ok(())
+    /// Create one empty, session-registered child. Unknown effects remain latched.
+    pub fn create_empty_child(&mut self) -> Result<MutationOutcome, MutationOutcome> {
+        create_child_typed(
+            &mut self.backend,
+            self.activation.is_some() && !self.activation_unresolved,
+        )
     }
     /// Inspect the registered child's inherited controller list without control writes.
     pub fn child_controllers(&mut self) -> Result<String, String> {
@@ -468,27 +1037,8 @@ impl ControllerSession {
         )
     }
     /// Remove only the registered, still-empty child; failed cleanup blocks restoration.
-    pub fn remove_empty_child(&mut self) -> Result<(), String> {
-        if self.low_unresolved {
-            return Err("memory.low state unresolved; child preserved".into());
-        }
-        let id = self.backend.verify_unit()?;
-        let child = self.backend.child.as_ref().ok_or("no registered child")?;
-        self.backend.child_unresolved = true;
-        child.remove(
-            self.backend.binding.parent(),
-            crate::bound_child::FileId {
-                dev: id.device,
-                ino: id.inode,
-            },
-        )?;
-        self.backend.child = None;
-        self.backend.child_unresolved = false;
-        if let Err(e) = self.backend.verify_unit() {
-            self.backend.child_unresolved = true;
-            return Err(format!("hierarchy verification after removal failed: {e}"));
-        }
-        Ok(())
+    pub fn remove_empty_child(&mut self) -> Result<MutationOutcome, MutationOutcome> {
+        remove_child_typed(&mut self.backend, self.low_unresolved)
     }
 }
 
@@ -645,6 +1195,12 @@ mod tests {
         fail_unit_at: Option<usize>,
         populate_after_first_read: bool,
         process_reads: usize,
+        child: Option<crate::child_memory::ChildIdentity>,
+        child_unresolved: bool,
+        fail_create: bool,
+        fail_remove: bool,
+        restore_mismatch: bool,
+        child_replaced: bool,
     }
     impl Fixture {
         fn new() -> Self {
@@ -663,6 +1219,12 @@ mod tests {
                 fail_unit_at: None,
                 populate_after_first_read: false,
                 process_reads: 0,
+                child: None,
+                child_unresolved: false,
+                fail_create: false,
+                fail_remove: false,
+                restore_mismatch: false,
+                child_replaced: false,
             }
         }
     }
@@ -706,6 +1268,9 @@ mod tests {
             if self.fail_write {
                 return Err("denied".into());
             }
+            if self.restore_mismatch {
+                return Ok(());
+            }
             self.enabled = self
                 .enabled
                 .split_whitespace()
@@ -723,6 +1288,236 @@ mod tests {
                 self.enabled.push_str(" memory");
             }
             Ok(())
+        }
+    }
+    impl RegisteredChildBackend for Fixture {
+        fn registered_child(&self) -> Option<crate::child_memory::ChildIdentity> {
+            self.child
+        }
+        fn child_unresolved(&self) -> bool {
+            self.child_unresolved
+        }
+        fn child_identity_matches(&self) -> Result<bool, String> {
+            Ok(!self.child_replaced)
+        }
+        fn set_child_unresolved(&mut self, value: bool) {
+            self.child_unresolved = value;
+        }
+        fn create_registered_child(
+            &mut self,
+            _: ParentIdentity,
+        ) -> Result<crate::child_memory::ChildIdentity, String> {
+            let child = crate::child_memory::ChildIdentity {
+                device: 1,
+                inode: 9,
+            };
+            self.child = Some(child);
+            if self.fail_create {
+                return Err("injected after creation".into());
+            }
+            Ok(child)
+        }
+        fn remove_registered_child(&mut self, _: ParentIdentity) -> Result<(), String> {
+            self.child = None;
+            if self.fail_remove {
+                return Err("injected failure after possible removal".into());
+            }
+            Ok(())
+        }
+    }
+    fn child_state(
+        identity: Option<crate::child_memory::ChildIdentity>,
+        present: bool,
+    ) -> Option<Box<MutationState>> {
+        Some(Box::new(MutationState {
+            child: identity,
+            child_present: Some(present),
+            ..Default::default()
+        }))
+    }
+    #[test]
+    fn typed_child_lifecycle_and_failures() {
+        let identity = crate::child_memory::ChildIdentity {
+            device: 1,
+            inode: 9,
+        };
+        let mut f = Fixture::new();
+        let refused = create_child_typed(&mut f, false).unwrap_err();
+        assert_eq!(refused.status, MutationStatus::RefusedBeforeMutation);
+        assert_eq!(refused.expected, child_state(None, true));
+        let created = create_child_typed(&mut f, true).unwrap();
+        assert_eq!(created.status, MutationStatus::AppliedAndVerified);
+        assert_eq!(created.last_verified, child_state(None, false));
+        assert_eq!(created.observed, child_state(Some(identity), true));
+        assert_eq!(created.expected, created.observed);
+        let removed = remove_child_typed(&mut f, false).unwrap();
+        assert_eq!(removed.status, MutationStatus::AppliedAndVerified);
+        assert_eq!(removed.last_verified, child_state(Some(identity), true));
+        assert_eq!(removed.expected, child_state(None, false));
+        assert_eq!(removed.observed, removed.expected);
+        let mut f = Fixture::new();
+        f.fail_create = true;
+        let failure = create_child_typed(&mut f, true).unwrap_err();
+        assert_eq!(failure.status, MutationStatus::AmbiguousMutation);
+        assert_eq!(failure.last_verified, child_state(None, false));
+        assert_eq!(failure.expected, child_state(None, true));
+        assert_eq!(failure.observed, None);
+        assert!(f.child_unresolved);
+        assert_eq!(
+            create_child_typed(&mut f, true).unwrap_err().status,
+            MutationStatus::RefusedBeforeMutation
+        );
+        assert_eq!(
+            remove_child_typed(&mut f, false).unwrap_err().status,
+            MutationStatus::CleanupRequired
+        );
+        let mut f = Fixture::new();
+        create_child_typed(&mut f, true).unwrap();
+        f.fail_remove = true;
+        let failure = remove_child_typed(&mut f, false).unwrap_err();
+        assert_eq!(failure.status, MutationStatus::AmbiguousMutation);
+        assert_eq!(failure.last_verified, child_state(Some(identity), true));
+        assert_eq!(failure.expected, child_state(None, false));
+        assert_eq!(failure.observed, None);
+        assert_eq!(
+            remove_child_typed(&mut f, false).unwrap_err().status,
+            MutationStatus::CleanupRequired
+        );
+        let mut f = Fixture::new();
+        create_child_typed(&mut f, true).unwrap();
+        f.child_replaced = true;
+        let conflict = remove_child_typed(&mut f, false).unwrap_err();
+        assert_eq!(conflict.status, MutationStatus::Conflict);
+        assert_eq!(conflict.expected, child_state(None, false));
+        assert_eq!(f.child, Some(identity));
+        let mut f = Fixture::new();
+        f.change_id = true;
+        let conflict = create_child_typed(&mut f, true).unwrap_err();
+        assert_eq!(conflict.status, MutationStatus::Conflict);
+        assert_eq!(conflict.expected, child_state(None, true));
+        assert!(f.child.is_none());
+    }
+    #[test]
+    fn typed_restoration_results_and_retry_guard() {
+        for case in 0..6 {
+            let mut f = Fixture::new();
+            f.enabled = "cpu memory pids".into();
+            f.fail_write = case == 3;
+            f.restore_mismatch = case == 4;
+            if case == 5 {
+                f.enabled = "cpu pids".into();
+            }
+            let mut activation = Some(Activation::Enabled {
+                original_controllers: vec!["cpu".into(), "pids".into()],
+            });
+            let mut unresolved = false;
+            let result = restore_typed(
+                &mut f,
+                &mut activation,
+                &mut unresolved,
+                case == 2,
+                false,
+                false,
+                case != 1,
+            );
+            let expected = Some(Box::new(MutationState {
+                controllers: Some(vec!["cpu".into(), "pids".into()]),
+                child_present: Some(false),
+                ..Default::default()
+            }));
+            if case == 0 {
+                let report = result.unwrap();
+                assert_eq!(report.status, MutationStatus::AppliedAndVerified);
+                assert_eq!(report.expected, expected);
+                assert_eq!(report.observed, expected);
+            } else {
+                let report = result.unwrap_err();
+                assert_eq!(
+                    report.status,
+                    match case {
+                        1 => MutationStatus::RefusedBeforeMutation,
+                        2 => MutationStatus::CleanupRequired,
+                        5 => MutationStatus::RestorationFailure,
+                        _ => MutationStatus::AmbiguousMutation,
+                    }
+                );
+                assert_eq!(report.expected, expected);
+                if case == 4 {
+                    assert_eq!(
+                        report.observed,
+                        Some(Box::new(MutationState {
+                            controllers: Some(vec!["cpu".into(), "memory".into(), "pids".into()]),
+                            ..Default::default()
+                        }))
+                    );
+                } else {
+                    assert_eq!(report.observed, None);
+                }
+                if case >= 3 {
+                    assert!(unresolved);
+                    let writes = f.writes;
+                    assert_eq!(
+                        restore_typed(
+                            &mut f,
+                            &mut activation,
+                            &mut unresolved,
+                            false,
+                            false,
+                            false,
+                            true
+                        )
+                        .unwrap_err()
+                        .status,
+                        MutationStatus::CleanupRequired
+                    );
+                    assert_eq!(f.writes, writes);
+                }
+            }
+        }
+    }
+    #[test]
+    fn typed_activation_reports_verified_refusal_and_ambiguity_without_retry() {
+        for mode in 0..5 {
+            let mut f = Fixture::new();
+            match mode {
+                1 => f.procs = "123".into(),
+                2 => f.fail_write = true,
+                3 => f.mismatch = true,
+                4 => f.change_after_inspection = true,
+                _ => (),
+            }
+            let mut activation = None;
+            let mut original = None;
+            let mut unresolved = false;
+            let result = activate_typed(&mut f, &mut activation, &mut original, &mut unresolved);
+            if mode == 0 {
+                let report = result.unwrap();
+                assert_eq!(report.status, MutationStatus::AppliedAndVerified);
+                assert!(report.verified);
+                assert_eq!(report.mutation_attempted, Some(true));
+                assert_eq!(report.expected, report.observed);
+            } else {
+                let report = result.unwrap_err();
+                assert!(!report.verified);
+                assert_eq!(report.operation, MutationOperation::Activate);
+                assert_eq!(
+                    report.status,
+                    if mode == 1 || mode == 4 {
+                        MutationStatus::RefusedBeforeMutation
+                    } else {
+                        MutationStatus::AmbiguousMutation
+                    }
+                );
+                assert!(report.error.is_some());
+                let writes = f.writes;
+                if unresolved {
+                    let retry =
+                        activate_typed(&mut f, &mut activation, &mut original, &mut unresolved)
+                            .unwrap_err();
+                    assert_eq!(retry.status, MutationStatus::RefusedBeforeMutation);
+                    assert_eq!(f.writes, writes);
+                }
+            }
         }
     }
     #[test]

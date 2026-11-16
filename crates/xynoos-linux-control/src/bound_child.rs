@@ -53,6 +53,17 @@ impl BoundChild {
             inode: self.identity.ino,
         }
     }
+    /// Compare the held child with the entry under the held parent. Other validation
+    /// remains the responsibility of `verify` before any mutation.
+    pub(crate) fn identity_matches(&self, parent: &File, expected: FileId) -> Result<bool, String> {
+        check_parent(parent, expected)?;
+        let current = openat(
+            parent.as_raw_fd(),
+            &self.name,
+            libc::O_RDONLY | libc::O_DIRECTORY,
+        )?;
+        Ok(id(&current)? == self.identity && id(&self.dir)? == self.identity)
+    }
     pub(crate) fn read_low(&self, parent: &File, expected: FileId) -> Result<u64, String> {
         self.verify(parent, expected)?;
         let control = openat(self.dir.as_raw_fd(), c"memory.low", libc::O_RDONLY)?;
@@ -297,6 +308,7 @@ mod tests {
         let f = Fixture::new();
         let child = f.create().unwrap();
         let path = f.path.join("child/memory.low");
+        assert_eq!(child.identity_matches(&f.parent, f.id), Ok(true));
         assert!(child.read_low(&f.parent, f.id).is_err());
         fs::write(&path, "8192\n").unwrap();
         assert_eq!(child.read_low(&f.parent, f.id).unwrap(), 8192);
@@ -312,6 +324,7 @@ mod tests {
         fs::write(&path, "4096").unwrap();
         fs::rename(f.path.join("child"), f.path.join("old")).unwrap();
         fs::create_dir(f.path.join("child")).unwrap();
+        assert_eq!(child.identity_matches(&f.parent, f.id), Ok(false));
         assert!(child.read_low(&f.parent, f.id).is_err());
     }
     #[test]
