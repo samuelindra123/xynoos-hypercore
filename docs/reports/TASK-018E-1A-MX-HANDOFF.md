@@ -1,3 +1,5 @@
+> **Superseded cleanup instructions:** `unit-preflight` now fails closed because independent hierarchy cleanup is unverified. See [mutation-sink audit](TASK-018E-MUTATION-SINK-AUDIT.md). Do not treat the historical success criteria below as current.
+
 # TASK 018E-1A — MX Linux live binding handoff
 
 **LIVE SYSTEMD BINDING: NOT VERIFIED.** The previous physical attempt failed in D-Bus decoding before binding could be verified. This package contains the parsing and cleanup-reporting fixes. Run only on the N5000 laptop from a normal graphical login with its user systemd and D-Bus session. This diagnostic starts one temporary user service. It does not authorize or perform controller activation, memory.low writes, process migration, workload stress, or controlled mode. Do not use sudo or modify cgroups manually.

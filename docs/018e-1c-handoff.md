@@ -1,3 +1,5 @@
+> **Superseded cleanup instructions:** `unit-preflight` now fails closed because independent hierarchy cleanup is unverified. See [mutation-sink audit](reports/TASK-018E-MUTATION-SINK-AUDIT.md). Do not treat the historical success criteria below as current.
+
 # TASK 018E-1C read-only MX Linux handoff
 
 This package inspects a transient user service and its delegated cgroup. It does not activate controllers, change memory.low, migrate processes, or run a workload. Starting and collecting the service necessarily causes systemd to create and remove its own transient cgroup; the diagnostic makes no cgroup control writes.

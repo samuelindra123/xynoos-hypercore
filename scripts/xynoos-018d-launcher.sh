@@ -25,12 +25,15 @@ case "${1:-}" in
     # Always check termination and cleanup, even if the diagnostic failed.
     checks_failed=0
     if state=$(systemctl --user show "$unit.service" --property=LoadState --property=ActiveState); then
-      case "$state" in
-        *'LoadState=not-found'*|*'ActiveState=inactive'*)
-          echo "unit inactive or collected: $unit.service" >&2 ;;
-        *'ActiveState=failed'*) echo "unit failed: $unit.service" >&2; checks_failed=1 ;;
-        *) echo "unit termination unverified: $unit.service ($state)" >&2; checks_failed=1 ;;
-      esac
+      if [ "$(printf '%s\n' "$state" | grep -c '^ActiveState=')" -eq 1 ] &&
+         [ "$(printf '%s\n' "$state" | grep -c '^LoadState=')" -eq 1 ] &&
+         printf '%s\n' "$state" | grep -qx 'ActiveState=inactive' &&
+         printf '%s\n' "$state" | grep -Eq '^LoadState=(loaded|not-found)$'; then
+        echo "unit inactive or collected: $unit.service" >&2
+      else
+        echo "unit termination unverified: $unit.service ($state)" >&2
+        checks_failed=1
+      fi
     else
       echo "unit termination unverified: $unit.service" >&2
       checks_failed=1
@@ -52,8 +55,10 @@ try:
         try:
             os.lstat(path)
         except FileNotFoundError:
-            print("cgroup removal verified: " + path, file=sys.stderr)
-            break
+            # The diagnostic did not retain the containing directory identity.
+            # Absence under a replaced or remounted ancestor cannot prove that
+            # the original hierarchy was removed.
+            raise ValueError("path absent, but original hierarchy identity was not retained: " + path)
         time.sleep(0.1)
     else:
         raise ValueError("cgroup still present: " + path)
