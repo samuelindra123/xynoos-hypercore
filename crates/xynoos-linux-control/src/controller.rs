@@ -363,6 +363,76 @@ pub struct ControllerSession {
     activation_unresolved: bool,
     low_unresolved: bool,
 }
+
+/// Evidence is read sequentially and is never a mutation authorization token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SessionObservation {
+    /// Identity captured at binding time; current only when both binding checks pass.
+    pub identity: crate::systemd_identity::BoundIdentity,
+    pub binding_before: Result<(), String>,
+    pub binding_after: Result<(), String>,
+    pub parent_population: Result<Vec<u32>, String>,
+    pub manager_population: Result<Vec<u32>, String>,
+    pub registered_child: Option<ChildObservation>,
+    pub available_controllers: Result<BTreeSet<String>, String>,
+    pub enabled_controllers: Result<BTreeSet<String>, String>,
+    pub activation: ObservedActivation,
+    pub activation_unresolved: bool,
+    pub child_unresolved: bool,
+    pub memory_low_unresolved: bool,
+    pub completeness: ObservationCompleteness,
+    pub validity: ObservationValidity,
+    pub issues: Vec<String>,
+}
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChildObservation {
+    pub identity: crate::child_memory::ChildIdentity,
+    pub population: Result<Vec<u32>, String>,
+    pub memory_low: Result<u64, String>,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObservationCompleteness {
+    Complete,
+    Incomplete,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObservationValidity {
+    Valid,
+    Invalid,
+    Unknown,
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ObservedActivation {
+    NotActive,
+    Active,
+    Unresolved,
+}
+
+fn population(text: String) -> Result<Vec<u32>, String> {
+    let mut pids = BTreeSet::new();
+    for word in text.split_whitespace() {
+        let pid = word
+            .parse::<u32>()
+            .map_err(|_| "invalid process population")?;
+        if pid == 0 || !pids.insert(pid) {
+            return Err("invalid process population".into());
+        }
+    }
+    Ok(pids.into_iter().collect())
+}
+fn controller_set(text: String) -> Result<BTreeSet<String>, String> {
+    let mut set = BTreeSet::new();
+    for word in text.split_whitespace() {
+        if !word
+            .bytes()
+            .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'_')
+            || !set.insert(word.to_owned())
+        {
+            return Err("invalid controller list".into());
+        }
+    }
+    Ok(set)
+}
 /// Failed convenience activation retains the session for diagnostics and recovery.
 pub struct ActivationFailure {
     pub outcome: MutationOutcome,
@@ -893,6 +963,203 @@ fn remove_child_typed<B: RegisteredChildBackend>(
     ))
 }
 impl ControllerSession {
+    /// Collect diagnostic evidence without authorizing, attempting, or retrying a mutation.
+    /// Individual reads are sequential; a complete snapshot is not an atomic kernel view.
+    pub fn observe(&mut self) -> SessionObservation {
+        let binding = &self.backend.binding;
+        let identity = binding.bound_identity();
+        let binding_before = binding.revalidate();
+        let parent_population =
+            crate::transaction::read_at(binding.parent(), c"cgroup.procs").and_then(population);
+        let manager_population =
+            crate::transaction::read_at(binding.manager(), c"cgroup.procs").and_then(population);
+        let available_controllers =
+            crate::transaction::read_at(binding.parent(), c"cgroup.controllers")
+                .and_then(controller_set);
+        let enabled_controllers =
+            crate::transaction::read_at(binding.parent(), c"cgroup.subtree_control")
+                .and_then(controller_set);
+        let parent_stat = crate::transaction::read_at(binding.parent(), c"cgroup.stat");
+        let manager_stat = crate::transaction::read_at(binding.manager(), c"cgroup.stat");
+        let (dev, ino) = binding.parent_identity();
+        let parent_id = crate::bound_child::FileId { dev, ino };
+        let registered_child = self.backend.child.as_ref().map(|child| ChildObservation {
+            identity: child.identity(),
+            population: child
+                .population(binding.parent(), parent_id)
+                .and_then(population),
+            memory_low: child.read_low(binding.parent(), parent_id),
+        });
+        let available_again = crate::transaction::read_at(binding.parent(), c"cgroup.controllers")
+            .and_then(controller_set);
+        let enabled_again =
+            crate::transaction::read_at(binding.parent(), c"cgroup.subtree_control")
+                .and_then(controller_set);
+        let binding_after = binding.revalidate();
+        let mut issues = Vec::new();
+        let mut incomplete = false;
+        let mut invalid = false;
+        for (label, result) in [
+            ("binding before", &binding_before),
+            ("binding after", &binding_after),
+        ] {
+            if let Err(e) = result {
+                issues.push(format!("{label}: {e}"));
+                invalid = true;
+                incomplete = true;
+            }
+        }
+        for (label, error) in [
+            ("parent population", parent_population.as_ref().err()),
+            ("manager population", manager_population.as_ref().err()),
+            (
+                "available controllers",
+                available_controllers.as_ref().err(),
+            ),
+            ("enabled controllers", enabled_controllers.as_ref().err()),
+            ("parent hierarchy", parent_stat.as_ref().err()),
+            ("manager hierarchy", manager_stat.as_ref().err()),
+            (
+                "available controllers reread",
+                available_again.as_ref().err(),
+            ),
+            ("enabled controllers reread", enabled_again.as_ref().err()),
+        ] {
+            if let Some(e) = error {
+                issues.push(format!("{label}: {e}"));
+                incomplete = true;
+            }
+        }
+        if parent_population.as_ref().is_ok_and(|p| !p.is_empty())
+            || manager_population
+                .as_ref()
+                .is_ok_and(|p| p.as_slice() != [identity.manager_pid])
+        {
+            issues.push("unexpected process population".into());
+            invalid = true;
+        }
+        if let Some(child) = &registered_child {
+            for (label, error) in [
+                ("child population", child.population.as_ref().err()),
+                ("memory.low", child.memory_low.as_ref().err()),
+            ] {
+                if let Some(e) = error {
+                    issues.push(format!("{label}: {e}"));
+                    incomplete = true;
+                }
+            }
+            if child.population.as_ref().is_ok_and(|p| !p.is_empty()) {
+                issues.push("child populated".into());
+                invalid = true;
+            }
+        }
+        if let (Ok(parent), Ok(manager), Ok(procs)) =
+            (&parent_stat, &manager_stat, &manager_population)
+        {
+            let procs = procs
+                .iter()
+                .map(u32::to_string)
+                .collect::<Vec<_>>()
+                .join("\n");
+            if let Err(e) = validate_hierarchy(
+                parent,
+                manager,
+                &procs,
+                identity.manager_pid,
+                registered_child.is_some(),
+            ) {
+                issues.push(e);
+                invalid = true;
+            }
+        }
+        if let (Ok(a), Ok(b)) = (&available_controllers, &available_again) {
+            if a != b {
+                issues.push("available controllers changed during observation".into());
+                invalid = true;
+            }
+        }
+        if let (Ok(a), Ok(b)) = (&enabled_controllers, &enabled_again) {
+            if a != b {
+                issues.push("enabled controllers changed during observation".into());
+                invalid = true;
+            }
+        }
+        if let (
+            Some(Activation::Enabled {
+                original_controllers,
+            }),
+            Ok(enabled),
+        ) = (&self.activation, &enabled_controllers)
+        {
+            let mut expected: BTreeSet<_> = original_controllers.iter().cloned().collect();
+            expected.insert("memory".into());
+            if *enabled != expected {
+                issues.push("controller state conflicts with activation".into());
+                invalid = true;
+            }
+        }
+        if !self.activation_unresolved
+            && self.activation.is_none()
+            && enabled_controllers
+                .as_ref()
+                .is_ok_and(|set| set.contains("memory"))
+        {
+            issues.push("memory enabled without a verified session activation".into());
+            invalid = true;
+        }
+        if let (Ok(available), Ok(enabled)) = (&available_controllers, &enabled_controllers) {
+            if !enabled.is_subset(available) || !available.contains("memory") {
+                issues.push("controller availability conflicts with session state".into());
+                invalid = true;
+            }
+        }
+        if self.activation_unresolved || self.backend.child_unresolved || self.low_unresolved {
+            issues.push("mutation outcome unresolved; observation does not permit retry".into());
+            incomplete = true;
+        }
+        SessionObservation {
+            identity,
+            binding_before,
+            binding_after,
+            parent_population,
+            manager_population,
+            registered_child,
+            available_controllers,
+            enabled_controllers,
+            activation: if self.activation_unresolved {
+                ObservedActivation::Unresolved
+            } else if self.activation.is_some() {
+                ObservedActivation::Active
+            } else {
+                ObservedActivation::NotActive
+            },
+            activation_unresolved: self.activation_unresolved,
+            child_unresolved: self.backend.child_unresolved,
+            memory_low_unresolved: self.low_unresolved,
+            completeness: if incomplete {
+                ObservationCompleteness::Incomplete
+            } else {
+                ObservationCompleteness::Complete
+            },
+            validity: if invalid {
+                ObservationValidity::Invalid
+            } else if incomplete {
+                ObservationValidity::Unknown
+            } else {
+                ObservationValidity::Valid
+            },
+            issues,
+        }
+    }
+
+    /// Check the shared mutation preconditions independently of any observation.
+    /// Operation-specific checks and explicit authorization still apply.
+    pub fn verify_for_mutation(&mut self) -> Result<ParentIdentity, String> {
+        if self.activation_unresolved || self.low_unresolved {
+            return Err("mutation state unresolved".into());
+        }
+        self.backend.verify_unit()
+    }
     /// Hold the validated binding before any controller write is attempted.
     pub fn prepare(
         binding: crate::systemd_identity::Binding,
@@ -1709,5 +1976,161 @@ mod tests {
         ] {
             assert!(validate_hierarchy(stat, "nr_descendants 0", procs, 42, false).is_err());
         }
+    }
+}
+
+#[cfg(test)]
+mod observation_tests {
+    use super::*;
+    use std::{
+        fs,
+        os::unix::fs::PermissionsExt,
+        path::PathBuf,
+        sync::atomic::{AtomicUsize, Ordering},
+    };
+    static NEXT: AtomicUsize = AtomicUsize::new(0);
+    struct Fixture {
+        path: PathBuf,
+        session: ControllerSession,
+    }
+    impl Fixture {
+        fn new() -> Self {
+            let path = std::env::temp_dir().join(format!(
+                "xynoos-observe-{}-{}",
+                std::process::id(),
+                NEXT.fetch_add(1, Ordering::Relaxed)
+            ));
+            fs::create_dir(&path).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+            fs::create_dir(path.join("manager")).unwrap();
+            for (name, value) in [
+                ("cgroup.procs", ""),
+                ("cgroup.stat", "nr_descendants 1\n"),
+                ("cgroup.controllers", "cpu memory pids"),
+                ("cgroup.subtree_control", "cpu pids"),
+                ("manager/cgroup.procs", "42\n"),
+                ("manager/cgroup.stat", "nr_descendants 0\n"),
+            ] {
+                fs::write(path.join(name), value).unwrap();
+            }
+            let binding = crate::systemd_identity::Binding::fixture(path.clone(), 42);
+            let session = ControllerSession {
+                backend: LinuxController {
+                    binding,
+                    authorized: false,
+                    child: None,
+                    child_unresolved: false,
+                },
+                activation: None,
+                original_before_attempt: None,
+                activation_unresolved: false,
+                low_unresolved: false,
+            };
+            Self { path, session }
+        }
+        fn activate(&mut self) {
+            fs::write(self.path.join("cgroup.subtree_control"), "cpu memory pids").unwrap();
+            self.session.activation = Some(Activation::Enabled {
+                original_controllers: vec!["cpu".into(), "pids".into()],
+            });
+        }
+        fn child(&mut self) {
+            let path = self.path.join("child");
+            fs::create_dir(&path).unwrap();
+            fs::set_permissions(&path, fs::Permissions::from_mode(0o700)).unwrap();
+            for (name, value) in [
+                ("cgroup.procs", ""),
+                ("cgroup.stat", "nr_descendants 0"),
+                ("memory.low", "4096"),
+            ] {
+                fs::write(path.join(name), value).unwrap();
+            }
+            fs::write(self.path.join("cgroup.stat"), "nr_descendants 2").unwrap();
+            self.session.backend.child = Some(crate::bound_child::BoundChild::fixture(
+                self.session.backend.binding.parent(),
+                c"child",
+            ));
+        }
+    }
+    impl Drop for Fixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.path);
+        }
+    }
+    #[test]
+    fn observes_lifecycle_and_child() {
+        let mut f = Fixture::new();
+        let before = f.session.observe();
+        assert_eq!(before.validity, ObservationValidity::Valid);
+        assert_eq!(before.completeness, ObservationCompleteness::Complete);
+        assert_eq!(before.identity.unit_id, "fixture.service");
+        assert_eq!(before.manager_population, Ok(vec![42]));
+        f.activate();
+        assert_eq!(f.session.observe().validity, ObservationValidity::Valid);
+        f.child();
+        let after = f.session.observe();
+        assert_eq!(after.validity, ObservationValidity::Valid);
+        assert_eq!(after.registered_child.unwrap().memory_low, Ok(4096));
+        fs::write(f.path.join("cgroup.subtree_control"), "cpu pids").unwrap();
+        assert_eq!(f.session.observe().validity, ObservationValidity::Invalid);
+    }
+    #[test]
+    fn unresolved_evidence_never_authorizes_retry() {
+        let mut f = Fixture::new();
+        f.session.activation_unresolved = true;
+        let o = f.session.observe();
+        assert!(o.activation_unresolved);
+        assert_eq!(o.validity, ObservationValidity::Unknown);
+        assert!(f.session.verify_for_mutation().is_err());
+        assert!(f.session.activate_prepared().is_err());
+        f.session.activation_unresolved = false;
+        f.activate();
+        f.child();
+        f.session.backend.child_unresolved = true;
+        f.session.low_unresolved = true;
+        let o = f.session.observe();
+        assert!(o.child_unresolved && o.memory_low_unresolved);
+        assert_eq!(o.validity, ObservationValidity::Unknown);
+        assert!(f.session.verify_for_mutation().is_err());
+        let child = f.session.backend.child.as_ref().unwrap().identity();
+        assert!(f
+            .session
+            .change_child_memory_low(child, 4096, 8192, true, false)
+            .is_err());
+        assert_eq!(
+            fs::read_to_string(f.path.join("child/memory.low")).unwrap(),
+            "4096"
+        );
+        assert!(f.session.remove_empty_child().is_err());
+        assert!(f.session.restore(true).is_err());
+    }
+    #[test]
+    fn stale_hierarchy_and_failed_reads_are_visible() {
+        let mut f = Fixture::new();
+        fs::write(f.path.join("stale"), "").unwrap();
+        let o = f.session.observe();
+        assert!(o.binding_before.is_err());
+        assert_eq!(o.validity, ObservationValidity::Invalid);
+        fs::remove_file(f.path.join("stale")).unwrap();
+        fs::write(f.path.join("cgroup.stat"), "nr_descendants 2").unwrap();
+        assert_eq!(f.session.observe().validity, ObservationValidity::Invalid);
+        fs::write(f.path.join("cgroup.stat"), "nr_descendants 1").unwrap();
+        fs::remove_file(f.path.join("cgroup.controllers")).unwrap();
+        let o = f.session.observe();
+        assert!(o.available_controllers.is_err());
+        assert_eq!(o.completeness, ObservationCompleteness::Incomplete);
+        assert_eq!(o.validity, ObservationValidity::Unknown);
+    }
+    #[test]
+    fn missing_low_and_populated_child_are_visible() {
+        let mut f = Fixture::new();
+        f.activate();
+        f.child();
+        fs::remove_file(f.path.join("child/memory.low")).unwrap();
+        let o = f.session.observe();
+        assert!(o.registered_child.unwrap().memory_low.is_err());
+        assert_eq!(o.validity, ObservationValidity::Unknown);
+        fs::write(f.path.join("child/cgroup.procs"), "17").unwrap();
+        assert_eq!(f.session.observe().validity, ObservationValidity::Invalid);
     }
 }

@@ -47,6 +47,28 @@ pub(crate) struct BoundChild {
     uid: u32,
 }
 impl BoundChild {
+    #[cfg(test)]
+    pub(crate) fn fixture(parent: &File, name: &CStr) -> Self {
+        let dir = openat(parent.as_raw_fd(), name, libc::O_RDONLY | libc::O_DIRECTORY).unwrap();
+        let identity = id(&dir).unwrap();
+        let uid = dir.metadata().unwrap().uid();
+        Self {
+            name: name.to_owned(),
+            dir,
+            identity,
+            uid,
+        }
+    }
+    pub(crate) fn population(&self, parent: &File, expected: FileId) -> Result<String, String> {
+        if !self.identity_matches(parent, expected)? {
+            return Err("child identity changed".into());
+        }
+        let population = read_at(&self.dir, c"cgroup.procs")?;
+        if !self.identity_matches(parent, expected)? {
+            return Err("child identity changed during read".into());
+        }
+        Ok(population)
+    }
     pub(crate) fn identity(&self) -> crate::child_memory::ChildIdentity {
         crate::child_memory::ChildIdentity {
             device: self.identity.dev,

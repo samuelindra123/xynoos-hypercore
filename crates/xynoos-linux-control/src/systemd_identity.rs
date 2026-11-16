@@ -221,6 +221,19 @@ pub struct Binding {
     parent: File,
     manager: File,
     parent_path: PathBuf,
+    #[cfg(test)]
+    fixture: bool,
+}
+/// The identity captured when the binding was established. It is historical evidence,
+/// and is only current when revalidation succeeds.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BoundIdentity {
+    pub unit_id: String,
+    pub invocation_id: Vec<u8>,
+    pub manager_pid: u32,
+    pub manager_start_ticks: u64,
+    pub parent: (u64, u64),
+    pub manager: (u64, u64),
 }
 impl Binding {
     pub fn discover(name: &str) -> Result<Self, String> {
@@ -257,6 +270,8 @@ impl Binding {
             parent,
             manager,
             parent_path,
+            #[cfg(test)]
+            fixture: false,
         };
         binding.revalidate()?;
         Ok(binding)
@@ -274,7 +289,37 @@ impl Binding {
     pub fn diagnostic(&self) -> Value {
         diagnostic(&self.initial)
     }
+    pub fn bound_identity(&self) -> BoundIdentity {
+        BoundIdentity {
+            unit_id: self.initial.unit.id.clone(),
+            invocation_id: self.initial.unit.invocation.clone(),
+            manager_pid: self.initial.process.pid,
+            manager_start_ticks: self.initial.process.start_ticks,
+            parent: self.initial.parent,
+            manager: self.initial.manager,
+        }
+    }
     pub fn revalidate(&self) -> Result<(), String> {
+        #[cfg(test)]
+        if self.fixture {
+            let parent = File::open(&self.parent_path).map_err(|e| e.to_string())?;
+            let manager =
+                File::open(self.parent_path.join("manager")).map_err(|e| e.to_string())?;
+            let id = |file: &File| {
+                file.metadata()
+                    .map(|m| (m.dev(), m.ino()))
+                    .map_err(|e| e.to_string())
+            };
+            if self.parent_path.join("stale").exists()
+                || id(&parent)? != self.initial.parent
+                || id(&manager)? != self.initial.manager
+                || id(&self.parent)? != self.initial.parent
+                || id(&self.manager)? != self.initial.manager
+            {
+                return Err("stale fixture binding".into());
+            }
+            return Ok(());
+        }
         let u = unit(&self.name)?;
         let process =
             workload::identify(self.initial.process.pid).map_err(|e| format!("process: {e:?}"))?;
@@ -304,6 +349,44 @@ impl Binding {
             return Err("stale binding".into());
         }
         Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn fixture(parent_path: PathBuf, pid: u32) -> Self {
+        let parent = File::open(&parent_path).unwrap();
+        let manager = File::open(parent_path.join("manager")).unwrap();
+        let id = |file: &File| {
+            let m = file.metadata().unwrap();
+            (m.dev(), m.ino())
+        };
+        Self {
+            name: "fixture.service".into(),
+            initial: Observation {
+                unit: Unit {
+                    object: "/fixture".into(),
+                    id: "fixture.service".into(),
+                    invocation: vec![1; 16],
+                    active: "active".into(),
+                    load: "loaded".into(),
+                    transient: true,
+                    delegate: true,
+                    subgroup: "manager".into(),
+                    cgroup: "/fixture".into(),
+                    pid,
+                },
+                process: workload::Identity {
+                    pid,
+                    start_ticks: 100,
+                },
+                membership: "/fixture/manager".into(),
+                parent: id(&parent),
+                manager: id(&manager),
+            },
+            parent,
+            manager,
+            parent_path,
+            fixture: true,
+        }
     }
 }
 
