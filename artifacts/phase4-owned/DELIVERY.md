@@ -1,16 +1,17 @@
 # Phase 4 owned experiment delivery
 
-Current package: `xynoos-owned-d898c8ce7d21-linux-x86_64.tar.gz` (use `PACKAGE.json`, not older manifests).
+Current package: `xynoos-owned-d97b27c60080-linux-x86_64.tar.gz` (use `PACKAGE.json`, not older manifests).
 
-- Package source commit: `d898c8ce7d217704846ec4cabe30446ffaefe06b`.
+- Package source commit: `d97b27c6008091f1b04feaa8df138ff00df5aa60`.
 - Implementation/evidence commit: `d951c5b400e178c96217fbd7c8dba7d384bb64fb`.
-- Archive SHA256: `68966e6e9014cc75431b805c9607bb6383bba1fc629a1428ebc721088f0dfebf`.
+- Archive SHA256: `61f8c2680d4fd783642fe126b57309f736b58d2ef0bff7556e7d2f55632831bc`.
 - Worker SHA256: `4ced2f4498a0df87cf66a76d18b30fae37d6c81261a41adc1e7828e6a6fe8ff6`.
 - Static x86_64 musl, independently bounded cooperative worker only.
 - Source/measurement hashes verified against packaged worker; no ELF interpreter.
 - Internal checksums and extracted 18-arm smoke passed, with six effective active actions.
 - Controlled mode and unauthorized active execution refused.
-- All final workspace/Clippy/rustdoc/release/Python/lifecycle/compile-fail gates passed.
+- All final workspace/Clippy/rustdoc/release/Python/lifecycle/compile-fail gates passed; final Python pass contains 49 tests.
+- Post-measurement missing-HWM reporting fix leaves every measured summary value unchanged.
 - Additional six-repeat deterministic MVP simulation regression passed; it is not active physical evidence.
 
 Two mixed Codespaces sessions contain 36 measured arms (plus six warmups),

@@ -15,45 +15,45 @@ triple 5 complete
       "complete_runs": 6,
       "response_ns": {
         "count": 96,
-        "p50": 612802,
-        "p95": 1286307,
-        "p99": 1713273
+        "p50": 629904,
+        "p95": 1207860,
+        "p99": 1643029
       },
       "service_ns": {
         "count": 96,
-        "p50": 540908,
-        "p95": 1140325,
-        "p99": 1269777
+        "p50": 562779,
+        "p95": 1115800,
+        "p99": 1504083
       },
       "elapsed_ns": {
         "count": 96,
-        "p50": 541369,
-        "p95": 1141157,
-        "p99": 1270608
+        "p50": 563310,
+        "p95": 1116711,
+        "p99": 1505345
       },
       "completion_ns": {
         "count": 6,
-        "p50": 13573697,
-        "p95": 16919586,
-        "p99": 16919586
+        "p50": 14063206,
+        "p95": 15643329,
+        "p99": 15643329
       },
       "arm_wall_ns": {
         "count": 6,
-        "p50": 117111719,
-        "p95": 119313984,
-        "p99": 119313984
+        "p50": 113785528,
+        "p95": 119652948,
+        "p99": 119652948
       },
       "child_cpu_ns": {
         "count": 6,
-        "p50": 110960000,
-        "p95": 113474000,
-        "p99": 113474000
+        "p50": 107854000,
+        "p95": 113415000,
+        "p99": 113415000
       },
       "harness_cpu_ns": {
         "count": 6,
-        "p50": 8100122,
-        "p95": 8648577,
-        "p99": 8648577
+        "p50": 7964802,
+        "p95": 8586672,
+        "p99": 8586672
       },
       "steady_payload_bytes": {
         "count": 48,
@@ -63,21 +63,21 @@ triple 5 complete
       },
       "steady_rss_kib": {
         "count": 48,
-        "p50": 18224,
-        "p95": 18260,
-        "p99": 18260
+        "p50": 18152,
+        "p95": 18240,
+        "p99": 18240
       },
       "sampled_peak_hwm_kib": {
         "count": 6,
-        "p50": 19204,
-        "p95": 19268,
-        "p99": 19268
+        "p50": 19096,
+        "p95": 19224,
+        "p99": 19224
       },
       "harness_rss_kib": {
         "count": 12,
-        "p50": 23648,
-        "p95": 24188,
-        "p99": 24188
+        "p50": 23668,
+        "p95": 24204,
+        "p99": 24204
       },
       "policy_effects": {},
       "actions": 0,
@@ -85,15 +85,15 @@ triple 5 complete
       "action_ns": null,
       "restoration_ns": {
         "count": 6,
-        "p50": 55211965,
-        "p95": 59492923,
-        "p99": 59492923
+        "p50": 54460525,
+        "p95": 58308886,
+        "p99": 58308886
       },
       "context_per_run": [
         {
-          "sample_window_ns": 103359909,
-          "cpu_busy_fraction": 0.38461538461538464,
-          "minimum_mem_available_kib": 14061996,
+          "sample_window_ns": 100495667,
+          "cpu_busy_fraction": 0.34146341463414637,
+          "minimum_mem_available_kib": 14067608,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -108,105 +108,7 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 5200
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "memory": {
-              "some": {
-                "status": "available",
-                "delta": 0
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "io": {
-              "some": {
-                "status": "available",
-                "delta": 34
-              },
-              "full": {
-                "status": "available",
-                "delta": 31
-              }
-            }
-          },
-          "zram_first": [],
-          "zram_last": []
-        },
-        {
-          "sample_window_ns": 101501582,
-          "cpu_busy_fraction": 0.475,
-          "minimum_mem_available_kib": 14053488,
-          "swap_pages": {
-            "pswpin": {
-              "status": "available",
-              "delta": 0
-            },
-            "pswpout": {
-              "status": "available",
-              "delta": 0
-            }
-          },
-          "psi_total_us": {
-            "cpu": {
-              "some": {
-                "status": "available",
-                "delta": 2986
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "memory": {
-              "some": {
-                "status": "available",
-                "delta": 0
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "io": {
-              "some": {
-                "status": "available",
-                "delta": 38
-              },
-              "full": {
-                "status": "available",
-                "delta": 1
-              }
-            }
-          },
-          "zram_first": [],
-          "zram_last": []
-        },
-        {
-          "sample_window_ns": 100857230,
-          "cpu_busy_fraction": 0.425,
-          "minimum_mem_available_kib": 14051184,
-          "swap_pages": {
-            "pswpin": {
-              "status": "available",
-              "delta": 0
-            },
-            "pswpout": {
-              "status": "available",
-              "delta": 0
-            }
-          },
-          "psi_total_us": {
-            "cpu": {
-              "some": {
-                "status": "available",
-                "delta": 8029
+                "delta": 1760
               },
               "full": {
                 "status": "available",
@@ -238,9 +140,156 @@ triple 5 complete
           "zram_last": []
         },
         {
-          "sample_window_ns": 100629617,
+          "sample_window_ns": 103666076,
+          "cpu_busy_fraction": 0.5121951219512195,
+          "minimum_mem_available_kib": 14069072,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 5569
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 101737116,
+          "cpu_busy_fraction": 0.3333333333333333,
+          "minimum_mem_available_kib": 14021996,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 1719
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 101603886,
+          "cpu_busy_fraction": 0.35,
+          "minimum_mem_available_kib": 14017816,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 709
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 101613168,
           "cpu_busy_fraction": 0.325,
-          "minimum_mem_available_kib": 14062616,
+          "minimum_mem_available_kib": 14016172,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -255,7 +304,7 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 785
+                "delta": 733
               },
               "full": {
                 "status": "available",
@@ -287,9 +336,9 @@ triple 5 complete
           "zram_last": []
         },
         {
-          "sample_window_ns": 101286057,
-          "cpu_busy_fraction": 0.3,
-          "minimum_mem_available_kib": 14051508,
+          "sample_window_ns": 101673036,
+          "cpu_busy_fraction": 0.35,
+          "minimum_mem_available_kib": 14028164,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -304,7 +353,7 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 612
+                "delta": 1868
               },
               "full": {
                 "status": "available",
@@ -329,55 +378,6 @@ triple 5 complete
               "full": {
                 "status": "available",
                 "delta": 0
-              }
-            }
-          },
-          "zram_first": [],
-          "zram_last": []
-        },
-        {
-          "sample_window_ns": 101070268,
-          "cpu_busy_fraction": 0.28205128205128205,
-          "minimum_mem_available_kib": 14033328,
-          "swap_pages": {
-            "pswpin": {
-              "status": "available",
-              "delta": 0
-            },
-            "pswpout": {
-              "status": "available",
-              "delta": 0
-            }
-          },
-          "psi_total_us": {
-            "cpu": {
-              "some": {
-                "status": "available",
-                "delta": 860
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "memory": {
-              "some": {
-                "status": "available",
-                "delta": 0
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "io": {
-              "some": {
-                "status": "available",
-                "delta": 3084
-              },
-              "full": {
-                "status": "available",
-                "delta": 2834
               }
             }
           },
@@ -390,45 +390,45 @@ triple 5 complete
       "complete_runs": 6,
       "response_ns": {
         "count": 96,
-        "p50": 1507429,
-        "p95": 2363615,
-        "p99": 3087320
+        "p50": 1581177,
+        "p95": 2407247,
+        "p99": 2966749
       },
       "service_ns": {
         "count": 96,
-        "p50": 544144,
-        "p95": 1139464,
-        "p99": 1497531
+        "p50": 563951,
+        "p95": 1136598,
+        "p99": 1492050
       },
       "elapsed_ns": {
         "count": 96,
-        "p50": 1423663,
-        "p95": 2239624,
-        "p99": 2956810
+        "p50": 1486491,
+        "p95": 2285158,
+        "p99": 2845754
       },
       "completion_ns": {
         "count": 6,
-        "p50": 28509762,
-        "p95": 30477429,
-        "p99": 30477429
+        "p50": 29113756,
+        "p95": 32113994,
+        "p99": 32113994
       },
       "arm_wall_ns": {
         "count": 6,
-        "p50": 128196380,
-        "p95": 131581125,
-        "p99": 131581125
+        "p50": 129687702,
+        "p95": 136957592,
+        "p99": 136957592
       },
       "child_cpu_ns": {
         "count": 6,
-        "p50": 121769000,
-        "p95": 124666000,
-        "p99": 124666000
+        "p50": 123182000,
+        "p95": 129060000,
+        "p99": 129060000
       },
       "harness_cpu_ns": {
         "count": 6,
-        "p50": 8447141,
-        "p95": 9186559,
-        "p99": 9186559
+        "p50": 8867344,
+        "p95": 10157360,
+        "p99": 10157360
       },
       "steady_payload_bytes": {
         "count": 48,
@@ -438,21 +438,21 @@ triple 5 complete
       },
       "steady_rss_kib": {
         "count": 48,
-        "p50": 18336,
-        "p95": 18376,
-        "p99": 18376
+        "p50": 18328,
+        "p95": 18372,
+        "p99": 18372
       },
       "sampled_peak_hwm_kib": {
         "count": 6,
-        "p50": 19240,
-        "p95": 19364,
-        "p99": 19364
+        "p50": 19252,
+        "p95": 19396,
+        "p99": 19396
       },
       "harness_rss_kib": {
         "count": 12,
-        "p50": 23604,
-        "p95": 24144,
-        "p99": 24144
+        "p50": 23616,
+        "p95": 24156,
+        "p99": 24156
       },
       "policy_effects": {
         "observed": 96
@@ -462,15 +462,15 @@ triple 5 complete
       "action_ns": null,
       "restoration_ns": {
         "count": 6,
-        "p50": 53459549,
-        "p95": 54788226,
-        "p99": 54788226
+        "p50": 54823111,
+        "p95": 57851351,
+        "p99": 57851351
       },
       "context_per_run": [
         {
-          "sample_window_ns": 100427480,
-          "cpu_busy_fraction": 0.34146341463414637,
-          "minimum_mem_available_kib": 14062000,
+          "sample_window_ns": 101706314,
+          "cpu_busy_fraction": 0.3157894736842105,
+          "minimum_mem_available_kib": 14067820,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -485,7 +485,7 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 544
+                "delta": 345
               },
               "full": {
                 "status": "available",
@@ -517,9 +517,9 @@ triple 5 complete
           "zram_last": []
         },
         {
-          "sample_window_ns": 100988548,
-          "cpu_busy_fraction": 0.3076923076923077,
-          "minimum_mem_available_kib": 14069308,
+          "sample_window_ns": 100446546,
+          "cpu_busy_fraction": 0.358974358974359,
+          "minimum_mem_available_kib": 14037652,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -534,7 +534,7 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 2712
+                "delta": 855
               },
               "full": {
                 "status": "available",
@@ -566,9 +566,9 @@ triple 5 complete
           "zram_last": []
         },
         {
-          "sample_window_ns": 101266677,
-          "cpu_busy_fraction": 0.35,
-          "minimum_mem_available_kib": 14072844,
+          "sample_window_ns": 103782325,
+          "cpu_busy_fraction": 0.6410256410256411,
+          "minimum_mem_available_kib": 14037636,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -583,7 +583,7 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 3295
+                "delta": 18334
               },
               "full": {
                 "status": "available",
@@ -615,9 +615,9 @@ triple 5 complete
           "zram_last": []
         },
         {
-          "sample_window_ns": 104993249,
-          "cpu_busy_fraction": 0.475,
-          "minimum_mem_available_kib": 14057480,
+          "sample_window_ns": 104021557,
+          "cpu_busy_fraction": 0.5121951219512195,
+          "minimum_mem_available_kib": 14009992,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -632,7 +632,7 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 7614
+                "delta": 11447
               },
               "full": {
                 "status": "available",
@@ -664,58 +664,9 @@ triple 5 complete
           "zram_last": []
         },
         {
-          "sample_window_ns": 100185366,
-          "cpu_busy_fraction": 0.28205128205128205,
-          "minimum_mem_available_kib": 14051828,
-          "swap_pages": {
-            "pswpin": {
-              "status": "available",
-              "delta": 0
-            },
-            "pswpout": {
-              "status": "available",
-              "delta": 0
-            }
-          },
-          "psi_total_us": {
-            "cpu": {
-              "some": {
-                "status": "available",
-                "delta": 1002
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "memory": {
-              "some": {
-                "status": "available",
-                "delta": 0
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "io": {
-              "some": {
-                "status": "available",
-                "delta": 0
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            }
-          },
-          "zram_first": [],
-          "zram_last": []
-        },
-        {
-          "sample_window_ns": 105061532,
+          "sample_window_ns": 101848288,
           "cpu_busy_fraction": 0.3170731707317073,
-          "minimum_mem_available_kib": 14031928,
+          "minimum_mem_available_kib": 14016272,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -730,7 +681,7 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 5246
+                "delta": 4751
               },
               "full": {
                 "status": "available",
@@ -755,6 +706,55 @@ triple 5 complete
               "full": {
                 "status": "available",
                 "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 103023009,
+          "cpu_busy_fraction": 0.36585365853658536,
+          "minimum_mem_available_kib": 14027580,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 4973
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 98
+              },
+              "full": {
+                "status": "available",
+                "delta": 67
               }
             }
           },
@@ -767,45 +767,45 @@ triple 5 complete
       "complete_runs": 6,
       "response_ns": {
         "count": 96,
-        "p50": 1419936,
-        "p95": 25834636,
-        "p99": 33634946
+        "p50": 1477434,
+        "p95": 26655682,
+        "p99": 30364018
       },
       "service_ns": {
         "count": 96,
-        "p50": 567648,
-        "p95": 1076797,
-        "p99": 1278253
+        "p50": 571675,
+        "p95": 1107694,
+        "p99": 1193805
       },
       "elapsed_ns": {
         "count": 96,
-        "p50": 1328916,
-        "p95": 25734660,
-        "p99": 33498068
+        "p50": 1397785,
+        "p95": 26494817,
+        "p99": 30211774
       },
       "completion_ns": {
         "count": 6,
-        "p50": 51930017,
-        "p95": 59182563,
-        "p99": 59182563
+        "p50": 53957567,
+        "p95": 57091718,
+        "p99": 57091718
       },
       "arm_wall_ns": {
         "count": 6,
-        "p50": 162469745,
-        "p95": 171102219,
-        "p99": 171102219
+        "p50": 164779185,
+        "p95": 165485044,
+        "p99": 165485044
       },
       "child_cpu_ns": {
         "count": 6,
-        "p50": 155911000,
-        "p95": 163850000,
-        "p99": 163850000
+        "p50": 158079000,
+        "p95": 159108000,
+        "p99": 159108000
       },
       "harness_cpu_ns": {
         "count": 6,
-        "p50": 8936668,
-        "p95": 9420399,
-        "p99": 9420399
+        "p50": 8818112,
+        "p95": 9436310,
+        "p99": 9436310
       },
       "steady_payload_bytes": {
         "count": 48,
@@ -815,9 +815,9 @@ triple 5 complete
       },
       "steady_rss_kib": {
         "count": 48,
-        "p50": 6176,
-        "p95": 6192,
-        "p99": 6192
+        "p50": 6168,
+        "p95": 6212,
+        "p99": 6212
       },
       "sampled_peak_hwm_kib": {
         "count": 6,
@@ -827,9 +827,9 @@ triple 5 complete
       },
       "harness_rss_kib": {
         "count": 12,
-        "p50": 23720,
-        "p95": 24088,
-        "p99": 24088
+        "p50": 23736,
+        "p95": 24108,
+        "p99": 24108
       },
       "policy_effects": {
         "kept": 6,
@@ -840,119 +840,21 @@ triple 5 complete
       "blocks_replaced": 96,
       "action_ns": {
         "count": 6,
-        "p50": 24304836,
-        "p95": 31961926,
-        "p99": 31961926
+        "p50": 25957776,
+        "p95": 28505884,
+        "p99": 28505884
       },
       "restoration_ns": {
         "count": 6,
-        "p50": 64165401,
-        "p95": 65473599,
-        "p99": 65473599
+        "p50": 63826479,
+        "p95": 65988439,
+        "p99": 65988439
       },
       "context_per_run": [
         {
-          "sample_window_ns": 101459093,
-          "cpu_busy_fraction": 0.4878048780487805,
-          "minimum_mem_available_kib": 14050980,
-          "swap_pages": {
-            "pswpin": {
-              "status": "available",
-              "delta": 0
-            },
-            "pswpout": {
-              "status": "available",
-              "delta": 0
-            }
-          },
-          "psi_total_us": {
-            "cpu": {
-              "some": {
-                "status": "available",
-                "delta": 6925
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "memory": {
-              "some": {
-                "status": "available",
-                "delta": 0
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "io": {
-              "some": {
-                "status": "available",
-                "delta": 0
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            }
-          },
-          "zram_first": [],
-          "zram_last": []
-        },
-        {
-          "sample_window_ns": 103641394,
-          "cpu_busy_fraction": 0.42857142857142855,
-          "minimum_mem_available_kib": 14072304,
-          "swap_pages": {
-            "pswpin": {
-              "status": "available",
-              "delta": 0
-            },
-            "pswpout": {
-              "status": "available",
-              "delta": 0
-            }
-          },
-          "psi_total_us": {
-            "cpu": {
-              "some": {
-                "status": "available",
-                "delta": 8014
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "memory": {
-              "some": {
-                "status": "available",
-                "delta": 0
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            },
-            "io": {
-              "some": {
-                "status": "available",
-                "delta": 0
-              },
-              "full": {
-                "status": "available",
-                "delta": 0
-              }
-            }
-          },
-          "zram_first": [],
-          "zram_last": []
-        },
-        {
-          "sample_window_ns": 103526795,
+          "sample_window_ns": 100627674,
           "cpu_busy_fraction": 0.3333333333333333,
-          "minimum_mem_available_kib": 14051340,
+          "minimum_mem_available_kib": 14070656,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -967,7 +869,7 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 3302
+                "delta": 2692
               },
               "full": {
                 "status": "available",
@@ -999,9 +901,9 @@ triple 5 complete
           "zram_last": []
         },
         {
-          "sample_window_ns": 100200870,
-          "cpu_busy_fraction": 0.35,
-          "minimum_mem_available_kib": 14062128,
+          "sample_window_ns": 102169237,
+          "cpu_busy_fraction": 0.4,
+          "minimum_mem_available_kib": 14053528,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -1016,7 +918,7 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 1673
+                "delta": 4491
               },
               "full": {
                 "status": "available",
@@ -1048,9 +950,9 @@ triple 5 complete
           "zram_last": []
         },
         {
-          "sample_window_ns": 103775701,
-          "cpu_busy_fraction": 0.3170731707317073,
-          "minimum_mem_available_kib": 14062292,
+          "sample_window_ns": 104151531,
+          "cpu_busy_fraction": 0.4146341463414634,
+          "minimum_mem_available_kib": 14006468,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -1065,7 +967,7 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 1752
+                "delta": 6582
               },
               "full": {
                 "status": "available",
@@ -1097,9 +999,9 @@ triple 5 complete
           "zram_last": []
         },
         {
-          "sample_window_ns": 103045257,
-          "cpu_busy_fraction": 0.325,
-          "minimum_mem_available_kib": 14032896,
+          "sample_window_ns": 103259510,
+          "cpu_busy_fraction": 0.3333333333333333,
+          "minimum_mem_available_kib": 14010192,
           "swap_pages": {
             "pswpin": {
               "status": "available",
@@ -1114,7 +1016,105 @@ triple 5 complete
             "cpu": {
               "some": {
                 "status": "available",
-                "delta": 2773
+                "delta": 2719
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 105260177,
+          "cpu_busy_fraction": 0.3333333333333333,
+          "minimum_mem_available_kib": 14018260,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 1130
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 105166014,
+          "cpu_busy_fraction": 0.2926829268292683,
+          "minimum_mem_available_kib": 14017932,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 1275
               },
               "full": {
                 "status": "available",
@@ -1152,50 +1152,50 @@ triple 5 complete
     {
       "repeat": 0,
       "correctness_equivalent": true,
-      "observe_completion_ratio": 2.057094332524318,
-      "active_completion_ratio": 4.270260654282677,
-      "observe_wall_ratio": 1.0805546816708425,
-      "active_wall_ratio": 1.4340500020517293
+      "observe_completion_ratio": 2.221874759362933,
+      "active_completion_ratio": 4.117880090563867,
+      "observe_wall_ratio": 1.1495245999122148,
+      "active_wall_ratio": 1.4605681478648285
     },
     {
       "repeat": 1,
       "correctness_equivalent": true,
-      "observe_completion_ratio": 2.151161407826892,
-      "active_completion_ratio": 4.025013186760515,
-      "observe_wall_ratio": 1.094650314201263,
-      "active_wall_ratio": 1.4149384913391971
+      "observe_completion_ratio": 1.828236751908753,
+      "active_completion_ratio": 3.4595483480530262,
+      "observe_wall_ratio": 1.0723203994940433,
+      "active_wall_ratio": 1.3775078153527818
     },
     {
       "repeat": 2,
       "correctness_equivalent": true,
-      "observe_completion_ratio": 1.6863820426811862,
-      "active_completion_ratio": 3.069225038957809,
-      "observe_wall_ratio": 1.0829359424181135,
-      "active_wall_ratio": 1.3714294721800333
+      "observe_completion_ratio": 2.1324000482417502,
+      "active_completion_ratio": 4.02661463516471,
+      "observe_wall_ratio": 1.1971700277060224,
+      "active_wall_ratio": 1.4465334255468827
     },
     {
       "repeat": 3,
       "correctness_equivalent": true,
-      "observe_completion_ratio": 2.2686501115178763,
-      "active_completion_ratio": 3.947685264343481,
-      "observe_wall_ratio": 1.17646201805894,
-      "active_wall_ratio": 1.452636037852856
+      "observe_completion_ratio": 2.28354715133946,
+      "active_completion_ratio": 4.025651903271559,
+      "observe_wall_ratio": 1.175249413088807,
+      "active_wall_ratio": 1.4502086855896121
     },
     {
       "repeat": 4,
       "correctness_equivalent": true,
-      "observe_completion_ratio": 2.0400294775992127,
-      "active_completion_ratio": 3.824305272174559,
-      "observe_wall_ratio": 1.1192632805626237,
-      "active_wall_ratio": 1.4401936853337247
+      "observe_completion_ratio": 2.1449581666889714,
+      "active_completion_ratio": 3.951167033609952,
+      "observe_wall_ratio": 1.1457192400717398,
+      "active_wall_ratio": 1.4526423145709104
     },
     {
       "repeat": 5,
       "correctness_equivalent": true,
-      "observe_completion_ratio": 2.023572309837151,
-      "active_completion_ratio": 3.747033754627381,
-      "observe_wall_ratio": 1.0785743644453027,
-      "active_wall_ratio": 1.369449100546616
+      "observe_completion_ratio": 2.1245371460910407,
+      "active_completion_ratio": 3.768640007767195,
+      "observe_wall_ratio": 1.1504475387057582,
+      "active_wall_ratio": 1.4461522046172695
     }
   ],
   "failed_runs": 0,
