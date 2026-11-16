@@ -1,0 +1,2 @@
+# Preserve the measured corpus byte-for-byte, including source boundary newlines.
+artifacts/phase4-laptop/source-corpus.txt whitespace=-blank-at-eof

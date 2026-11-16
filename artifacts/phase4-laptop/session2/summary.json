@@ -1,0 +1,111 @@
+{
+  "status": "complete",
+  "environment": "Codespaces",
+  "label": "Codespaces session2; same source workload; no pressure generation",
+  "expected_runs": 18,
+  "warmup": [
+    {
+      "arm": "baseline",
+      "status": "complete",
+      "error": null
+    },
+    {
+      "arm": "observe",
+      "status": "complete",
+      "error": null
+    },
+    {
+      "arm": "active",
+      "status": "complete",
+      "error": null
+    }
+  ],
+  "complete_runs": {
+    "baseline": 6,
+    "observe": 6,
+    "active": 6
+  },
+  "paired": [
+    {
+      "repeat": 0,
+      "observe": {
+        "p95_over_baseline": 0.9264745343346518,
+        "foreground_completion_over_baseline": 0.9998834736983776,
+        "background_completion_over_baseline": 1.0339248873741802
+      },
+      "active": {
+        "p95_over_baseline": 1.4160210950613628,
+        "foreground_completion_over_baseline": 0.99984820740888,
+        "background_completion_over_baseline": 1.7033524384475593
+      }
+    },
+    {
+      "repeat": 1,
+      "observe": {
+        "p95_over_baseline": 0.946720831154059,
+        "foreground_completion_over_baseline": 0.999935106610442,
+        "background_completion_over_baseline": 1.0381942248588465
+      },
+      "active": {
+        "p95_over_baseline": 0.9370057532841453,
+        "foreground_completion_over_baseline": 1.0002368670638038,
+        "background_completion_over_baseline": 1.679514185943287
+      }
+    },
+    {
+      "repeat": 2,
+      "observe": {
+        "p95_over_baseline": 0.9931870559309652,
+        "foreground_completion_over_baseline": 0.9998925706384734,
+        "background_completion_over_baseline": 1.0525645852936643
+      },
+      "active": {
+        "p95_over_baseline": 0.8001538791400036,
+        "foreground_completion_over_baseline": 0.9996903343942862,
+        "background_completion_over_baseline": 1.7535610315344927
+      }
+    },
+    {
+      "repeat": 3,
+      "observe": {
+        "p95_over_baseline": 1.0684104384293305,
+        "foreground_completion_over_baseline": 1.0003443257899636,
+        "background_completion_over_baseline": 1.0020095045653856
+      },
+      "active": {
+        "p95_over_baseline": 0.9948347627554068,
+        "foreground_completion_over_baseline": 0.9999210264068072,
+        "background_completion_over_baseline": 1.6862022494328262
+      }
+    },
+    {
+      "repeat": 4,
+      "observe": {
+        "p95_over_baseline": 0.6355647785586904,
+        "foreground_completion_over_baseline": 1.0000215488785817,
+        "background_completion_over_baseline": 0.9990297820028642
+      },
+      "active": {
+        "p95_over_baseline": 0.9210009008793573,
+        "foreground_completion_over_baseline": 1.0004430477484147,
+        "background_completion_over_baseline": 1.8803570620162315
+      }
+    },
+    {
+      "repeat": 5,
+      "observe": {
+        "p95_over_baseline": 1.1831563675398613,
+        "foreground_completion_over_baseline": 1.0003800179911124,
+        "background_completion_over_baseline": 1.0635916708226343
+      },
+      "active": {
+        "p95_over_baseline": 1.093039199526661,
+        "foreground_completion_over_baseline": 0.9998791217640391,
+        "background_completion_over_baseline": 1.67342713971554
+      }
+    }
+  ],
+  "failed_runs": 0,
+  "desktop_improvement_established": false,
+  "interpretation": "source-search task latency only; GUI/browser evidence is separate; report background completion cost and session variability; no pooled significance claim"
+}

@@ -1,0 +1,11 @@
+session1 independent inspection COMPLETE; complete arms {'baseline': 6, 'observe': 6, 'active': 6}
+session2 independent inspection COMPLETE; complete arms {'baseline': 6, 'observe': 6, 'active': 6}
+final-source-session independent inspection COMPLETE; complete arms {'baseline': 6, 'observe': 6, 'active': 6}
+Final-source manifest hashes match final harness and diagnostic
+refused: target/release/xynoos-mvp controlled
+refused: target/release/xynoos-mvp controlled --authorize
+PASS: node --check /tmp/xynoos-browser-final.js
+PASS: python3 -m py_compile scripts/benchmark_desktop.py scripts/laptop_diagnostic.py scripts/inspect_desktop.py scripts/package-laptop.py
+PASS: cargo fmt --all -- --check
+PASS: git diff --check
+PASS: git diff --cached --check (measured corpus boundary newlines preserved by explicit whitespace attribute)

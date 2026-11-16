@@ -43,6 +43,21 @@ cargo build --release -p xynoos-engine --bin xynoos-perf -p xynoos-cli --bin xyn
 python3 scripts/benchmark_physical.py --environment Codespaces --label 'Codespaces session' --output /tmp/xynoos-physical-ab
 ```
 
+The laptop-focused experiment adds a read-only bottleneck diagnostic and matched
+source-search/indexing workload. Active mode only defers new chunks to its own
+disposable indexer. Three Codespaces sessions found inconsistent foreground
+latency and 69–95% longer background completion; **no responsiveness benefit was
+established**. See [measured results](docs/reports/PHASE4-LAPTOP-RESULTS.md),
+[mechanism comparison](docs/PHASE4-LAPTOP-RESEARCH.md),
+[safety and physical admission blockers](docs/PHASE4-LAPTOP-SAFETY.md), and
+[exact OpenCode N5000 instructions](docs/PHASE4-LAPTOP-N5000.md).
+
+```sh
+python3 scripts/laptop_diagnostic.py --environment Codespaces --label 'Codespaces' --seconds 10 --output /tmp/xynoos-diagnostic-new.jsonl
+# Build/package only from committed sources; default benchmark is baseline/observe.
+python3 scripts/package-laptop.py
+```
+
 Earlier research milestones follow; their standalone simulators and historical
 status notes should be read with the current MVP scope above.
 

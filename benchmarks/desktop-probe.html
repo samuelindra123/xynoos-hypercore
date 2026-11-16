@@ -1,0 +1,84 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Xynoos disposable browser responsiveness probe</title>
+<style>
+body{font:18px system-ui;max-width:900px;margin:2rem auto;padding:1rem;background:#fafafa;color:#222}
+input,button,select{font:inherit;padding:.5rem;margin:.3rem} #items{height:320px;overflow:auto;border:1px solid #777;padding:1rem}
+</style>
+<h1>Disposable browser responsiveness probe</h1>
+<p>Open this local file manually in a separate tab. No network, extensions, application configuration or resource controls.
+Keep this tab visible, use the same browser/window size and do not change power/compositor settings between arms.</p>
+<p>This measures event-handler-to-two-animation-frames and event-loop timer gaps. These are browser proxies,
+not hardware input-to-photon or proof that Firefox, VS Code or the desktop improved.</p>
+<label>Session label <input id="label" placeholder="N5000 AC session1 block1"></label>
+<label>Arm <select id="arm"><option>baseline</option><option>observe</option><option>active</option></select></label>
+<button id="start">Start 30-second trial</button>
+<button id="export">Export evidence</button>
+<p>During a trial, alternate typing “memory” and “pressure” into the filter, clearing between words. Use the same pace.
+The filtered list performs a small, fixed browser task. Do not switch tabs. Stop if the laptop becomes unresponsive.</p>
+<label>Filter <input id="query" disabled></label>
+<p id="status">Ready. Record background applications and any visible freeze/OOM in your session note.</p>
+<div id="items"></div>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const rows = Array.from({length:2000}, (_,i) => `Source record ${i}: ${i % 2 ? 'memory available' : 'pressure observation'} task search`);
+const trials = [];
+let current = null, scheduled = 0;
+function draw(){
+  const q = $('query').value;
+  $('items').replaceChildren(...rows.filter(row => row.includes(q)).map(row => {
+    const div=document.createElement('div'); div.textContent=row; return div;
+  }));
+}
+function done(reason){
+  if(!current)return;
+  current.end_ms=performance.now();current.end_reason=reason;
+  current.complete=reason==='duration' && current.visibility.every(x=>x.state==='visible') && !current.pending;
+  trials.push(current);current=null;$('query').disabled=true;$('start').disabled=false;
+  $('status').textContent=`Trial ended: ${reason}. Export all trials, including incomplete ones.`;
+}
+$('start').onclick=()=>{
+  if(current)return;
+  $('query').value='';draw();
+  current={schema:'xynoos-browser-proxy-v1',label:$('label').value,arm:$('arm').value,
+    utc:new Date().toISOString(),user_agent:navigator.userAgent,viewport:[innerWidth,innerHeight],
+    start_ms:performance.now(),visibility:[{state:document.visibilityState,ms:performance.now()}],
+    responses:[],timer_gaps_ms:[],pending:0};
+  $('query').disabled=false;$('start').disabled=true;$('query').focus();
+  $('status').textContent='Trial running for 30 seconds; keep this tab visible.';
+  scheduled=performance.now()+50;
+  const trial=current;
+  function tick(){
+    if(current!==trial)return;
+    const now=performance.now();trial.timer_gaps_ms.push(Math.max(0,now-scheduled));
+    if(now-trial.start_ms>=30000){done('duration');return;}
+    scheduled=now+50;setTimeout(tick,50);
+  }
+  setTimeout(tick,50);
+};
+$('query').oninput=event=>{
+  if(!current)return;
+  const trial=current,begin=performance.now();
+  const lag=begin-event.timeStamp;
+  trial.pending++;draw();
+  requestAnimationFrame(()=>requestAnimationFrame(()=>{
+    trial.responses.push({handler_to_two_frames_ms:performance.now()-begin,
+      event_to_handler_ms:lag>=0 && lag<60000 ? lag : null,query_length:$('query').value.length});
+    trial.pending--;
+  }));
+};
+document.addEventListener('visibilitychange',()=>{
+  if(current){current.visibility.push({state:document.visibilityState,ms:performance.now()});
+    if(document.visibilityState!=='visible')done('hidden');}
+});
+$('export').onclick=()=>{
+  if(current)done('manual_export');
+  const report={schema:'xynoos-browser-export-v1',trials,
+    note:'Manual operator trials. Raw samples; no automatic exclusion of failed trials. Browser proxy only.'};
+  const url=URL.createObjectURL(new Blob([JSON.stringify(report,null,2)],{type:'application/json'}));
+  const a=document.createElement('a');a.href=url;a.download='xynoos-browser-evidence.json';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+draw();
+</script>
