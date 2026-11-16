@@ -174,6 +174,13 @@ def run_arm(arm, args, emit, repeat):
     return result
 
 
+def peak_hwm(run):
+    values = ([s['processes']['workload']['hwm_kib'] for s in run['samples']]
+              + [row['process']['hwm_kib'] for row in run['responses']]
+              + [run['final']['self_memory_after_restore']['hwm_kib']])
+    return max((v for v in values if v is not None), default=None)
+
+
 def summary(runs):
     result = {}
     for arm in ARMS:
@@ -186,6 +193,7 @@ def summary(runs):
                 name = row['policy']['effect']
                 effects[name] = effects.get(name, 0) + 1
         cpu = [c['usage']['user_cpu_ns']+c['usage']['system_cpu_ns'] for r in group for c in r['children'] if c.get('usage')]
+        peaks = [peak_hwm(r) for r in group]
         result[arm] = {'complete_runs': len(group),
             **{key: base.quantiles([row[key] for row in rows]) for key in ('response_ns', 'service_ns', 'elapsed_ns')},
             'completion_ns': base.quantiles([r['completion_ns'] for r in group]),
@@ -194,9 +202,7 @@ def summary(runs):
             'harness_cpu_ns': base.quantiles([r['harness_cpu_ns'] for r in group]),
             'steady_payload_bytes': base.quantiles([row['retained_bytes'] for row in steady]),
             'steady_rss_kib': base.quantiles([row['process']['rss_kib'] for row in steady if row['process']['rss_kib'] is not None]),
-            'sampled_peak_hwm_kib': base.quantiles([max([s['processes']['workload']['hwm_kib'] or 0 for s in r['samples']]
-                + [row['process']['hwm_kib'] or 0 for row in r['responses']]
-                + [r['final']['self_memory_after_restore']['hwm_kib'] or 0]) for r in group]),
+            'sampled_peak_hwm_kib': base.quantiles([v for v in peaks if v is not None]),
             'harness_rss_kib': base.quantiles([s['processes']['harness']['rss_kib'] for r in group for s in r['samples']
                                             if s['processes']['harness']['rss_kib'] is not None]),
             'policy_effects': effects,

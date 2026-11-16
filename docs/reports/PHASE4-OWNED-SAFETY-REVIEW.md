@@ -22,7 +22,7 @@ Review corrections: preserve raw bytes until candidate equality; shrink compress
 allocations into boxed slices; leave expanding or <12.5%-saving blocks raw;
 recheck freshness during a multi-block action and report a partial freshness stop;
 retain cooldown after telemetry refusal; capture restoration HWM inside the
-worker; require package inspector status (not just its exit code). No safety
+worker; preserve missing peak HWM as unknown rather than zero; require package inspector status (not just its exit code). No safety
 checks, reads, CRCs or required workload work were removed for benchmark gains.
 
 The package excludes the broad CLI, launchers and research executors. The new

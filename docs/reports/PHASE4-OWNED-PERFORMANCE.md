@@ -169,7 +169,7 @@ mismatches cannot promote evidence to complete. The separate physical baseline
 lifecycle tests still exercise real OS signal delivery and kill escalation.
 
 `PHASE4-OWNED-QUALITY-GATES.txt` records passing formatting, warnings-denied
-Clippy, all-target workspace check/tests, compile-fail doctests, 48 Python tests,
+Clippy, all-target workspace check/tests, compile-fail doctests, 48 initial Python tests,
 optimization-example tests, release workspace build, warnings-denied rustdoc,
 20 launcher tests, static musl builds and diff checks. Adversarial self-review and
 corrections are recorded in `PHASE4-OWNED-SAFETY-REVIEW.md`. No independent
@@ -189,7 +189,10 @@ Evidence lives under `artifacts/phase4-owned/`: `codespaces-mixed-1`,
 `codespaces-mixed-2`, `codespaces-entropy`, `codespaces-cancelled` and
 `refusal-fixture`. Raw manifests contain worker/harness SHA256, base HEAD,
 working-source hashes, matched input configuration, UTC, CPU/OS/kernel and host
-context. Working-source hashes match the committed implementation. The measured
+context. Recorded source hashes match commit `d951c5b`. A subsequent reporting-only fix
+preserves missing peak-HWM readings as unknown instead of zero, with a new
+regression test; recomputing all three successful session summaries gives exactly
+the same values. Final Python validation is in `final-python-tests.txt`. The measured
 static worker SHA256 is
 `4ced2f4498a0df87cf66a76d18b30fae37d6c81261a41adc1e7828e6a6fe8ff6`.
 Package `SOURCE_COMMIT`, source archive/manifest, compiler metadata, internal

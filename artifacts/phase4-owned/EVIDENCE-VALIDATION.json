@@ -3,30 +3,36 @@
   "results": {
     "codespaces-cancelled": {
       "status": "partial",
-      "failed_runs": 0,
-      "refused_policy_samples": 0
+      "refused_policy_samples": 0,
+      "failed_runs_including_warmup": 1,
+      "measured_failed_runs": 0
     },
     "codespaces-entropy": {
       "status": "complete",
-      "failed_runs": 0,
-      "refused_policy_samples": 0
+      "refused_policy_samples": 0,
+      "failed_runs_including_warmup": 0,
+      "measured_failed_runs": 0
     },
     "codespaces-mixed-1": {
       "status": "complete",
-      "failed_runs": 0,
-      "refused_policy_samples": 0
+      "refused_policy_samples": 0,
+      "failed_runs_including_warmup": 0,
+      "measured_failed_runs": 0
     },
     "codespaces-mixed-2": {
       "status": "complete",
-      "failed_runs": 0,
-      "refused_policy_samples": 0
+      "refused_policy_samples": 0,
+      "failed_runs_including_warmup": 0,
+      "measured_failed_runs": 0
     },
     "refusal-fixture": {
       "status": "partial",
-      "failed_runs": 1,
-      "refused_policy_samples": 0
+      "refused_policy_samples": 0,
+      "failed_runs_including_warmup": 1,
+      "measured_failed_runs": 1
     }
   },
-  "recorded_source_hashes_match_current_files": true,
-  "measured_static_worker_sha256": "4ced2f4498a0df87cf66a76d18b30fae37d6c81261a41adc1e7828e6a6fe8ff6"
+  "measured_static_worker_sha256": "4ced2f4498a0df87cf66a76d18b30fae37d6c81261a41adc1e7828e6a6fe8ff6",
+  "recorded_source_hashes_match_commit": "d951c5b400e178c96217fbd7c8dba7d384bb64fb",
+  "post_measurement_reporting_fix": "Missing HWM stays unknown; recomputed all three successful summaries exactly unchanged; worker byte-identical"
 }

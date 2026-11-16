@@ -163,6 +163,13 @@ class OwnedTests(unittest.TestCase):
         self.assertEqual(report['unresolved_cleanup_unknown'], [(0, 'active')])
         self.assertEqual(p.read_bytes(), before)
 
+    def test_missing_peak_memory_is_unknown_not_zero(self):
+        run = {'samples': [], 'responses': [],
+               'final': {'self_memory_after_restore': {'hwm_kib': None}}}
+        self.assertIsNone(bench.peak_hwm(run))
+        run['responses'] = [{'process': {'hwm_kib': 123}}]
+        self.assertEqual(bench.peak_hwm(run), 123)
+
     def test_independent_watchdog_with_open_idle_stdin(self):
         # Independent worker deadline; harness makes no cancellation call.
         started = time.monotonic()

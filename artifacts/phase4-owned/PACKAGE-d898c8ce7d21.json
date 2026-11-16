@@ -1,0 +1,15 @@
+{
+  "source_commit": "d898c8ce7d217704846ec4cabe30446ffaefe06b",
+  "archive": "artifacts/phase4-owned/xynoos-owned-d898c8ce7d21-linux-x86_64.tar.gz",
+  "sha256": "68966e6e9014cc75431b805c9607bb6383bba1fc629a1428ebc721088f0dfebf",
+  "safe_entrypoints": [
+    "xynoos-mvp observe|simulate|recovery",
+    "xynoos-perf profile|workload",
+    "xynoos-owned baseline|observe mixed|entropy",
+    "xynoos-owned active mixed|entropy --authorize-owned"
+  ],
+  "physical_mutation_available": false,
+  "active_optimization_available": true,
+  "active_scope": "owned disposable 16 MiB corpus only; no kernel-control path",
+  "measurements": "Codespaces only; N5000 results pending"
+}

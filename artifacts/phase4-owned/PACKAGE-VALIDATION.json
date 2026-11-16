@@ -1,0 +1,16 @@
+{
+  "archive": "artifacts/phase4-owned/xynoos-owned-d898c8ce7d21-linux-x86_64.tar.gz",
+  "archive_sha256_verified": "68966e6e9014cc75431b805c9607bb6383bba1fc629a1428ebc721088f0dfebf",
+  "source_commit": "d898c8ce7d217704846ec4cabe30446ffaefe06b",
+  "internal_checksums_verified": true,
+  "unhashed_extra_payloads": false,
+  "worker_static_no_elf_interpreter": true,
+  "worker_sha256_matches_performance_evidence": "4ced2f4498a0df87cf66a76d18b30fae37d6c81261a41adc1e7828e6a6fe8ff6",
+  "controlled_mode_refused": true,
+  "unauthed_active_refused": true,
+  "extracted_smoke_status": "complete",
+  "extracted_measured_arms": 18,
+  "extracted_active_effective_actions": 6,
+  "physical_mutation_available": false,
+  "evidence_environment": "Codespaces only; N5000 physical validation pending"
+}
