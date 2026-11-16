@@ -235,6 +235,65 @@ fn check_with(source: &mut impl Source, thresholds: SafetyThresholds) -> SafetyO
     o
 }
 
+// Shared deterministic collector for integrated unit tests. It feeds the actual
+// contract, never fabricates an Eligible decision or invokes the live collector.
+#[cfg(test)]
+pub(crate) fn fixture_boundary(
+    thresholds: SafetyThresholds,
+    available: u64,
+    stale: bool,
+) -> SafetyObservation {
+    struct Fixture {
+        start: Instant,
+        wall: SystemTime,
+        ticks: usize,
+        available: u64,
+        stale: bool,
+    }
+    impl Source for Fixture {
+        fn now(&mut self) -> Instant {
+            self.ticks += 1;
+            self.start
+                + if self.ticks == 1 {
+                    Duration::ZERO
+                } else if self.stale {
+                    Duration::from_secs(60)
+                } else {
+                    Duration::from_millis(1)
+                }
+        }
+        fn wall_now(&mut self) -> SystemTime {
+            self.wall
+        }
+        fn collect(&mut self) -> Result<Readings, Error> {
+            Ok(Readings {
+                timestamp: self.wall,
+                started: self.start,
+                finished: self.start,
+                memory: Ok(MemInfo {
+                    bytes: [
+                        ("MemTotal".into(), u64::MAX),
+                        ("MemAvailable".into(), self.available),
+                    ]
+                    .into_iter()
+                    .collect(),
+                }),
+                psi: Err(Error::Unsupported),
+            })
+        }
+    }
+    check_with(
+        &mut Fixture {
+            start: Instant::now(),
+            wall: SystemTime::now(),
+            ticks: 0,
+            available,
+            stale,
+        },
+        thresholds,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

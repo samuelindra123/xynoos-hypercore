@@ -1,4 +1,5 @@
-//! Fixture-oriented orchestration only. No Linux backend is provided.
+//! Transaction orchestration with deterministic fixtures and a session adapter.
+//! `controller::ControllerSessionAdapter` keeps live mutation disabled.
 //! Backend observations and writes must each independently validate the held binding,
 //! identities, population and exclusive delegation; this interface is not authorization.
 use serde::Serialize;

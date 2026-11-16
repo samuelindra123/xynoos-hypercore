@@ -25,6 +25,11 @@ enum WriteMode {
     ReadBackError,
 }
 struct State {
+    enable_low: bool,
+    low_writes: usize,
+    low_mode: Option<(usize, &'static str)>,
+    compete_low: bool,
+    trace: Vec<String>,
     parent: ParentIdentity,
     enabled: String,
     available: String,
@@ -52,6 +57,11 @@ struct State {
 impl Default for State {
     fn default() -> Self {
         Self {
+            enable_low: false,
+            low_writes: 0,
+            low_mode: None,
+            compete_low: false,
+            trace: Vec::new(),
             parent: PARENT,
             enabled: "cpu pids".into(),
             available: "cpu memory pids".into(),
@@ -144,6 +154,7 @@ impl SessionIo for FixtureIo {
     }
     fn write_controller(&mut self, command: &[u8]) -> Result<(), String> {
         let mut s = self.0.lock().unwrap();
+        s.trace.push(String::from_utf8(command.to_vec()).unwrap());
         s.writes.push(command.to_vec());
         s.readback_failed = matches!(s.write_mode, WriteMode::ReadBackError);
         if !matches!(s.write_mode, WriteMode::Mismatch) {
@@ -193,6 +204,7 @@ impl SessionIo for FixtureIo {
         assert_eq!(parent, PARENT);
         let mut s = self.0.lock().unwrap();
         assert!(s.child.is_none());
+        s.trace.push("create".into());
         s.creates += 1;
         s.child = Some(CHILD);
         if s.fail_create {
@@ -203,12 +215,51 @@ impl SessionIo for FixtureIo {
     fn remove_child(&mut self, parent: ParentIdentity) -> Result<(), String> {
         self.verify_child(parent)?;
         let mut s = self.0.lock().unwrap();
+        s.trace.push("remove".into());
         s.removes += 1;
         if s.fail_remove {
             return Err("injected child cleanup failure".into());
         }
         s.child = None;
         Ok(())
+    }
+    fn fixture_write_enabled(&self) -> bool {
+        self.0.lock().unwrap().enable_low
+    }
+    fn fixture_prepare_low(&mut self) -> Result<(), String> {
+        let mut s = self.0.lock().unwrap();
+        if s.compete_low {
+            s.low = Ok(12288);
+            s.compete_low = false;
+        }
+        if s.low_mode == Some((s.low_writes + 1, "before")) {
+            return Err("injected prepare refusal".into());
+        }
+        Ok(())
+    }
+    fn fixture_write_low(&mut self, bytes: &[u8]) -> Result<usize, String> {
+        let mut s = self.0.lock().unwrap();
+        s.low_writes += 1;
+        let value = std::str::from_utf8(bytes).unwrap().parse::<u64>().unwrap();
+        s.trace.push(format!("low:{value}"));
+        s.low = Ok(value);
+        let mode = s
+            .low_mode
+            .filter(|(n, _)| *n == s.low_writes)
+            .map(|(_, m)| m);
+        match mode {
+            Some("error") => Err("injected low write error after effect".into()),
+            Some("short") => Ok(bytes.len() - 1),
+            Some("mismatch") => {
+                s.low = Ok(12288);
+                Ok(bytes.len())
+            }
+            Some("readback") => {
+                s.low = Err("injected readback error".into());
+                Ok(bytes.len())
+            }
+            _ => Ok(bytes.len()),
+        }
     }
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
         self
@@ -764,4 +815,396 @@ fn populated_registered_child_refuses_cleanup_without_mutation() {
         Some(false),
     );
     assert_eq!(f.state.lock().unwrap().removes, 0);
+}
+
+#[cfg(test)]
+mod adapter_integration {
+    use super::*;
+    use crate::{
+        empty_child_coordinator::{
+            self as coordinator, Backend, Certainty, FaultKind, Outcome, Stage,
+        },
+        safety::{self, SafetyDecision},
+    };
+    type IntegratedFixture = (
+        ControllerSessionAdapter,
+        Arc<Mutex<State>>,
+        Arc<Mutex<(u64, bool)>>,
+    );
+    fn adapter() -> IntegratedFixture {
+        let f = Fixture::new();
+        f.state.lock().unwrap().enable_low = true;
+        let telemetry = Arc::new(Mutex::new((u64::MAX, false)));
+        let readings = telemetry.clone();
+        let a = ControllerSessionAdapter::fixture(f.session, move |thresholds| {
+            let (available, stale) = *readings.lock().unwrap();
+            safety::fixture_boundary(thresholds, available, stale)
+        });
+        (a, f.state, telemetry)
+    }
+    fn run(a: &mut ControllerSessionAdapter) -> coordinator::Report {
+        coordinator::run(a, true, 8192, |_| false)
+    }
+    fn clean(s: &Arc<Mutex<State>>) {
+        let s = s.lock().unwrap();
+        assert!(s.child.is_none());
+        assert_eq!(s.enabled, "cpu pids");
+        assert_eq!(s.low, Ok(4096));
+    }
+    #[test]
+    fn integrated_complete_lifecycle() {
+        let (mut a, s, _) = adapter();
+        let r = run(&mut a);
+        assert_eq!(r.outcome, Outcome::Complete);
+        assert_eq!(r.original_low, Some(4096));
+        assert_eq!(r.low_restoration_verified, Certainty::Yes);
+        assert_eq!(r.child_remains, Certainty::No);
+        assert_eq!(r.controller_restoration_verified, Certainty::Yes);
+        clean(&s);
+        assert_eq!(
+            s.lock().unwrap().trace,
+            ["+memory", "create", "low:8192", "low:4096", "remove", "-memory"]
+        );
+        assert_eq!(a.mutation_evidence.len(), 4);
+        assert!(a
+            .mutation_evidence
+            .iter()
+            .all(|(_, o)| o.status == MutationStatus::AppliedAndVerified));
+        for stage in [
+            Stage::Activate,
+            Stage::CreateChild,
+            Stage::ApplyLow,
+            Stage::RestoreLow,
+            Stage::RemoveChild,
+            Stage::RestoreControllers,
+        ] {
+            assert!(a
+                .safety_evidence
+                .iter()
+                .any(|(at, o)| *at == stage && o.decision == SafetyDecision::Eligible));
+        }
+        assert!(a
+            .session_evidence
+            .iter()
+            .all(|(_, o)| o.validity == ObservationValidity::Valid));
+    }
+    #[test]
+    fn integrated_authorization_and_live_gate_stay_closed() {
+        let (mut a, s, _) = adapter();
+        let r = coordinator::run(&mut a, false, 8192, |_| false);
+        assert_eq!(r.failed_transition, Some(Stage::Authorization));
+        assert!(s.lock().unwrap().trace.is_empty());
+        let (mut a, s, _) = adapter();
+        a.session_observation();
+        // The production constructor cannot use the test-only mutation capability.
+        let f = Fixture::new();
+        let mut production =
+            ControllerSessionAdapter::new(f.session, crate::safety::SafetyThresholds::default());
+        assert_eq!(
+            production.activate(&BTreeSet::new()).unwrap_err().kind,
+            FaultKind::Before
+        );
+        assert!(f.state.lock().unwrap().trace.is_empty());
+        assert!(s.lock().unwrap().trace.is_empty());
+    }
+    #[test]
+    fn integrated_telemetry_refusal_blocks_all_later_mutations() {
+        for stale in [false, true] {
+            let (mut a, s, t) = adapter();
+            *t.lock().unwrap() = (0, stale);
+            let r = run(&mut a);
+            assert_ne!(r.outcome, Outcome::Complete);
+            assert!(s.lock().unwrap().trace.is_empty());
+            assert!(a
+                .safety_evidence
+                .iter()
+                .any(|(_, o)| matches!(o.decision, SafetyDecision::Refused(_))));
+        }
+        for failed in [
+            Stage::Activate,
+            Stage::CreateChild,
+            Stage::ApplyLow,
+            Stage::RestoreLow,
+            Stage::RemoveChild,
+            Stage::RestoreControllers,
+        ] {
+            let (mut a, s, t) = adapter();
+            let mut snapshot = None;
+            let r = coordinator::run(&mut a, true, 8192, |stage| {
+                if stage == failed {
+                    *t.lock().unwrap() = (0, false);
+                    snapshot = Some(s.lock().unwrap().trace.clone());
+                }
+                false
+            });
+            assert_ne!(r.outcome, Outcome::Complete);
+            assert_eq!(s.lock().unwrap().trace, snapshot.unwrap(), "{failed:?}");
+        }
+    }
+    #[test]
+    fn integrated_stale_binding_refuses_without_mutation() {
+        let (mut a, s, _) = adapter();
+        s.lock().unwrap().parent.inode += 1;
+        let r = run(&mut a);
+        assert_eq!(r.outcome, Outcome::Conflict);
+        assert!(s.lock().unwrap().trace.is_empty());
+        assert!(a.session_evidence[0].1.binding_before.is_err());
+    }
+    #[test]
+    fn integrated_controller_activation_failure_latches() {
+        let (mut a, s, _) = adapter();
+        s.lock().unwrap().write_mode = WriteMode::ErrorAfterApply;
+        let r = run(&mut a);
+        assert_eq!(r.outcome, Outcome::Ambiguous);
+        assert_eq!(r.failed_transition, Some(Stage::Activate));
+        assert!(a.session_observation().activation_unresolved);
+        assert_eq!(s.lock().unwrap().trace, ["+memory"]);
+        assert_eq!(
+            a.mutation_evidence[0].1.status,
+            MutationStatus::AmbiguousMutation
+        );
+    }
+    #[test]
+    fn integrated_child_creation_failure_preserves_ownership() {
+        let (mut a, s, _) = adapter();
+        s.lock().unwrap().fail_create = true;
+        let r = run(&mut a);
+        assert_eq!(r.outcome, Outcome::Ambiguous);
+        assert_eq!(r.failed_transition, Some(Stage::CreateChild));
+        assert!(a.session_observation().child_unresolved);
+        assert_eq!(s.lock().unwrap().trace, ["+memory", "create"]);
+        assert_eq!(s.lock().unwrap().child, Some(CHILD));
+    }
+    #[test]
+    fn integrated_low_ambiguity_and_readback_mismatch_never_retry() {
+        for mode in ["error", "short", "mismatch", "readback"] {
+            let (mut a, s, _) = adapter();
+            s.lock().unwrap().low_mode = Some((1, mode));
+            let r = run(&mut a);
+            assert_eq!(r.outcome, Outcome::Ambiguous, "{mode}");
+            assert_eq!(r.failed_transition, Some(Stage::ApplyLow));
+            assert!(a.session_observation().memory_low_unresolved);
+            assert_eq!(s.lock().unwrap().trace, ["+memory", "create", "low:8192"]);
+            assert_eq!(
+                a.low_errors[0].1.kind,
+                if mode == "mismatch" {
+                    crate::child_memory::ErrorKind::ReadBackMismatch
+                } else {
+                    crate::child_memory::ErrorKind::WriteOutcomeAmbiguous
+                }
+            );
+        }
+    }
+    #[test]
+    fn integrated_low_prewrite_refusal_recovers_in_order() {
+        let (mut a, s, _) = adapter();
+        s.lock().unwrap().low_mode = Some((1, "before"));
+        let r = run(&mut a);
+        assert_eq!(r.outcome, Outcome::RestoredAfterFailure);
+        assert_eq!(
+            a.low_errors[0].1.kind,
+            crate::child_memory::ErrorKind::RefusedBeforeWrite
+        );
+        clean(&s);
+        assert_eq!(
+            s.lock().unwrap().trace,
+            ["+memory", "create", "remove", "-memory"]
+        );
+    }
+    #[test]
+    fn integrated_competing_low_is_not_overwritten() {
+        let (mut a, s, _) = adapter();
+        s.lock().unwrap().compete_low = true;
+        let r = run(&mut a);
+        assert_eq!(r.outcome, Outcome::Conflict);
+        assert_eq!(
+            a.low_errors[0].1.kind,
+            crate::child_memory::ErrorKind::CompetingValue
+        );
+        assert!(!a.session_observation().memory_low_unresolved);
+        assert_eq!(s.lock().unwrap().low, Ok(12288));
+        assert_eq!(s.lock().unwrap().trace, ["+memory", "create"]);
+    }
+    #[test]
+    fn integrated_low_restoration_failure_retains_cause_and_child() {
+        let (mut a, s, _) = adapter();
+        s.lock().unwrap().low_mode = Some((2, "error"));
+        let r = run(&mut a);
+        assert_eq!(r.outcome, Outcome::Ambiguous);
+        assert_eq!(r.failed_transition, Some(Stage::RestoreLow));
+        let e = &a.low_errors[0].1;
+        assert_eq!(e.kind, crate::child_memory::ErrorKind::RestorationFailure);
+        assert_eq!(
+            e.cause.as_ref().unwrap().kind,
+            crate::child_memory::ErrorKind::WriteOutcomeAmbiguous
+        );
+        assert!(a.session_observation().memory_low_unresolved);
+        assert_eq!(
+            s.lock().unwrap().trace,
+            ["+memory", "create", "low:8192", "low:4096"]
+        );
+    }
+    #[test]
+    fn integrated_child_cleanup_failure_blocks_parent_restoration() {
+        let (mut a, s, _) = adapter();
+        s.lock().unwrap().fail_remove = true;
+        let r = run(&mut a);
+        assert_eq!(r.outcome, Outcome::Ambiguous);
+        assert_eq!(r.failed_transition, Some(Stage::RemoveChild));
+        assert!(a.session_observation().child_unresolved);
+        assert_eq!(s.lock().unwrap().child, Some(CHILD));
+        assert_eq!(
+            s.lock().unwrap().trace,
+            ["+memory", "create", "low:8192", "low:4096", "remove"]
+        );
+    }
+    #[test]
+    fn integrated_controller_restoration_refuses_with_child() {
+        let (mut a, s, _) = adapter();
+        let r = coordinator::run(&mut a, true, 8192, |stage| stage == Stage::RemoveChild);
+        assert_eq!(r.outcome, Outcome::RestoredAfterFailure);
+        clean(&s);
+        let (mut a, s, _) = adapter();
+        let r = coordinator::run(&mut a, true, 8192, |stage| {
+            if stage == Stage::RemoveChild {
+                s.lock().unwrap().fail_remove = true;
+            }
+            false
+        });
+        assert_eq!(r.outcome, Outcome::Ambiguous);
+        let original = BTreeSet::from(["cpu".into(), "pids".into()]);
+        assert!(a
+            .restore_controllers(Stage::RecoveryRestoreControllers, &original)
+            .is_err());
+        assert!(!s.lock().unwrap().trace.iter().any(|x| x == "-memory"));
+    }
+    #[test]
+    fn integrated_cancellation_runs_existing_reverse_recovery() {
+        for cancelled in [
+            Stage::Authorization,
+            Stage::Binding,
+            Stage::CaptureControllers,
+            Stage::Activate,
+            Stage::VerifyActivation,
+            Stage::CreateChild,
+            Stage::VerifyChild,
+            Stage::CaptureLow,
+            Stage::ApplyLow,
+            Stage::VerifyApplied,
+            Stage::RestoreLow,
+            Stage::VerifyRestored,
+            Stage::VerifyEmpty,
+            Stage::RemoveChild,
+            Stage::RestoreControllers,
+            Stage::VerifyFinal,
+        ] {
+            let (mut a, s, _) = adapter();
+            let r = coordinator::run(&mut a, true, 8192, |stage| stage == cancelled);
+            assert_eq!(r.failed_transition, Some(cancelled));
+            assert_ne!(r.outcome, Outcome::Complete);
+            clean(&s);
+            if matches!(cancelled, Stage::VerifyApplied | Stage::RestoreLow) {
+                assert_eq!(r.outcome, Outcome::RestoredAfterFailure);
+                assert_eq!(r.low_restoration_verified, Certainty::Yes);
+                assert_eq!(r.child_remains, Certainty::No);
+                assert_eq!(
+                    s.lock().unwrap().trace,
+                    ["+memory", "create", "low:8192", "low:4096", "remove", "-memory"]
+                );
+                let stages: Vec<_> = a.mutation_evidence.iter().map(|(s, _)| *s).collect();
+                assert!(stages.contains(&Stage::RecoveryRemoveChild));
+                assert!(stages.contains(&Stage::RecoveryRestoreControllers));
+            }
+        }
+    }
+    #[test]
+    fn integrated_controller_restoration_write_failure_is_ambiguous() {
+        let (mut a, s, _) = adapter();
+        let r = coordinator::run(&mut a, true, 8192, |stage| {
+            if stage == Stage::RestoreControllers {
+                s.lock().unwrap().write_mode = WriteMode::ErrorAfterApply;
+            }
+            false
+        });
+        assert_eq!(r.outcome, Outcome::Ambiguous);
+        assert_eq!(r.failed_transition, Some(Stage::RestoreControllers));
+        assert!(a.session_observation().activation_unresolved);
+        assert_eq!(
+            a.mutation_evidence.last().unwrap().1.status,
+            MutationStatus::AmbiguousMutation
+        );
+        assert_eq!(
+            s.lock().unwrap().trace,
+            ["+memory", "create", "low:8192", "low:4096", "remove", "-memory"]
+        );
+    }
+    #[test]
+    fn integrated_typed_controller_refusal_and_child_cleanup_guard() {
+        let (mut a, s, _) = adapter();
+        let original = BTreeSet::from(["cpu".into(), "pids".into()]);
+        a.activate(&original).unwrap();
+        a.create_child().unwrap();
+        assert_eq!(
+            a.restore_controllers(Stage::RestoreControllers, &original)
+                .unwrap_err()
+                .kind,
+            FaultKind::Before
+        );
+        assert_eq!(
+            a.mutation_evidence.last().unwrap().1.status,
+            MutationStatus::CleanupRequired
+        );
+        assert_eq!(s.lock().unwrap().trace, ["+memory", "create"]);
+        let (mut a, s, _) = adapter();
+        let r = coordinator::run(&mut a, true, 8192, |stage| {
+            if stage == Stage::RestoreControllers {
+                s.lock().unwrap().enabled = "cpu memory".into();
+            }
+            false
+        });
+        assert_ne!(r.outcome, Outcome::Complete);
+        let outcome = &a.mutation_evidence.last().unwrap().1;
+        assert_eq!(outcome.status, MutationStatus::RestorationFailure);
+        assert_eq!(outcome.mutation_attempted, Some(false));
+        assert!(a.session_observation().activation_unresolved);
+        assert_eq!(
+            s.lock().unwrap().trace,
+            ["+memory", "create", "low:8192", "low:4096", "remove"]
+        );
+    }
+    #[test]
+    fn integrated_recovery_failures_stop_reverse_cleanup() {
+        for mode in ["low", "child", "controller"] {
+            let (mut a, s, _) = adapter();
+            let r = coordinator::run(&mut a, true, 8192, |stage| {
+                if stage == Stage::VerifyApplied {
+                    let mut state = s.lock().unwrap();
+                    match mode {
+                        "low" => state.low_mode = Some((2, "error")),
+                        "child" => state.fail_remove = true,
+                        _ => state.write_mode = WriteMode::ErrorAfterApply,
+                    };
+                    return true;
+                }
+                false
+            });
+            assert_eq!(r.outcome, Outcome::Ambiguous);
+            assert_eq!(
+                r.recovery_failed_transition,
+                Some(match mode {
+                    "low" => Stage::RecoveryRestoreLow,
+                    "child" => Stage::RecoveryRemoveChild,
+                    _ => Stage::RecoveryRestoreControllers,
+                })
+            );
+            let state = s.lock().unwrap();
+            if mode != "controller" {
+                assert!(!state.trace.iter().any(|x| x == "-memory"));
+                assert_eq!(state.child, Some(CHILD));
+            }
+            if mode == "low" {
+                assert_eq!(state.trace, ["+memory", "create", "low:8192", "low:4096"]);
+            }
+        }
+    }
 }

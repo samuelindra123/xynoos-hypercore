@@ -22,6 +22,19 @@ pub(super) trait SessionIo: Send + Sync {
     fn create_child(&mut self, parent: ParentIdentity) -> Result<ChildIdentity, String>;
     fn remove_child(&mut self, parent: ParentIdentity) -> Result<(), String>;
 
+    // These hooks do not exist in production builds; DescriptorIo never opts in.
+    #[cfg(test)]
+    fn fixture_write_enabled(&self) -> bool {
+        false
+    }
+    #[cfg(test)]
+    fn fixture_prepare_low(&mut self) -> Result<(), String> {
+        Err("fixture writer disabled".into())
+    }
+    #[cfg(test)]
+    fn fixture_write_low(&mut self, _bytes: &[u8]) -> Result<usize, String> {
+        Err("fixture writer disabled".into())
+    }
     #[cfg(test)]
     fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }

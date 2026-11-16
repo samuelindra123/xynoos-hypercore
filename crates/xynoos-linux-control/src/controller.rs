@@ -160,6 +160,8 @@ pub fn restore_memory<B: ControllerBackend>(
 // Neither observation evidence nor a test implementation can authorize a live binding.
 mod session_io;
 use session_io::{DescriptorIo, SessionIo};
+mod session_adapter;
+pub use session_adapter::ControllerSessionAdapter;
 
 /// Linux implementation bound to the live transient service that contains this process.
 /// The caller must explicitly authorize each activation and restoration call as well.
@@ -1298,13 +1300,28 @@ impl crate::child_memory::Access for SessionLow<'_> {
         self.0.backend.io.read_low()
     }
     fn write(&mut self, _bytes: &[u8]) -> Result<usize, String> {
+        #[cfg(test)]
+        if self.0.backend.io.fixture_write_enabled() {
+            return self.0.backend.io.fixture_write_low(_bytes);
+        }
         Err("physical memory.low writes disabled".into())
     }
     fn prepare_write(&mut self) -> Result<(), String> {
+        #[cfg(test)]
+        if self.0.backend.io.fixture_write_enabled() {
+            return self.0.backend.io.fixture_prepare_low();
+        }
         Err("physical memory.low writes disabled".into())
     }
     fn write_enabled(&self) -> bool {
-        false
+        #[cfg(test)]
+        {
+            self.0.backend.authorized && self.0.backend.io.fixture_write_enabled()
+        }
+        #[cfg(not(test))]
+        {
+            false
+        }
     }
 }
 fn validate_hierarchy(
