@@ -1,0 +1,27 @@
+name: CLI and distribution validation
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Rust toolchain
+        run: rustup toolchain install 1.100.0 --profile minimal --component rustfmt --component clippy --target x86_64-unknown-linux-musl && rustup default 1.100.0
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: python3 -m unittest discover -s distribution -p 'test_*.py' -v
+      - run: cargo build -p xynoos-cli --bin xynoos --release --target x86_64-unknown-linux-musl --locked
+      - name: Static binary and bounded diagnostics
+        run: |
+          test -z "$(readelf -l target/x86_64-unknown-linux-musl/release/xynoos | grep INTERP || true)"
+          target/x86_64-unknown-linux-musl/release/xynoos --version --json
+          target/x86_64-unknown-linux-musl/release/xynoos diagnose --count 2 --interval-ms 100 --json

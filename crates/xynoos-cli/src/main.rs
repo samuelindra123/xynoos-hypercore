@@ -7,8 +7,12 @@ use std::{
 use xynoos_pressureiq::{
     collect, csv_row, sample, validate_sampling, Error as PressureError, CSV_HEADER,
 };
+mod product;
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if product::run(&args)? {
+        return Ok(());
+    }
     if args.is_empty() {
         let mut store = xynoos_hypermemory::PageStore::with_capacity(1)?;
         let page = vec![0; 4096];
