@@ -1,0 +1,12 @@
+{
+  "source_commit": "4b7b191742a288d205c02eebf66df1380da66405",
+  "archive": "artifacts/phase4/xynoos-phase4-4b7b191742a2-linux-x86_64.tar.gz",
+  "sha256": "9350f6c369092ad18a2a07b1745fc752e33e57a4b4b08c721bcb56883c4939ee",
+  "safe_entrypoints": [
+    "xynoos-mvp observe|simulate|recovery",
+    "xynoos-perf profile|workload"
+  ],
+  "physical_mutation_available": false,
+  "active_optimization_available": false,
+  "measurements": "Codespaces only; N5000 results pending"
+}
