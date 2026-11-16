@@ -3,6 +3,7 @@
 #![forbid(unsafe_code)]
 
 pub mod observation;
+pub mod owned;
 pub mod recovery;
 pub mod replay;
 

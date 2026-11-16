@@ -1,5 +1,9 @@
 # Phase 4 physical workload comparison: N5000 / 4 GB / MX Linux
 
+Historical copy/CRC A/B protocol. The separate cooperative active experiment is
+documented in [PHASE4-OWNED-N5000.md](PHASE4-OWNED-N5000.md). Its results must not
+be pooled with this workload.
+
 The earlier physical MVP PASS results are operator-reported. Their raw laptop
 evidence was not inspected here. This package supplies a new runnable A/B
 experiment; it supplies no new N5000 results. Do not use root.

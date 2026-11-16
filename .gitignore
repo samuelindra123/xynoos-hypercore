@@ -30,3 +30,4 @@ rustc-ice-*.txt
 
 # Phase 4 archives are reproducible build artifacts; metadata/checksums stay tracked.
 /artifacts/phase4/*.tar.gz
+/artifacts/phase4-owned/*.tar.gz

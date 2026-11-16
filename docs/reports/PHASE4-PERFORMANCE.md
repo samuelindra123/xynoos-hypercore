@@ -1,5 +1,9 @@
 # Phase 4 performance engineering result
 
+Historical baseline/observe comparison. For the subsequent actual cooperative
+compression experiment, see [PHASE4-OWNED-PERFORMANCE.md](PHASE4-OWNED-PERFORMANCE.md).
+The numbers and unavailable-active statements below describe this earlier cycle.
+
 Implemented and executed a real bounded userspace workload A/B harness. Baseline
 and live observe arms are **GO for operator-run validation**. Active optimization
 is **NO-GO / unavailable**; physical kernel mutation remains locked. The only

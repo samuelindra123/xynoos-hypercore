@@ -25,6 +25,19 @@ Phase 4 adds a real owned-workload baseline/observe A/B harness, component profi
 and a static N5000 handoff. See [exact physical commands](docs/PHASE4-N5000.md) and
 [performance evidence and arm decisions](docs/reports/PHASE4-PERFORMANCE.md).
 
+The subsequent active experiment losslessly compresses an owned 16 MiB corpus,
+releases the raw allocations, verifies matched reads and restores every block.
+It measures retained memory, RSS, CPU and latency across baseline/observe/active
+arms. This requires application cooperation and cannot control other desktop
+applications. See [measured tradeoffs](docs/reports/PHASE4-OWNED-PERFORMANCE.md)
+and the [exact N5000 procedure](docs/PHASE4-OWNED-N5000.md). Phase 4 remains PARTIAL
+pending physical evidence; kernel mutation remains disabled.
+
+```sh
+cargo build --release -p xynoos-engine --bin xynoos-owned
+python3 scripts/benchmark_owned.py --environment Codespaces --label 'Codespaces owned corpus' --authorize-owned --output /tmp/xynoos-owned-new
+```
+
 ```sh
 cargo build --release -p xynoos-engine --bin xynoos-perf -p xynoos-cli --bin xynoos-mvp
 python3 scripts/benchmark_physical.py --environment Codespaces --label 'Codespaces session' --output /tmp/xynoos-physical-ab
