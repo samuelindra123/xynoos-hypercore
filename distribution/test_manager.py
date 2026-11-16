@@ -227,8 +227,10 @@ class DistributionTests(unittest.TestCase):
         p = self.inst.root / "versions/.stage-abc12345"
         p.mkdir(mode=0o700)
         (p / "xynoos").write_bytes(b"partial write")
+        (p / "xynoos").chmod(0o600)
         q = self.inst.root / ".write-abc12345"
         q.write_bytes(b'{"partial":')
+        q.chmod(0o600)
         with self.inst.locked(): pass
         self.assertFalse(p.exists())
         self.assertFalse(q.exists())
