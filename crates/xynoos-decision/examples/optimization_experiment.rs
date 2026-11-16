@@ -354,6 +354,25 @@ fn manager_preflight(unit: &str) -> Result<(), Box<dyn std::error::Error>> {
         "memory_gate":memory, "eligible_for_further_validation":eligible,
         "controller_activation":"DISABLED", "kernel_control_write":false})
     );
+    // Keep the exact MainPID/binding alive until the external observer has pinned
+    // its read-only evidence. EOF/timeout is a failure, never implicit approval.
+    if std::env::var("XYNOOS_CLEANUP_HANDSHAKE").as_deref() == Ok("1") {
+        std::io::stdout().flush()?;
+        let mut poll = libc::pollfd {
+            fd: 0,
+            events: libc::POLLIN,
+            revents: 0,
+        };
+        // SAFETY: poll points to one initialized pollfd; this only waits on stdin.
+        if unsafe { libc::poll(&mut poll, 1, 15_000) } != 1 {
+            return Err("cleanup observer handshake timeout".into());
+        }
+        let mut release = [0u8; 1];
+        std::io::stdin().read_exact(&mut release)?;
+        if release != *b"1" {
+            return Err("cleanup observer handshake rejected".into());
+        }
+    }
     if !eligible {
         return Err("delegation preflight declined".into());
     }

@@ -1,0 +1,19 @@
+TASK 018E cleanup verification — Codespaces, 2026-11-16
+Baseline: 2f01e496a876573838c20180c62a4886fc22de86
+Physical status: NOT VERIFIED. No live service/cgroup mutation/stress tests.
+
+PASS: scripts/tests/test-018e-launcher.sh (20 deterministic Python tests + shell preflight routing)
+PASS: sh -n scripts/xynoos-018d-launcher.sh scripts/tests/test-018e-launcher.sh
+PASS: cargo test --workspace (202 passed, 0 failed)
+PASS: cargo fmt --all -- --check
+PASS: cargo clippy --workspace --all-targets -- -D warnings
+PASS: cargo check --workspace --all-targets
+PASS: cargo build --workspace --release
+PASS: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps
+PASS: cargo build --release --target x86_64-unknown-linux-musl -p xynoos-decision --example optimization_experiment
+PASS: file/readelf inspection: static PIE, x86_64, no PT_INTERP
+PASS: git diff --check
+
+Clippy initially found byte_char_slices in the handshake; corrected before final gates.
+Python fixtures mock ENODEV; they do not establish physical kernel semantics.
+Packaging reruns focused fixtures and the static build, then verifies internal checksums.
