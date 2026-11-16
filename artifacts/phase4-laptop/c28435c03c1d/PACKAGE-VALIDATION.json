@@ -1,0 +1,24 @@
+{
+  "source_archive_commit_and_all_source_hashes_verified": true,
+  "binaries": {
+    "xynoos-mvp": {
+      "description": "xynoos-mvp: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=69de173f43e885ba07b8a0daefa7a29159950083, not stripped",
+      "interpreter": false,
+      "needed_libraries": false,
+      "sha256": "4a367bfb57e3c012d25fac81dc40fb64b278b32e4704908823ed6259e12eafae"
+    },
+    "xynoos-desktop": {
+      "description": "xynoos-desktop: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=0153af73e23aded896e36a7e3487cea2aa94f743, not stripped",
+      "interpreter": false,
+      "needed_libraries": false,
+      "sha256": "09bf45d2a684c5f5be7f94d67494a6bcd64df1d95f035c3b9fc9a90872281a4f"
+    }
+  },
+  "kernel_control_refused_with_and_without_authorization": true,
+  "extracted_default_ab_smoke": "complete; 14 arms including excluded warmup; no active authorization",
+  "staged_abc_smoke": "complete",
+  "all_internal_checksums": "verified",
+  "source_commit": "c28435c03c1d4e0842b7f8a1c46469e68d7b4a8c",
+  "archive_sha256": "75acf00fa1438b9a436d26ddb13cd41a8bc6bd0d3a9423a2b932e9a7bad3fb44",
+  "environment": "Codespaces"
+}

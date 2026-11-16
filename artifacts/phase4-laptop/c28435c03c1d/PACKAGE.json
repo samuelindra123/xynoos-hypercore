@@ -1,0 +1,9 @@
+{
+  "source_commit": "c28435c03c1d4e0842b7f8a1c46469e68d7b4a8c",
+  "archive": "artifacts/phase4-laptop/c28435c03c1d/xynoos-laptop-c28435c03c1d-linux-x86_64.tar.gz",
+  "sha256": "75acf00fa1438b9a436d26ddb13cd41a8bc6bd0d3a9423a2b932e9a7bad3fb44",
+  "physical_kernel_mutation_available": false,
+  "active_scope": "explicitly authorized admission of new chunks to owned disposable source indexer only",
+  "requirements": "Linux x86_64, Python 3.9+, procfs/PSI/cgroup v2, pidfd, memfd seals; no Rust or sudo",
+  "measurements": "Codespaces only; no N5000 desktop benefit established"
+}
