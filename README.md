@@ -42,6 +42,7 @@ repository control; checksum sidecars alone are not authenticated provenance.
 
 [Release notes and assets](https://github.com/samuelindra123/xynoos-hypercore/releases) ·
 [Trust model and pinned alternative](docs/INSTALL.md#pinned-auditable-alternative) ·
+[Public install/update/rollback evidence](docs/reports/PREVIEW-DISTRIBUTION.md) ·
 [N5000 OpenCode validation protocol](docs/N5000-PREVIEW-VALIDATION.md)
 
 `update` chooses published compatible previews with SemVer-aware discovery.

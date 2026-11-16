@@ -1,0 +1,6 @@
+120171 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=120172, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+120171 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=120173, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+120171 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=120174, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+120171 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=120175, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+120171 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=120176, si_uid=1000, si_status=0, si_utime=0, si_stime=0} ---
+120170 --- SIGCHLD {si_signo=SIGCHLD, si_code=CLD_EXITED, si_pid=120171, si_uid=1000, si_status=0, si_utime=10 /* 0.10 s */, si_stime=6 /* 0.06 s */} ---

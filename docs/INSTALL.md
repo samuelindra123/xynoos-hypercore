@@ -1,8 +1,8 @@
 # Xynoos HyperCore — Experimental Developer Preview
 
-The public one-line installation and rootless lifecycle were verified against
-published `v0.1.0-preview.1` on Ubuntu 24.04 Codespaces. See
-[captured output](reports/preview-public-lifecycle-1.txt). Debian/N5000 hardware
+The public one-line installation, real upgrade and offline rollback were verified
+against published `v0.1.0-preview.2` and `v0.1.0-preview.1` on Ubuntu 24.04 Codespaces.
+See [captured output](reports/preview-public-lifecycle-2.txt). Debian/N5000 hardware
 validation remains pending. Publication and public read-back remain gates for each
 new release; a workflow file alone is not evidence of working distribution.
 
@@ -56,7 +56,7 @@ copying both from a compromised page would not provide independent authenticatio
 curl --proto '=https' --tlsv1.2 -fsSLo xynoos-installer.py https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/12e4ac1ea7e3153853cb0553e3afc19865c162b3/distribution/manager.py
 printf '%s  %s\n' 4b40a9f891c6f015244be211563ed0ae523ebaba32c51a06a7f70ac258b575c9 xynoos-installer.py | sha256sum -c -
 # Run this only after the check above succeeds and you have inspected the script:
-python3 -I xynoos-installer.py install --version v0.1.0-preview.1
+python3 -I xynoos-installer.py install --version v0.1.0-preview.2
 ```
 
 There is one primary convenience command in the README/site. This multi-step

@@ -1,0 +1,13 @@
+{
+  "host": "Ubuntu 24.04 Codespaces; not N5000",
+  "operation": "published preview 2 diagnose, 6 samples at 1000ms",
+  "elapsed_seconds": 5.238812,
+  "user_cpu_seconds": 0.18037999999999998,
+  "system_cpu_seconds": 0.055791999999999994,
+  "one_core_cpu_percent": 4.508,
+  "wait4_ru_maxrss_kib": 27520,
+  "sampled_process_tree_rss_max_kib": 33836,
+  "rss_sampling_interval_ms": 50,
+  "limits": "Sampled sum RSS can miss short peaks and double-count shared pages; wait4 maxrss is not aggregate tree peak.",
+  "desktop_performance_benefit": "NOT PROVEN"
+}

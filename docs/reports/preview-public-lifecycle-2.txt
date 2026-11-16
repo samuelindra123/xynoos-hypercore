@@ -1,0 +1,279 @@
+
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      Experimental Developer Preview
+
+  Checked Linux x86_64             PASS
+  Resolved release                 v0.1.0-preview.2
+  Verified release signature       PASS
+  Verified binary integrity        PASS
+  Installed verified binary        PASS
+
+Xynoos is ready.
+v0.1.0-preview.2 · /tmp/xynoos-final-evidence-t9i8jmzb/.local/bin/xynoos
+
+Next: xynoos doctor
+      xynoos status
+      xynoos update
+
+Add ~/.local/bin to PATH or run: /tmp/xynoos-final-evidence-t9i8jmzb/.local/bin/xynoos
+
+Trust: pinned Ed25519 release key + SHA256. No kernel settings changed.
+Xynoos HyperCore 0.1.0-preview.2 (003c398be1742ef06d36ce00f1e3e911d3ab04a2) — Experimental Developer Preview
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      0.1.0-preview.2 · Experimental Developer Preview
+
+  Host          codespaces-28594f / x86_64
+  Kernel        6.8.0-1070-azure
+  Distribution  Ubuntu 24.04.5 LTS
+  Memory        12.37 GiB available / 15.62 GiB total
+  Swap          0.00 GiB total / 0.00 GiB free
+  ZRAM          []
+  PSI some 10s  CPU 43.17% / memory 0.0% / I/O 0.0%
+  Engine        on-demand observation; no daemon
+  Intervention  none; physical kernel mutation DISABLED
+  Installation  AVAILABLE
+  Release       v0.1.0-preview.2 / preview
+  Integrity     Ed25519 signature + SHA256 VERIFIED
+
+  active_zram_tuning             UNAVAILABLE
+  cgroup_v2_observation          AVAILABLE
+  cooperative_owned_memory       EXPERIMENTAL
+  cpu_psi                        AVAILABLE
+  desktop_optimization           UNAVAILABLE
+  io_psi                         AVAILABLE
+  memory_psi                     AVAILABLE
+  physical_kernel_mutation       NOT AUTHORIZED
+  policy_simulation              EXPERIMENTAL
+  read_only_telemetry            AVAILABLE
+
+  Permissions   read-only; root does not authorize intervention
+  Support       Linux x86_64; Debian 13 N5000 validation pending
+  Last capture  none
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      0.1.0-preview.2 · Experimental Developer Preview
+
+  Host          codespaces-28594f / x86_64
+  Kernel        6.8.0-1070-azure
+  Distribution  Ubuntu 24.04.5 LTS
+  Memory        12.36 GiB available / 15.62 GiB total
+  Swap          0.00 GiB total / 0.00 GiB free
+  ZRAM          []
+  PSI some 10s  CPU 43.17% / memory 0.0% / I/O 0.0%
+  Engine        on-demand observation; no daemon
+  Intervention  none; physical kernel mutation DISABLED
+  Installation  AVAILABLE
+  Release       v0.1.0-preview.2 / preview
+  Integrity     Ed25519 signature + SHA256 VERIFIED
+  Last capture  none
+{"channel":"preview","diagnostic":{"count":2,"elapsed_ms":101,"inference":"Counters alone do not establish an application bottleneck or performance benefit.","samples":[{"architecture":"x86_64","capabilities":{"active_zram_tuning":"UNAVAILABLE","cgroup_v2_observation":"AVAILABLE","cooperative_owned_memory":"EXPERIMENTAL","cpu_psi":"AVAILABLE","desktop_optimization":"UNAVAILABLE","io_psi":"AVAILABLE","memory_psi":"AVAILABLE","physical_kernel_mutation":"NOT AUTHORIZED","policy_simulation":"EXPERIMENTAL","read_only_telemetry":"AVAILABLE"},"collection_ns":914618,"cpu_psi_some_avg10_pct":43.17,"distribution":"PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo","hostname":"codespaces-28594f","io_psi_some_avg10_pct":0.0,"kernel":"6.8.0-1070-azure","load_one":0.56,"logical_cpus":4,"memory_available_bytes":13263400960,"memory_psi_some_avg10_pct":0.0,"memory_total_bytes":16770469888,"sequential":true,"swap_free_bytes":0,"swap_observation":"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority","swap_total_bytes":0,"zram_devices":[]},{"architecture":"x86_64","capabilities":{"active_zram_tuning":"UNAVAILABLE","cgroup_v2_observation":"AVAILABLE","cooperative_owned_memory":"EXPERIMENTAL","cpu_psi":"AVAILABLE","desktop_optimization":"UNAVAILABLE","io_psi":"AVAILABLE","memory_psi":"AVAILABLE","physical_kernel_mutation":"NOT AUTHORIZED","policy_simulation":"EXPERIMENTAL","read_only_telemetry":"AVAILABLE"},"collection_ns":1525689,"cpu_psi_some_avg10_pct":43.17,"distribution":"PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo","hostname":"codespaces-28594f","io_psi_some_avg10_pct":0.0,"kernel":"6.8.0-1070-azure","load_one":0.56,"logical_cpus":4,"memory_available_bytes":13263187968,"memory_psi_some_avg10_pct":0.0,"memory_total_bytes":16770469888,"observed_cpu_utilization_pct":41.05263157894737,"sequential":true,"swap_free_bytes":0,"swap_observation":"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority","swap_total_bytes":0,"zram_devices":[]}],"summary":"Read-only counters captured; missing fields remain null.","timestamp_unix_s":1794844963},"host":{"architecture":"x86_64","capabilities":{"active_zram_tuning":"UNAVAILABLE","cgroup_v2_observation":"AVAILABLE","cooperative_owned_memory":"EXPERIMENTAL","cpu_psi":"AVAILABLE","desktop_optimization":"UNAVAILABLE","io_psi":"AVAILABLE","memory_psi":"AVAILABLE","physical_kernel_mutation":"NOT AUTHORIZED","policy_simulation":"EXPERIMENTAL","read_only_telemetry":"AVAILABLE"},"collection_ns":914618,"cpu_psi_some_avg10_pct":43.17,"distribution":"PRETTY_NAME=\"Ubuntu 24.04.5 LTS\"\nNAME=\"Ubuntu\"\nVERSION_ID=\"24.04\"\nVERSION=\"24.04.5 LTS (Noble Numbat)\"\nVERSION_CODENAME=noble\nID=ubuntu\nID_LIKE=debian\nHOME_URL=\"https://www.ubuntu.com/\"\nSUPPORT_URL=\"https://help.ubuntu.com/\"\nBUG_REPORT_URL=\"https://bugs.launchpad.net/ubuntu/\"\nPRIVACY_POLICY_URL=\"https://www.ubuntu.com/legal/terms-and-policies/privacy-policy\"\nUBUNTU_CODENAME=noble\nLOGO=ubuntu-logo","hostname":"codespaces-28594f","io_psi_some_avg10_pct":0.0,"kernel":"6.8.0-1070-azure","load_one":0.56,"logical_cpus":4,"memory_available_bytes":13263400960,"memory_psi_some_avg10_pct":0.0,"memory_total_bytes":16770469888,"sequential":true,"swap_free_bytes":0,"swap_observation":"Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority","swap_total_bytes":0,"zram_devices":[]},"installation":{"channel":"preview","integrity":"Ed25519 signature + SHA256 VERIFIED","path":"/tmp/xynoos-final-evidence-t9i8jmzb/.local/bin/xynoos","source_commit":"003c398be1742ef06d36ce00f1e3e911d3ab04a2","status":"AVAILABLE","version":"v0.1.0-preview.2"},"intervention_active":false,"last_diagnostic":null,"physical_kernel_mutation":false,"product":"Xynoos HyperCore","schema_version":1,"source_commit":"003c398be1742ef06d36ce00f1e3e911d3ab04a2","version":"0.1.0-preview.2"}
+
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      Experimental Developer Preview
+
+  Checked Linux x86_64             PASS
+  Resolved release                 v0.1.0-preview.2
+
+Already up to date; installed signature and checksum verified.
+v0.1.0-preview.2 · /tmp/xynoos-final-evidence-t9i8jmzb/.local/bin/xynoos
+
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      Experimental Developer Preview
+
+  Checked Linux x86_64             PASS
+  Resolved release                 v0.1.0-preview.1
+  Verified release signature       PASS
+  Verified binary integrity        PASS
+  Installed verified binary        PASS
+
+Xynoos is ready.
+v0.1.0-preview.1 · /tmp/xynoos-final-evidence-t9i8jmzb/older/.local/bin/xynoos
+
+Next: xynoos doctor
+      xynoos status
+      xynoos update
+
+Add ~/.local/bin to PATH or run: /tmp/xynoos-final-evidence-t9i8jmzb/older/.local/bin/xynoos
+
+Trust: pinned Ed25519 release key + SHA256. No kernel settings changed.
+
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      Experimental Developer Preview
+
+  Checked Linux x86_64             PASS
+  Resolved release                 v0.1.0-preview.2
+  Verified release signature       PASS
+  Verified binary integrity        PASS
+  Installed verified binary        PASS
+
+Xynoos is ready.
+v0.1.0-preview.2 · /tmp/xynoos-final-evidence-t9i8jmzb/older/.local/bin/xynoos
+
+Restored previous verified version offline.
+v0.1.0-preview.1 · /tmp/xynoos-final-evidence-t9i8jmzb/older/.local/bin/xynoos
+
+Uninstalled owned releases and executable; diagnostic evidence preserved.
+
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      Experimental Developer Preview
+
+  Checked Linux x86_64             PASS
+  Resolved release                 v0.1.0-preview.2
+  Verified release signature       PASS
+  Verified binary integrity        PASS
+  Installed verified binary        PASS
+
+Xynoos is ready.
+v0.1.0-preview.2 · /tmp/xynoos-final-evidence-t9i8jmzb/.local/bin/xynoos
+
+Next: xynoos doctor
+      xynoos status
+      xynoos update
+
+Add ~/.local/bin to PATH or run: /tmp/xynoos-final-evidence-t9i8jmzb/.local/bin/xynoos
+
+Trust: pinned Ed25519 release key + SHA256. No kernel settings changed.
+PUBLIC LIFECYCLE PASS: install, identity, doctor, status, diagnose, update, uninstall/evidence, reinstall, upgrade + offline rollback
+
+$ xynoos 
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      0.1.0-preview.2 · Experimental Developer Preview
+
+  Linux x86_64 / 4 logical CPUs
+  Memory: 12.36 GiB available / 15.62 GiB total
+  Read-only observation. No daemon or active intervention.
+
+  xynoos doctor   Check host support and release integrity
+  xynoos status   Inspect current pressure and swap
+  xynoos help     Explore all commands
+
+$ xynoos --version
+Xynoos HyperCore 0.1.0-preview.2 (003c398be1742ef06d36ce00f1e3e911d3ab04a2) — Experimental Developer Preview
+
+$ xynoos doctor
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      0.1.0-preview.2 · Experimental Developer Preview
+
+  Host          codespaces-28594f / x86_64
+  Kernel        6.8.0-1070-azure
+  Distribution  Ubuntu 24.04.5 LTS
+  Memory        12.36 GiB available / 15.62 GiB total
+  Swap          0.00 GiB total / 0.00 GiB free
+  ZRAM          []
+  PSI some 10s  CPU 42.23% / memory 0.0% / I/O 0.0%
+  Engine        on-demand observation; no daemon
+  Intervention  none; physical kernel mutation DISABLED
+  Installation  AVAILABLE
+  Release       v0.1.0-preview.2 / preview
+  Integrity     Ed25519 signature + SHA256 VERIFIED
+
+  active_zram_tuning             UNAVAILABLE
+  cgroup_v2_observation          AVAILABLE
+  cooperative_owned_memory       EXPERIMENTAL
+  cpu_psi                        AVAILABLE
+  desktop_optimization           UNAVAILABLE
+  io_psi                         AVAILABLE
+  memory_psi                     AVAILABLE
+  physical_kernel_mutation       NOT AUTHORIZED
+  policy_simulation              EXPERIMENTAL
+  read_only_telemetry            AVAILABLE
+
+  Permissions   read-only; root does not authorize intervention
+  Support       Linux x86_64; Debian 13 N5000 validation pending
+  Last capture  Read-only counters captured; missing fields remain null.
+
+$ xynoos status
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      0.1.0-preview.2 · Experimental Developer Preview
+
+  Host          codespaces-28594f / x86_64
+  Kernel        6.8.0-1070-azure
+  Distribution  Ubuntu 24.04.5 LTS
+  Memory        12.36 GiB available / 15.62 GiB total
+  Swap          0.00 GiB total / 0.00 GiB free
+  ZRAM          []
+  PSI some 10s  CPU 42.23% / memory 0.0% / I/O 0.0%
+  Engine        on-demand observation; no daemon
+  Intervention  none; physical kernel mutation DISABLED
+  Installation  AVAILABLE
+  Release       v0.1.0-preview.2 / preview
+  Integrity     Ed25519 signature + SHA256 VERIFIED
+  Last capture  Read-only counters captured; missing fields remain null.
+
+$ xynoos help
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      0.1.0-preview.2 · Experimental Developer Preview
+
+Observe first. Physical kernel mutation: DISABLED.
+
+  doctor        Check host support and release integrity
+  status        Inspect pressure, swap and engine state
+  capabilities  Show available and experimental features
+  diagnose      Capture bounded read-only telemetry
+  benchmark     Measure telemetry overhead (no workload tuning)
+  update        Install the latest verified preview
+  rollback      Restore the previous verified version offline
+  uninstall     Remove owned software; preserve evidence
+
+Use --json for structured output; --no-color for plain text.
+Diagnose: --count 1..60 --interval-ms 100..10000 (max 60s)
+Update: --channel preview|stable or --version vX.Y.Z[-preview.N]
+Research compatibility: pressure, system, shadow
+
+$ xynoos capabilities
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      0.1.0-preview.2 · Experimental Developer Preview
+
+  active_zram_tuning             UNAVAILABLE
+  cgroup_v2_observation          AVAILABLE
+  cooperative_owned_memory       EXPERIMENTAL
+  cpu_psi                        AVAILABLE
+  desktop_optimization           UNAVAILABLE
+  io_psi                         AVAILABLE
+  memory_psi                     AVAILABLE
+  physical_kernel_mutation       NOT AUTHORIZED
+  policy_simulation              EXPERIMENTAL
+  read_only_telemetry            AVAILABLE
+
+$ xynoos benchmark
+ /X/  XYNOOS HYPERCORE
+      Linux Resource Intelligence
+      0.1.0-preview.2 · Experimental Developer Preview
+
+  Host          codespaces-28594f / x86_64
+  Kernel        6.8.0-1070-azure
+  Distribution  Ubuntu 24.04.5 LTS
+  Memory        12.34 GiB available / 15.62 GiB total
+  Swap          0.00 GiB total / 0.00 GiB free
+  ZRAM          []
+  PSI some 10s  CPU 42.23% / memory 0.0% / I/O 0.0%
+  Engine        on-demand observation; no daemon
+  Intervention  none; physical kernel mutation DISABLED
+  Installation  AVAILABLE
+  Release       v0.1.0-preview.2 / preview
+  Integrity     Ed25519 signature + SHA256 VERIFIED
+  Last capture  Read-only counters captured; missing fields remain null.
+  Measurement   {"desktop_performance_benefit":"NOT PROVEN","iterations":20,"operation":"sequential telemetry collection","scope":"this process on this host","total_ns":14860168}
+EXPECTED REFUSAL: Error: "Xynoos: No compatible published stable release"
+EXPECTED REFUSAL: Error: "Xynoos: Downgrade refused; use offline rollback for the previous verified version"
+CONCURRENT PUBLIC UPDATE REFUSAL: PASS
+
+Restored previous verified version offline.
+v0.1.0-preview.2 · /tmp/xynoos-final-evidence-t9i8jmzb/older/.local/bin/xynoos
+
+Restored previous verified version offline.
+v0.1.0-preview.1 · /tmp/xynoos-final-evidence-t9i8jmzb/older/.local/bin/xynoos
+OFFLINE ROLLBACK: PASS; strace observed zero connect() calls
+MEASURED COLLECTOR OVERHEAD: {"host": "Ubuntu 24.04 Codespaces; not N5000", "operation": "published preview 2 diagnose, 6 samples at 1000ms", "elapsed_seconds": 5.238812, "user_cpu_seconds": 0.18037999999999998, "system_cpu_seconds": 0.055791999999999994, "one_core_cpu_percent": 4.508, "wait4_ru_maxrss_kib": 27520, "sampled_process_tree_rss_max_kib": 33836, "rss_sampling_interval_ms": 50, "limits": "Sampled sum RSS can miss short peaks and double-count shared pages; wait4 maxrss is not aggregate tree peak.", "desktop_performance_benefit": "NOT PROVEN"}
+FINAL PUBLIC DISTRIBUTION VALIDATION: PASS
