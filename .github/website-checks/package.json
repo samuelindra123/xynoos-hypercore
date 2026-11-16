@@ -2,7 +2,7 @@
   "name": "xynoos-studio-release-checks",
   "private": true,
   "scripts": {
-    "test": "node validate.cjs && node interactions.cjs && node studio-upgrade.cjs && node studio-film.cjs",
+    "test": "node validate.cjs && node interactions.cjs && node studio-upgrade.cjs && node studio-film.cjs && node install.cjs",
     "browser": "node browser.cjs"
   },
   "devDependencies": {

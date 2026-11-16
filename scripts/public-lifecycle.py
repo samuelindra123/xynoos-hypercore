@@ -23,8 +23,8 @@ with tempfile.TemporaryDirectory(prefix="xynoos-public-home-") as directory:
     subprocess.run(["bash", "-o", "pipefail", "-c", command + '; xynoos --version'], env=env, check=True)
     identity = json.loads(subprocess.check_output([str(binary), "--version", "--json"], env=env))
     assert "v" + identity["version"] == args.version
-    for command in (["doctor"], ["status"], ["diagnose", "--count", "2", "--interval-ms", "100", "--json"], ["update"]):
-        subprocess.run([str(binary), *command], env=env, check=True)
+    for cli_args in (["doctor"], ["status"], ["diagnose", "--count", "2", "--interval-ms", "100", "--json"], ["update"]):
+        subprocess.run([str(binary), *cli_args], env=env, check=True)
     if args.previous:
         # A second disposable HOME tests older public install -> current public update.
         older_home = home / "older"; older_home.mkdir(mode=0o700)
