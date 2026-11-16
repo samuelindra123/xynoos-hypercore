@@ -156,14 +156,21 @@ pub fn restore_memory<B: ControllerBackend>(
     Ok(())
 }
 
+// Private substitution boundary: production constructors always install DescriptorIo.
+// Neither observation evidence nor a test implementation can authorize a live binding.
+mod session_io;
+use session_io::{DescriptorIo, SessionIo};
+
 /// Linux implementation bound to the live transient service that contains this process.
 /// The caller must explicitly authorize each activation and restoration call as well.
 struct LinuxController {
-    binding: crate::systemd_identity::Binding,
+    io: Box<dyn SessionIo>,
     authorized: bool,
-    child: Option<crate::bound_child::BoundChild>,
     child_unresolved: bool,
 }
+
+#[cfg(test)]
+mod session_io_tests;
 impl LinuxController {
     fn new(binding: crate::systemd_identity::Binding, authorized: bool) -> Result<Self, String> {
         if !authorized {
@@ -171,32 +178,21 @@ impl LinuxController {
         }
         binding.revalidate()?;
         Ok(Self {
-            binding,
+            io: Box::new(DescriptorIo::new(binding)),
             authorized,
-            child: None,
             child_unresolved: false,
         })
     }
     fn write(&mut self, command: &[u8]) -> Result<(), String> {
-        use std::os::{fd::AsRawFd, unix::fs::FileExt};
         if !self.authorized {
             return Err("explicit authorization required".into());
         }
-        self.binding.revalidate()?;
-        let f = crate::transaction::openat(
-            self.binding.parent().as_raw_fd(),
-            c"cgroup.subtree_control",
-            libc::O_WRONLY,
-        )?;
-        let n = f.write_at(command, 0).map_err(|e| e.to_string())?;
-        if n != command.len() {
-            return Err("short controller write".into());
-        }
-        Ok(())
+        self.io.revalidate()?;
+        self.io.write_controller(command)
     }
     fn read(&self, name: &std::ffi::CStr) -> Result<String, String> {
-        self.binding.revalidate()?;
-        crate::transaction::read_at(self.binding.parent(), name)
+        self.io.revalidate()?;
+        self.io.read_parent(name)
     }
 }
 /// Read-only initialization of the same bound controller backend used by a session.
@@ -259,9 +255,8 @@ impl ControllerInspectionSession {
         binding.revalidate()?;
         Ok(Self {
             backend: LinuxController {
-                binding,
+                io: Box::new(DescriptorIo::new(binding)),
                 authorized: false,
-                child: None,
                 child_unresolved: false,
             },
         })
@@ -270,7 +265,7 @@ impl ControllerInspectionSession {
         inspect_readiness(&mut self.backend)
     }
     pub fn binding_diagnostic(&self) -> serde_json::Value {
-        self.backend.binding.diagnostic()
+        self.backend.io.diagnostic()
     }
 }
 /// The session operation whose effect is reported.
@@ -688,20 +683,13 @@ trait RegisteredChildBackend: ControllerBackend {
 }
 impl RegisteredChildBackend for LinuxController {
     fn registered_child(&self) -> Option<crate::child_memory::ChildIdentity> {
-        self.child.as_ref().map(|c| c.identity())
+        self.io.registered_child()
     }
     fn child_unresolved(&self) -> bool {
         self.child_unresolved
     }
     fn child_identity_matches(&self) -> Result<bool, String> {
-        let (dev, ino) = self.binding.parent_identity();
-        self.child
-            .as_ref()
-            .ok_or("no registered child")?
-            .identity_matches(
-                self.binding.parent(),
-                crate::bound_child::FileId { dev, ino },
-            )
+        self.io.child_identity_matches()
     }
     fn set_child_unresolved(&mut self, value: bool) {
         self.child_unresolved = value;
@@ -710,27 +698,10 @@ impl RegisteredChildBackend for LinuxController {
         &mut self,
         parent: ParentIdentity,
     ) -> Result<crate::child_memory::ChildIdentity, String> {
-        let child = crate::bound_child::BoundChild::create(
-            self.binding.parent(),
-            crate::bound_child::FileId {
-                dev: parent.device,
-                ino: parent.inode,
-            },
-        )?;
-        let identity = child.identity();
-        self.child = Some(child);
-        Ok(identity)
+        self.io.create_child(parent)
     }
     fn remove_registered_child(&mut self, parent: ParentIdentity) -> Result<(), String> {
-        self.child.as_ref().ok_or("no registered child")?.remove(
-            self.binding.parent(),
-            crate::bound_child::FileId {
-                dev: parent.device,
-                ino: parent.inode,
-            },
-        )?;
-        self.child = None;
-        Ok(())
+        self.io.remove_child(parent)
     }
 }
 fn create_child_typed<B: RegisteredChildBackend>(
@@ -966,36 +937,31 @@ impl ControllerSession {
     /// Collect diagnostic evidence without authorizing, attempting, or retrying a mutation.
     /// Individual reads are sequential; a complete snapshot is not an atomic kernel view.
     pub fn observe(&mut self) -> SessionObservation {
-        let binding = &self.backend.binding;
-        let identity = binding.bound_identity();
-        let binding_before = binding.revalidate();
-        let parent_population =
-            crate::transaction::read_at(binding.parent(), c"cgroup.procs").and_then(population);
-        let manager_population =
-            crate::transaction::read_at(binding.manager(), c"cgroup.procs").and_then(population);
-        let available_controllers =
-            crate::transaction::read_at(binding.parent(), c"cgroup.controllers")
-                .and_then(controller_set);
-        let enabled_controllers =
-            crate::transaction::read_at(binding.parent(), c"cgroup.subtree_control")
-                .and_then(controller_set);
-        let parent_stat = crate::transaction::read_at(binding.parent(), c"cgroup.stat");
-        let manager_stat = crate::transaction::read_at(binding.manager(), c"cgroup.stat");
-        let (dev, ino) = binding.parent_identity();
-        let parent_id = crate::bound_child::FileId { dev, ino };
-        let registered_child = self.backend.child.as_ref().map(|child| ChildObservation {
-            identity: child.identity(),
-            population: child
-                .population(binding.parent(), parent_id)
-                .and_then(population),
-            memory_low: child.read_low(binding.parent(), parent_id),
-        });
-        let available_again = crate::transaction::read_at(binding.parent(), c"cgroup.controllers")
+        let io = &self.backend.io;
+        let identity = io.bound_identity();
+        let binding_before = io.revalidate();
+        let parent_population = io.read_parent(c"cgroup.procs").and_then(population);
+        let manager_population = io.read_manager(c"cgroup.procs").and_then(population);
+        let available_controllers = io
+            .read_parent(c"cgroup.controllers")
             .and_then(controller_set);
-        let enabled_again =
-            crate::transaction::read_at(binding.parent(), c"cgroup.subtree_control")
-                .and_then(controller_set);
-        let binding_after = binding.revalidate();
+        let enabled_controllers = io
+            .read_parent(c"cgroup.subtree_control")
+            .and_then(controller_set);
+        let parent_stat = io.read_parent(c"cgroup.stat");
+        let manager_stat = io.read_manager(c"cgroup.stat");
+        let registered_child = io.registered_child().map(|identity| ChildObservation {
+            identity,
+            population: io.child_population().and_then(population),
+            memory_low: io.read_low(),
+        });
+        let available_again = io
+            .read_parent(c"cgroup.controllers")
+            .and_then(controller_set);
+        let enabled_again = io
+            .read_parent(c"cgroup.subtree_control")
+            .and_then(controller_set);
+        let binding_after = io.revalidate();
         let mut issues = Vec::new();
         let mut incomplete = false;
         let mut invalid = false;
@@ -1212,11 +1178,11 @@ impl ControllerSession {
     /// The observed pre-attempt state does not by itself authorize recovery.
     pub fn activation_diagnostic(&self) -> serde_json::Value {
         serde_json::json!({
-            "binding": self.backend.binding.diagnostic(),
+            "binding": self.backend.io.diagnostic(),
             "original_controllers": self.original_before_attempt,
             "activation_unresolved": self.activation_unresolved,
             "child_unresolved": self.backend.child_unresolved,
-            "child_registered": self.backend.child.is_some(),
+            "child_registered": self.backend.registered_child().is_some(),
             "memory_low_unresolved": self.low_unresolved,
         })
     }
@@ -1234,12 +1200,9 @@ impl ControllerSession {
         &mut self,
     ) -> Result<crate::child_memory::ChildIdentity, String> {
         self.backend.verify_unit()?;
-        Ok(self
-            .backend
-            .child
-            .as_ref()
-            .ok_or("no registered child")?
-            .identity())
+        self.backend
+            .registered_child()
+            .ok_or("no registered child".into())
     }
     /// Read only through the held registered child descriptor.
     pub fn read_child_memory_low(
@@ -1272,7 +1235,7 @@ impl ControllerSession {
     }
     /// A failed authorized attempt is never retried automatically.
     pub fn restore(&mut self, authorized: bool) -> Result<MutationOutcome, MutationOutcome> {
-        let child_present = self.backend.child.is_some();
+        let child_present = self.backend.registered_child().is_some();
         let child_unresolved = self.backend.child_unresolved;
         restore_typed(
             &mut self.backend,
@@ -1294,14 +1257,7 @@ impl ControllerSession {
     /// Inspect the registered child's inherited controller list without control writes.
     pub fn child_controllers(&mut self) -> Result<String, String> {
         let id = self.backend.verify_unit()?;
-        let child = self.backend.child.as_ref().ok_or("no registered child")?;
-        child.controllers(
-            self.backend.binding.parent(),
-            crate::bound_child::FileId {
-                dev: id.device,
-                ino: id.inode,
-            },
-        )
+        self.backend.io.child_controllers(id)
     }
     /// Remove only the registered, still-empty child; failed cleanup blocks restoration.
     pub fn remove_empty_child(&mut self) -> Result<MutationOutcome, MutationOutcome> {
@@ -1319,10 +1275,8 @@ impl crate::child_memory::Access for SessionLow<'_> {
         if self
             .0
             .backend
-            .child
-            .as_ref()
+            .registered_child()
             .ok_or("no registered child")?
-            .identity()
             != child
         {
             return Err("registered child identity mismatch".into());
@@ -1341,16 +1295,7 @@ impl crate::child_memory::Access for SessionLow<'_> {
         Ok(())
     }
     fn read(&mut self) -> Result<u64, String> {
-        let (dev, ino) = self.0.backend.binding.parent_identity();
-        self.0
-            .backend
-            .child
-            .as_ref()
-            .ok_or("no registered child")?
-            .read_low(
-                self.0.backend.binding.parent(),
-                crate::bound_child::FileId { dev, ino },
-            )
+        self.0.backend.io.read_low()
     }
     fn write(&mut self, _bytes: &[u8]) -> Result<usize, String> {
         Err("physical memory.low writes disabled".into())
@@ -1398,32 +1343,23 @@ impl ControllerBackend for LinuxController {
         if self.child_unresolved {
             return Err("child state unresolved".into());
         }
-        self.binding.revalidate()?;
-        if !crate::transaction::read_at(self.binding.parent(), c"cgroup.procs")?
-            .trim()
-            .is_empty()
-        {
+        self.io.revalidate()?;
+        if !self.io.read_parent(c"cgroup.procs")?.trim().is_empty() {
             return Err("parent populated".into());
         }
-        let stat = crate::transaction::read_at(self.binding.parent(), c"cgroup.stat")?;
-        let manager_stat = crate::transaction::read_at(self.binding.manager(), c"cgroup.stat")?;
-        let manager_procs = crate::transaction::read_at(self.binding.manager(), c"cgroup.procs")?;
-        let (device, inode) = self.binding.parent_identity();
-        if let Some(child) = &self.child {
-            child.verify(
-                self.binding.parent(),
-                crate::bound_child::FileId {
-                    dev: device,
-                    ino: inode,
-                },
-            )?;
+        let stat = self.io.read_parent(c"cgroup.stat")?;
+        let manager_stat = self.io.read_manager(c"cgroup.stat")?;
+        let manager_procs = self.io.read_manager(c"cgroup.procs")?;
+        let (device, inode) = self.io.bound_identity().parent;
+        if self.registered_child().is_some() {
+            self.io.verify_child(ParentIdentity { device, inode })?;
         }
         validate_hierarchy(
             &stat,
             &manager_stat,
             &manager_procs,
             std::process::id(),
-            self.child.is_some(),
+            self.registered_child().is_some(),
         )?;
         Ok(ParentIdentity { device, inode })
     }
@@ -2016,9 +1952,8 @@ mod observation_tests {
             let binding = crate::systemd_identity::Binding::fixture(path.clone(), 42);
             let session = ControllerSession {
                 backend: LinuxController {
-                    binding,
+                    io: Box::new(DescriptorIo::new(binding)),
                     authorized: false,
-                    child: None,
                     child_unresolved: false,
                 },
                 activation: None,
@@ -2046,8 +1981,15 @@ mod observation_tests {
                 fs::write(path.join(name), value).unwrap();
             }
             fs::write(self.path.join("cgroup.stat"), "nr_descendants 2").unwrap();
-            self.session.backend.child = Some(crate::bound_child::BoundChild::fixture(
-                self.session.backend.binding.parent(),
+            let io = self
+                .session
+                .backend
+                .io
+                .as_any_mut()
+                .downcast_mut::<DescriptorIo>()
+                .unwrap();
+            io.child = Some(crate::bound_child::BoundChild::fixture(
+                io.binding.parent(),
                 c"child",
             ));
         }
@@ -2092,7 +2034,7 @@ mod observation_tests {
         assert!(o.child_unresolved && o.memory_low_unresolved);
         assert_eq!(o.validity, ObservationValidity::Unknown);
         assert!(f.session.verify_for_mutation().is_err());
-        let child = f.session.backend.child.as_ref().unwrap().identity();
+        let child = f.session.backend.registered_child().unwrap();
         assert!(f
             .session
             .change_child_memory_low(child, 4096, 8192, true, false)
