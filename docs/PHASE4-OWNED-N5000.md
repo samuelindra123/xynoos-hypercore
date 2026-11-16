@@ -11,7 +11,7 @@ new physical evidence from Codespaces.
 Use a normal N5000 / 4 GB / MX Linux user session, on AC power. Do not use sudo,
 systemd-run, the research CLI, controller writes, sysctl, swap or ZRAM changes.
 Transfer the archive, matching `.sha256` and `PACKAGE.json` from
-`artifacts/phase4-owned/`. Keep them in a new directory. Python 3.8+, x86_64
+`artifacts/phase4-owned/`. Keep them in a new directory. Python 3.9+, x86_64
 Linux and procfs/PSI are required; Rust and external Python packages are not.
 Run these exact commands there:
 
