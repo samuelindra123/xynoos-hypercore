@@ -1,0 +1,110 @@
+name: Experimental Developer Preview
+on:
+  push:
+    tags: ['v*-preview.*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Exact version (v0.1.0-preview.N); must match Cargo package'
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: xynoos-release
+  cancel-in-progress: false
+jobs:
+  build:
+    if: github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+      actions: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate reviewed source and requested version
+        env:
+          VERSION: ${{ inputs.version || github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/release-source-gate.py "$VERSION"
+          if gh release view "$VERSION" >/dev/null 2>&1; then echo 'Version already published; immutable versions cannot be replaced'; exit 1; fi
+      - name: Rust toolchain
+        run: rustup toolchain install 1.100.0 --profile minimal --component rustfmt --component clippy --target x86_64-unknown-linux-musl && rustup default 1.100.0
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test --workspace --locked
+      - run: python3 -m unittest discover -s distribution -p 'test_*.py' -v
+      - name: Static build
+        env:
+          XYNOOS_SOURCE_COMMIT: ${{ github.sha }}
+        run: cargo build -p xynoos-cli --bin xynoos --release --target x86_64-unknown-linux-musl --locked
+      - name: Package
+        env:
+          VERSION: ${{ inputs.version || github.ref_name }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          python3 scripts/package-release.py --binary target/x86_64-unknown-linux-musl/release/xynoos --output dist-release --version "$VERSION" --run-id "$RUN_ID"
+          python3 scripts/verify-release.py dist-release --unsigned
+      - name: Attest build provenance
+        id: attest
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3
+        with:
+          subject-path: |
+            dist-release/xynoos-x86_64-unknown-linux-musl
+            dist-release/manifest.json
+      - name: Preserve provenance bundle
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: cp "$BUNDLE" dist-release/provenance.sigstore.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: verified-preview-build
+          path: dist-release/
+          if-no-files-found: error
+          retention-days: 30
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      pull-requests: read
+      checks: read
+      actions: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: verified-preview-build
+          path: dist-release
+      - name: Sign manifest with release key
+        env:
+          SIGNING_KEY: ${{ secrets.XYNOOS_RELEASE_SIGNING_KEY }}
+        run: |
+          test -n "$SIGNING_KEY" || { echo 'Owner action required: configure XYNOOS_RELEASE_SIGNING_KEY. Unsigned builds are never published.'; exit 1; }
+          umask 077
+          printf '%s\n' "$SIGNING_KEY" > "$RUNNER_TEMP/signing-key.pem"
+          trap 'rm -f "$RUNNER_TEMP/signing-key.pem"' EXIT
+          openssl pkeyutl -sign -rawin -inkey "$RUNNER_TEMP/signing-key.pem" -in dist-release/manifest.json -out dist-release/manifest.json.sig
+          chmod 700 dist-release/xynoos-x86_64-unknown-linux-musl
+          python3 scripts/finalize-release.py dist-release
+          python3 scripts/verify-release.py dist-release
+      - name: Publish verified preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version || github.ref_name }}
+        run: python3 scripts/publish-preview.py dist-release "$VERSION"
+      - name: Public installation read-back
+        env:
+          VERSION: ${{ inputs.version || github.ref_name }}
+        run: python3 scripts/public-lifecycle.py --version "$VERSION"
