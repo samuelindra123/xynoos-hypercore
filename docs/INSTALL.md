@@ -124,7 +124,10 @@ Reinstallation reuses that lock. Evidence deletion is a separate operator action
 ## Release maintenance
 
 PR validation is unprivileged and never sees signing material. Tag/dispatch builds
-require a main commit integrated through a merged PR and successful CLI validation.
+require a source commit integrated into main through a merged PR and successful
+applicable source validation. A later documentation merge does not invalidate an
+already attested, reviewed source commit. Publication failures are not source-CI
+failures; missing signing credentials still block automated publication.
 Release publication verifies package/manifest/archive agreement, source/tag identity,
 Ed25519 signature and GitHub build attestations. Actions are pinned by commit.
 
