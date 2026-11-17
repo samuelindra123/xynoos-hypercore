@@ -80,8 +80,10 @@ class DesktopTests(unittest.TestCase):
         self.assertTrue(all(c['final']['released'] for c in row['children'] if c['name'] != 'observer'))
 
     def test_matched_three_arms_equal_work_and_observer_contract(self):
-        rows = [self.run_arm(arm) for arm in b.ARMS]
-        self.assertTrue(all(r['status'] == 'complete' for r in rows), rows)
+        with self.quiet_policy_fixture():
+            rows = [self.run_arm(arm) for arm in b.ARMS]
+        self.assertTrue(all(r['status'] == 'complete' for r in rows),
+                        [{k: r.get(k) for k in ('arm', 'status', 'error')} for r in rows])
         self.assertEqual(len({json.dumps((r['search_results'], r['index_results'])) for r in rows}), 1)
         self.assertEqual(rows[0]['observations'], 0)
         self.assertGreater(rows[1]['observations'], 0)
