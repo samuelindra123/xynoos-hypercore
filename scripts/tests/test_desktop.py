@@ -2,6 +2,7 @@
 """Adversarial admission, identity, lifecycle and independent real-task oracles."""
 import argparse
 import collections
+import contextlib
 import json
 import os
 from pathlib import Path
@@ -46,8 +47,28 @@ class DesktopTests(unittest.TestCase):
         self.assertTrue(all(c['reaped'] for c in row['children']), row)
         return row
 
+    @contextlib.contextmanager
+    def quiet_policy_fixture(self):
+        # These two tests verify real owned workers, protocol and result oracles.
+        # Host-wide PSI is nondeterministic after CI builds/package installation.
+        # Only the policy pressure averages are fixtures; identities, counters,
+        # memory headroom, subprocesses and output oracles stay real. Dedicated
+        # admission tests below still assert PSI refusal and pressure deferral.
+        collect = d.snapshot
+        def sample():
+            value = collect()
+            for reading in value['psi'].values():
+                if reading:
+                    for level in reading.values():
+                        for key in ('avg10', 'avg60', 'avg300'):
+                            level[key] = 0.0
+            return value
+        with patch.object(d, 'snapshot', side_effect=sample):
+            yield
+
     def test_real_tasks_match_independent_whole_corpus_index(self):
-        row = self.run_arm()
+        with self.quiet_policy_fixture():
+            row = self.run_arm()
         self.assertEqual(row['status'], 'complete', row['error'])
         words = collections.Counter(w.lower() for w in re.findall(rb'[a-zA-Z0-9]+', self.data))
         crc = 0
