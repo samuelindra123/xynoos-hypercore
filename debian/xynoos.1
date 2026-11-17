@@ -1,0 +1,36 @@
+.TH XYNOOS 1 "November 2026" "Xynoos HyperCore" "User Commands"
+.SH NAME
+xynoos \- experimental read-only Linux resource intelligence
+.SH SYNOPSIS
+.B xynoos
+.RI command " [options]"
+.SH DESCRIPTION
+Observe Linux counters on demand. No daemon or privileged intervention is
+installed. Missing interfaces are reported as unavailable. Performance benefits
+and physical hardware compatibility are not established.
+.SH COMMANDS
+.TP
+.B help
+List commands and bounded options.
+.TP
+.B status, doctor, capabilities
+Report observations and capabilities. Doctor does not verify package integrity.
+.TP
+.B resources --json
+Report bounded hardware evidence and an experimental resource plan.
+.TP
+.B diagnose --count 2 --interval-ms 100 --json
+Write bounded observations to standard output. Redirect to retain evidence;
+the Debian build does not persist diagnostics automatically.
+.TP
+.B memory --interval-ms 100
+Report experimental cooperative memory observations.
+.SH PACKAGE MANAGEMENT
+Use APT to install, upgrade, downgrade or remove xynoos-hypercore.
+The update, rollback and uninstall commands refuse in Debian builds.
+.SH FILES
+.I /usr/share/doc/xynoos-hypercore/
+contains lifecycle, security, licensing and build documentation.
+.SH SEE ALSO
+.BR apt (8),
+.BR dpkg (1)

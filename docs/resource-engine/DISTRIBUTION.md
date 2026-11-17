@@ -1,5 +1,10 @@
 # Debian / MX integration and physical acceptance
 
+Phase 6 now supplies packaging and container validation. See
+[the current packaging guide](../debian/PACKAGING.md) and
+[tested engineering report](../debian/REPORT.md). The Debian proposals below
+record Phase 5's historical status and are superseded by those documents.
+
 The existing signed preview installer, version selection, verification, upgrade and rollback remain authoritative (see INSTALL.md). This branch is an engineering preview, not a published signed release. Build with cargo build --release --locked -p xynoos-cli --bin xynoos. Run as an ordinary user. No service installation, sudo, kernel writes or background work is needed for resources, memory, pressure, system or diagnose.
 
 For Debian packaging, build inside the oldest supported Debian suite using sbuild, not on a newer host and assume glibc compatibility. Package /usr/bin/xynoos and GPL license/third-party notices under /usr/share/doc/xynoos. Use debhelper 13 and dh_shlibdeps to generate exact runtime dependencies from the built ELF; retain Cargo.lock and build with an offline local registry. Build-Depends: debhelper-compat (= 13), cargo, rustc, pkg-config; configure the Rust version required by the locked dependencies. Do not add maintainer scripts that enable services. An actual .deb, lintian and clean-install matrix are not supplied or validated by this integration. Existing static musl release CI remains the portable delivery path.

@@ -1,0 +1,21 @@
+Source: xynoos-hypercore
+Section: utils
+Priority: optional
+Maintainer: Samuel Indra Bastian <comdonate9@gmail.com>
+Build-Depends: debhelper-compat (= 13), cargo (>= 1.82), rustc (>= 1.82), python3
+Standards-Version: 4.7.2
+Rules-Requires-Root: no
+Homepage: https://github.com/samuelindra123/xynoos-hypercore
+Vcs-Git: https://github.com/samuelindra123/xynoos-hypercore.git
+Vcs-Browser: https://github.com/samuelindra123/xynoos-hypercore
+
+Package: xynoos-hypercore
+Architecture: amd64
+Depends: ${shlibs:Depends}, ${misc:Depends}
+Built-Using: ${xynoos:Built-Using}
+Description: experimental read-only Linux resource intelligence
+ Xynoos HyperCore observes bounded Linux resource telemetry and produces
+ experimental resource plans. It runs on demand without a daemon, kernel
+ tuning, privileged optimization, desktop startup or shell changes.
+ .
+ This developer preview does not establish desktop performance benefits.

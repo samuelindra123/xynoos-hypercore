@@ -1,0 +1,4 @@
+#!/bin/sh
+set -eu
+/usr/bin/xynoos --version --json | python3 -c 'import json,sys; v=json.load(sys.stdin); assert v["version"] == "0.1.0-preview.3" and not v["physical_kernel_mutation"]'
+/usr/bin/xynoos resources --json | python3 -c 'import json,sys; v=json.load(sys.stdin); assert v["schema_version"] == 1'

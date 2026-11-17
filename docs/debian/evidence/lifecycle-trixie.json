@@ -1,0 +1,58 @@
+{
+  "metadata_ownership_permissions": {
+    "status": "PASS",
+    "depends": "libc6 (>= 2.34), libgcc-s1 (>= 4.2)",
+    "files": [
+      "usr/bin/xynoos",
+      "usr/share/doc/xynoos-hypercore/Cargo.lock.gz",
+      "usr/share/doc/xynoos-hypercore/HARDWARE.md",
+      "usr/share/doc/xynoos-hypercore/LICENSE.gz",
+      "usr/share/doc/xynoos-hypercore/LIFECYCLE.md",
+      "usr/share/doc/xynoos-hypercore/MX-LINUX.md",
+      "usr/share/doc/xynoos-hypercore/PACKAGING.md.gz",
+      "usr/share/doc/xynoos-hypercore/RUST-STDLIB-NOTICES.gz",
+      "usr/share/doc/xynoos-hypercore/SECURITY.md",
+      "usr/share/doc/xynoos-hypercore/THIRD_PARTY_NOTICES.gz",
+      "usr/share/doc/xynoos-hypercore/changelog.Debian.gz",
+      "usr/share/doc/xynoos-hypercore/copyright",
+      "usr/share/doc/xynoos-hypercore/dependencies.json.gz",
+      "usr/share/doc/xynoos-hypercore/source.json",
+      "usr/share/lintian/overrides/xynoos-hypercore",
+      "usr/share/man/man1/xynoos.1.gz"
+    ]
+  },
+  "clean_install_dependency_resolution": {
+    "status": "PASS"
+  },
+  "footprint": {
+    "regular_file_bytes": 1338136,
+    "regular_file_allocated_bytes": 1372160,
+    "scope": "package regular files; excludes directories and dpkg database"
+  },
+  "unprivileged_execution_cli_and_manager_boundary": {
+    "status": "PASS"
+  },
+  "package_file_ownership": {
+    "status": "PASS"
+  },
+  "integrity_tamper_detection_and_reinstall": {
+    "status": "PASS"
+  },
+  "fixture_downgrade_refusal_explicit_downgrade_upgrade": {
+    "status": "PASS"
+  },
+  "remove_reinstall_purge_preserves_data": {
+    "status": "PASS"
+  },
+  "unpack_configure_recovery": {
+    "status": "PASS"
+  },
+  "dependency_failure_and_recovery": {
+    "status": "PASS"
+  },
+  "size": {
+    "deb_bytes": 492520,
+    "installed_kib": 1327,
+    "sha256": "d380eab92ba1ed01fc3bc8057068b5475f8a8f0ee6f319a9219beaa90a841183"
+  }
+}

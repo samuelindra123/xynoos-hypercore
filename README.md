@@ -15,6 +15,10 @@ Xynoos HyperCore is a Rust workspace investigating Linux resource telemetry, pol
 
 ## Install the developer preview
 
+Debian packaging for review is documented in [the Debian guide](docs/debian/PACKAGING.md).
+CI `.deb` artifacts are unsigned; see [the engineering report](docs/debian/REPORT.md)
+for tested status. The signed installation path below remains independent.
+
 Published Linux x86_64 preview. The public release installation lifecycle has been
 verified in disposable HOME directories on Ubuntu 24.04 Codespaces. Preview.3
 fixes permission failures reported on Debian 13 / Intel N5000; its normal HOME

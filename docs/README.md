@@ -14,3 +14,10 @@ Start with the [project overview and quick start](../README.md). The project is 
 | Contribute or find open work | [Contribution guidance](../README.md#direction-and-contributing) · [Open issues](https://github.com/samuelindra123/xynoos-hypercore/issues) |
 
 Historical reports and raw measurements remain in [`reports/`](reports/) and [`benchmarks/`](benchmarks/). Read each result with its environment and methodology; simulation evidence does not establish physical safety or desktop-wide benefit.
+
+## Debian packaging
+
+See [packaging and reproducible builds](debian/PACKAGING.md),
+[MX installation](debian/MX-LINUX.md), [lifecycle and recovery](debian/LIFECYCLE.md),
+[security](debian/SECURITY.md), [hardware acceptance](debian/HARDWARE.md), and
+[engineering evidence](debian/REPORT.md). Unsigned CI artifacts are not releases.
