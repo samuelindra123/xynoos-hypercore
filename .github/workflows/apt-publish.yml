@@ -32,6 +32,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
+          XYNOOS_APT_IMMUTABLE_RELEASES: ${{ vars.XYNOOS_APT_IMMUTABLE_RELEASES }}
         run: python3 repository/source-gate.py "$SOURCE_SHA" "$VERSION"
   build:
     needs: gate
@@ -102,6 +103,7 @@ jobs:
           XYNOOS_APT_PRIVATE_KEY: ${{ secrets.XYNOOS_APT_PRIVATE_KEY }}
           XYNOOS_APT_PASSPHRASE: ${{ secrets.XYNOOS_APT_PASSPHRASE }}
           XYNOOS_APT_FINGERPRINT: ${{ vars.XYNOOS_APT_FINGERPRINT }}
+          XYNOOS_APT_IMMUTABLE_RELEASES: ${{ vars.XYNOOS_APT_IMMUTABLE_RELEASES }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
         run: |

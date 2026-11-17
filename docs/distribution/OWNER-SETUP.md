@@ -12,13 +12,14 @@ The protected workflows now run `repository/check_signing_key.py` after import. 
 
 ## GitHub configuration
 
-**Current GitHub configuration (2026-11-17):** environment `apt-preview` has been created. Its custom deployment branch policy permits only `main`, and its required reviewer is the sole repository owner/collaborator (`samuelindra123`). Self-review prevention is disabled because there is no second collaborator; do not represent this as independent review. No secrets or fingerprint variable are configured. Before publication, verify this policy, add an independent authorized reviewer if one is available, and add only the approved production values below. PR validation receives no signing secrets.
+**Current GitHub configuration (2026-11-17):** environment `apt-preview` has been created. Its custom deployment branch policy permits only `main`, and its required reviewer is the sole repository owner/collaborator (`samuelindra123`). Self-review prevention is disabled because there is no second collaborator; do not represent this as independent review. No signing secrets or public fingerprint are configured. Repository-level immutable releases are enabled and read back as enabled. The repository variable `XYNOOS_APT_IMMUTABLE_RELEASES=enabled` is set only after that check; publication fails closed if the variable is absent. The release workflow uploads as a draft, verifies all asset bytes, then publishes and requires GitHub read-back `immutable=true`. Existing standalone previews remain untouched and currently report `immutable=false`. PR validation receives no signing secrets.
 
 | Name | Scope | Purpose |
 | --- | --- | --- |
 | XYNOOS_APT_PRIVATE_KEY | apt-preview environment secret | ASCII-armored private signing subkey export, including public primary key/stub |
 | XYNOOS_APT_PASSPHRASE | apt-preview environment secret | Strong signing-key passphrase; must be nonempty |
 | XYNOOS_APT_FINGERPRINT | repository Actions variable | Independently approved full primary fingerprint; public pin used by both apt-preview and github-pages jobs |
+| XYNOOS_APT_IMMUTABLE_RELEASES | repository Actions variable | `enabled` only after repository immutable-release setting is verified; required by source and release publication gates |
 
 Use GitHub's secret form or `gh secret set XYNOOS_APT_PRIVATE_KEY --env apt-preview < PRIVATE_EXPORT`. Set `XYNOOS_APT_PASSPHRASE` through the hidden interactive secret prompt (never a literal command argument or shell history). Set the public variable using `gh variable set XYNOOS_APT_FINGERPRINT --body FULL_FINGERPRINT`. Do not configure differing environment overrides for that pin. The original `XYNOOS_RELEASE_SIGNING_KEY`, if later configured, belongs to the standalone Ed25519 pipeline and is independent.
 
@@ -26,7 +27,7 @@ Keep Pages source **GitHub Actions**. The existing github-pages environment is u
 
 As of 2026-11-17, `main` has active branch protection: PR required, one approval required after the last push, required current validation checks, stale review dismissal, conversation resolution, admin enforcement, and force-push/deletion disabled. Active repository rulesets protect `debian/*` tags from update/deletion and `distribution/apt-history` from non-fast-forward/deletion; both have no bypass actors. Preserve these settings. The remaining human review action is to obtain an independent security reviewer and the required PR #40 approval; this internal assessment does not satisfy either requirement.
 
-Before publication, enable GitHub immutable releases where the repository supports them. Do not add Actions or maintainers as protection bypasses. Workflow checks reject routine duplicate-version/tag writes and use normal fast-forward pushes, but repository code cannot prevent an owner/admin from editing release assets or changing repository settings. Include these controls in the periodic archive recovery/retention review tracked by [#43](https://github.com/samuelindra123/xynoos-hypercore/issues/43).
+Do not disable repository immutable releases or change the `XYNOOS_APT_IMMUTABLE_RELEASES` gate. Do not add Actions or maintainers as protection bypasses. Workflow checks reject routine duplicate-version/tag writes and use normal fast-forward pushes, but repository code cannot prevent an owner/admin from changing repository settings. Include these controls in the periodic archive recovery/retention review tracked by [#43](https://github.com/samuelindra123/xynoos-hypercore/issues/43).
 
 Stable is intentionally **not enabled**. A later stable channel must have its own protected environment, signing identity/approval policy, suite metadata and acceptance checks; the preview workflow hard-rejects stable versions. Do not repurpose preview as stable.
 

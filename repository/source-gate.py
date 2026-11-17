@@ -11,6 +11,8 @@ from archive import require, run
 sha, version = sys.argv[1:]
 require(re.fullmatch(r'[0-9a-f]{40}', sha), 'Full exact commit required')
 require(os.environ['GITHUB_REF'] == 'refs/heads/main', 'Publication only from main')
+require(os.environ.get('XYNOOS_APT_IMMUTABLE_RELEASES') == 'enabled',
+        'Owner must verify GitHub immutable releases and set XYNOOS_APT_IMMUTABLE_RELEASES=enabled')
 require(sha == os.environ['GITHUB_SHA'] == run('git', 'rev-parse', 'HEAD').decode().strip(),
         'Workflow attestation and source SHA must be identical; select current main')
 require(re.fullmatch(r'\d+\.\d+\.\d+~preview\.\d+-\d+', version), 'Preview Debian version required')
