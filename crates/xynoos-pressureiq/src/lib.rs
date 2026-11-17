@@ -147,6 +147,7 @@ pub fn parse_vmstat(input: &str) -> Result<VmStat, Error> {
         let mut f = line.split_whitespace();
         let Some(k) = f.next() else { continue };
         if !(matches!(k, "pgfault" | "pgmajfault" | "pswpin" | "pswpout")
+            || k.starts_with("allocstall")
             || k.starts_with("pgscan_")
             || k.starts_with("pgsteal_")
             || k.starts_with("workingset_refault_"))
@@ -482,3 +483,7 @@ pub mod system;
 
 pub mod cgroup_pressure;
 pub mod workload;
+
+pub mod intelligence;
+
+pub mod hardware;

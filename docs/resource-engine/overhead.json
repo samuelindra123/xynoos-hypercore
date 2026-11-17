@@ -1,0 +1,310 @@
+{
+  "environment": "Linux-6.12.117+deb13-amd64-x86_64-with-glibc2.41",
+  "count": 20,
+  "limitations": [
+    "Process peak includes startup; no idle daemon.",
+    "No induced pressure; not N5000 evidence."
+  ],
+  "results": {
+    "resources": {
+      "samples": [
+        {
+          "wall_ms": 32.828446999701555,
+          "cpu_ms": 13.366,
+          "peak_rss_kib": 12692,
+          "hardware_collection_ms": 6.903199
+        },
+        {
+          "wall_ms": 21.552676998908282,
+          "cpu_ms": 12.401,
+          "peak_rss_kib": 13132,
+          "hardware_collection_ms": 12.682406
+        },
+        {
+          "wall_ms": 21.877784000025713,
+          "cpu_ms": 13.011999999999999,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 13.329893
+        },
+        {
+          "wall_ms": 25.922054999682587,
+          "cpu_ms": 13.27,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 15.821122
+        },
+        {
+          "wall_ms": 15.230894998239819,
+          "cpu_ms": 12.546,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 6.73756
+        },
+        {
+          "wall_ms": 12.758636999933515,
+          "cpu_ms": 11.965,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 5.34918
+        },
+        {
+          "wall_ms": 20.33759400001145,
+          "cpu_ms": 12.56,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 8.010062
+        },
+        {
+          "wall_ms": 13.608844999907888,
+          "cpu_ms": 12.517,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 5.233828
+        },
+        {
+          "wall_ms": 12.806388000171864,
+          "cpu_ms": 11.658,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 5.17189
+        },
+        {
+          "wall_ms": 13.943246000053477,
+          "cpu_ms": 11.709999999999999,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 6.539392
+        },
+        {
+          "wall_ms": 12.453936000383692,
+          "cpu_ms": 11.203999999999999,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 5.490395
+        },
+        {
+          "wall_ms": 12.20882399866241,
+          "cpu_ms": 11.344,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 5.246884
+        },
+        {
+          "wall_ms": 13.013615000090795,
+          "cpu_ms": 11.796,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 5.71122
+        },
+        {
+          "wall_ms": 13.421055000435445,
+          "cpu_ms": 10.895999999999999,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 6.60706
+        },
+        {
+          "wall_ms": 12.499731999923824,
+          "cpu_ms": 11.235999999999999,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 5.799588
+        },
+        {
+          "wall_ms": 12.65319400044973,
+          "cpu_ms": 11.202,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 5.088274
+        },
+        {
+          "wall_ms": 12.474138999095885,
+          "cpu_ms": 11.019999999999998,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 4.817393
+        },
+        {
+          "wall_ms": 12.265091001609107,
+          "cpu_ms": 10.85,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 4.724976
+        },
+        {
+          "wall_ms": 11.843715999930282,
+          "cpu_ms": 10.872,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 5.073247
+        },
+        {
+          "wall_ms": 11.392256999897654,
+          "cpu_ms": 10.570999999999998,
+          "peak_rss_kib": 13260,
+          "hardware_collection_ms": 4.929269
+        }
+      ],
+      "summary": {
+        "wall_ms": {
+          "min": 11.392256999897654,
+          "median": 12.91000150013133,
+          "max": 32.828446999701555,
+          "stdev": 5.743357547821429
+        },
+        "cpu_ms": {
+          "min": 10.570999999999998,
+          "median": 11.684,
+          "max": 13.366,
+          "stdev": 0.8610184667009183
+        },
+        "peak_rss_kib": {
+          "min": 12692,
+          "median": 13260.0,
+          "max": 13260,
+          "stdev": 128.71576192689477
+        },
+        "hardware_collection_ms": {
+          "min": 4.724976,
+          "median": 5.6008075,
+          "max": 15.821122,
+          "stdev": 3.1692848468812067
+        }
+      }
+    },
+    "memory --interval-ms 100": {
+      "samples": [
+        {
+          "wall_ms": 104.41710899976897,
+          "cpu_ms": 3.9559999999999995,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 104.09194299973024,
+          "cpu_ms": 3.748,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 104.66328599977714,
+          "cpu_ms": 3.757,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 113.18739900161745,
+          "cpu_ms": 4.673,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 113.18027500055905,
+          "cpu_ms": 4.938,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 112.03668900088815,
+          "cpu_ms": 4.639,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 112.55466499824252,
+          "cpu_ms": 4.621,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 106.12754700014193,
+          "cpu_ms": 4.5760000000000005,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 106.5260909999779,
+          "cpu_ms": 4.6499999999999995,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 105.84275700057333,
+          "cpu_ms": 4.5,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 107.02226699868334,
+          "cpu_ms": 4.601,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 107.25215400088928,
+          "cpu_ms": 4.503,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 104.50793900054123,
+          "cpu_ms": 4.0889999999999995,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 104.92837699894153,
+          "cpu_ms": 4.247,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 104.5733899991319,
+          "cpu_ms": 4.122,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 104.11409600055777,
+          "cpu_ms": 3.7619999999999996,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 105.0186720003694,
+          "cpu_ms": 3.8289999999999997,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 104.22257599930163,
+          "cpu_ms": 3.8539999999999996,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 104.61405600108264,
+          "cpu_ms": 3.819,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        },
+        {
+          "wall_ms": 104.75415299879387,
+          "cpu_ms": 3.9629999999999996,
+          "peak_rss_kib": 13412,
+          "hardware_collection_ms": 0.0
+        }
+      ],
+      "summary": {
+        "wall_ms": {
+          "min": 104.09194299973024,
+          "median": 104.97352449965547,
+          "max": 113.18739900161745,
+          "stdev": 3.250501507250773
+        },
+        "cpu_ms": {
+          "min": 3.748,
+          "median": 4.1845,
+          "max": 4.938,
+          "stdev": 0.39203816610658027
+        },
+        "peak_rss_kib": {
+          "min": 13412,
+          "median": 13412.0,
+          "max": 13412,
+          "stdev": 0.0
+        },
+        "hardware_collection_ms": {
+          "min": 0.0,
+          "median": 0.0,
+          "max": 0.0,
+          "stdev": 0.0
+        }
+      }
+    }
+  }
+}

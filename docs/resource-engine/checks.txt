@@ -1,0 +1,7 @@
+Cloud validation 2026-11-17
+Workspace tests: 106 passed; 1 privileged test ignored
+Strict Clippy: passed
+Release workspace build: passed
+Python distribution tests outside sandbox: 41 passed
+Physical hardware: not tested
+CI at 76d8c820819ab64fc2284b052ea4c6973ad5a7d4: Phase 5 validation 44034423440 passed; CLI/distribution/musl validation 44034423432 passed
