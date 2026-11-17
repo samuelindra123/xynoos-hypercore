@@ -115,7 +115,7 @@ def main():
                              ["system", "snapshot", "--json"], ["memory", "--interval-ms", "100"],
                              ["diagnose", "--count", "2", "--interval-ms", "100", "--json"]):
                     # Execute as nobody, with the test HOME inaccessible; stdout must still work.
-                    v = json.loads(command("/usr/sbin/runuser", "-u", "nobody", "--", "/usr/bin/xynoos", *argv, env=env).stdout)
+                    v = json.loads(command("/usr/sbin/runuser", "--preserve-environment", "-u", "nobody", "--", "/usr/bin/xynoos", *argv, env=env).stdout)
                     require(v["schema_version"] == 1, "Wrong JSON schema")
                     if argv[0] == "--version":
                         installed = Path("/usr/share/doc/xynoos-hypercore/source.json")

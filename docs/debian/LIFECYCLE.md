@@ -66,3 +66,5 @@ read-only at `/work`, extracted artifacts read-only at `/artifacts`, and an empt
 results directory at `/results`; run `bash /work/packaging/ci-lifecycle.sh trixie`.
 No privileged container is needed for lifecycle tests. The script's APT source
 changes are confined to the disposable container. Never run that script on a host.
+The test removes the official slim image's dpkg documentation exclusion so the
+full archive, including provenance and manuals, is installed and measured.
