@@ -6,7 +6,7 @@ The numbers and unavailable-active statements below describe this earlier cycle.
 
 Implemented and executed a real bounded userspace workload A/B harness. Baseline
 and live observe arms are **GO for operator-run validation**. Active optimization
-is **NO-GO / unavailable**; physical kernel mutation remains locked. The only
+is **NO-GO / unavailable**; physical kernel mutation remains locked. The only;
 production runtime optimization is lower-allocation observation report generation.
 No physical desktop improvement or production readiness is established.
 

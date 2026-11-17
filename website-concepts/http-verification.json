@@ -1,0 +1,74 @@
+[
+  {
+    "concept": "A",
+    "port": 4101,
+    "preview_url": "https://humble-space-tribble-v6rp7jg554jw3xw7w-4101.app.github.dev/",
+    "visibility": "private",
+    "local_and_authenticated_preview_requests": 26,
+    "all_status_200": true,
+    "all_bodies_match_files": true,
+    "internal_anchors_valid": true,
+    "assets": [
+      "assets/font-0.ttf",
+      "assets/font-1.ttf",
+      "assets/font-2.ttf",
+      "assets/font-3.ttf",
+      "assets/font-4.ttf",
+      "assets/font-5.ttf",
+      "assets/font-6.ttf",
+      "assets/font-7.ttf",
+      "assets/font-8.ttf",
+      "assets/mark.svg",
+      "script.js",
+      "styles.css"
+    ]
+  },
+  {
+    "concept": "B",
+    "port": 4102,
+    "preview_url": "https://humble-space-tribble-v6rp7jg554jw3xw7w-4102.app.github.dev/",
+    "visibility": "private",
+    "local_and_authenticated_preview_requests": 26,
+    "all_status_200": true,
+    "all_bodies_match_files": true,
+    "internal_anchors_valid": true,
+    "assets": [
+      "assets/font-0.ttf",
+      "assets/font-1.ttf",
+      "assets/font-2.ttf",
+      "assets/font-3.ttf",
+      "assets/font-4.ttf",
+      "assets/font-5.ttf",
+      "assets/font-6.ttf",
+      "assets/font-7.ttf",
+      "assets/font-8.ttf",
+      "assets/mark.svg",
+      "script.js",
+      "styles.css"
+    ]
+  },
+  {
+    "concept": "C",
+    "port": 4103,
+    "preview_url": "https://humble-space-tribble-v6rp7jg554jw3xw7w-4103.app.github.dev/",
+    "visibility": "private",
+    "local_and_authenticated_preview_requests": 26,
+    "all_status_200": true,
+    "all_bodies_match_files": true,
+    "internal_anchors_valid": true,
+    "assets": [
+      "assets/font-0.ttf",
+      "assets/font-1.ttf",
+      "assets/font-2.ttf",
+      "assets/font-3.ttf",
+      "assets/font-4.ttf",
+      "assets/font-5.ttf",
+      "assets/font-6.ttf",
+      "assets/font-7.ttf",
+      "assets/font-8.ttf",
+      "assets/mark.svg",
+      "script.js",
+      "styles.css"
+    ]
+  }
+]

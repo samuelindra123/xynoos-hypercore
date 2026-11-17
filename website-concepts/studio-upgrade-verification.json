@@ -1,0 +1,21 @@
+{
+  "preview": "https://humble-space-tribble-v6rp7jg554jw3xw7w-4102.app.github.dev/",
+  "original_preview": "https://humble-space-tribble-v6rp7jg554jw3xw7w-4102.app.github.dev/backup-original/",
+  "visibility": "private",
+  "http_checks_passed": 54,
+  "backup_sha256_files_verified": 16,
+  "javascript_syntax": "passed",
+  "html_structure": "passed",
+  "studio_interaction_assertions": 29,
+  "browser_rendering": "Not performed, as requested by the user.",
+  "system_film_assertions": 66,
+  "system_film_scenes": [
+    "overview",
+    "cpu",
+    "ram",
+    "gpu",
+    "reason",
+    "safety"
+  ],
+  "system_film_url": "https://humble-space-tribble-v6rp7jg554jw3xw7w-4102.app.github.dev/#system-film"
+}
