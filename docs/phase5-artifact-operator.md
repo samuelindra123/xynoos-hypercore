@@ -13,11 +13,12 @@ readelf -h xynoos-cli
 ldd xynoos-cli
 readelf --version-info xynoos-cli
 chmod +x xynoos-cli
-./xynoos-cli
+./xynoos-cli memory --interval-ms 100
+./xynoos-cli system snapshot --json
 ```
 
-The audited Phase 5 CLI does not support top-level `--help` or `--version`; the no-argument invocation is its smoke test.
+The audited Phase 5 CLI does not support top-level `--help` or `--version`. The workflow validates the memory and system JSON contracts; its cloud diagnostic samples are not included in the artifact.
 
-On MX Linux, transfer and extract the artifact, verify its checksum, and run the commands above on the x86_64 machine. Check that its installed glibc and libraries meet the recorded requirements before running the binary. Artifact downloads may not preserve executable permissions, hence `chmod +x`.
+On MX Linux, transfer and extract the artifact, verify its checksum, and run the commands above on the x86_64 machine. Check `ldd --version` and `ldd xynoos-cli` against the glibc versions and dynamic dependencies recorded in `build-info.json`; resolve missing libraries before running the binary. Run the memory and system commands on the physical N5000 and retain those locally collected results as physical validation evidence. Artifact downloads may not preserve executable permissions, hence `chmod +x`.
 
 A successful cloud build and smoke test does not validate operation, compatibility, or performance on the physical N5000; those require separate testing on that machine.

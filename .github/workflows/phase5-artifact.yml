@@ -19,10 +19,18 @@ jobs:
       CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
     steps:
       - name: Check out selected source
+        id: source
         uses: actions/checkout@v4
         with:
           ref: ${{ inputs.source_ref }}
           persist-credentials: false
+      - name: Record resolved source
+        env:
+          CHECKOUT_COMMIT: ${{ steps.source.outputs.commit }}
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$CHECKOUT_COMMIT"
+          printf "%s\n" "$CHECKOUT_COMMIT" > /tmp/xynoos-source-commit
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -43,8 +51,23 @@ jobs:
           ldd "$binary" | tee /tmp/xynoos-ldd.txt
           ! grep -q 'not found' /tmp/xynoos-ldd.txt
           readelf --version-info "$binary" | tee /tmp/xynoos-versions.txt
-          # Phase 5 has no top-level --version or --help.
-          "$binary"
+          "$binary" memory --interval-ms 100 > /tmp/xynoos-memory.json
+          "$binary" system snapshot --json > /tmp/xynoos-system.json
+          python3 - <<'PY'
+          import json
+          with open('/tmp/xynoos-memory.json') as f:
+              memory = json.load(f)
+          assert isinstance(memory, dict) and memory.get('schema_version') == 1
+          for key in ('evidence', 'diagnosis', 'aura'):
+              assert isinstance(memory.get(key), dict), f'missing or invalid {key}'
+          with open('/tmp/xynoos-system.json') as f:
+              system = json.load(f)
+          assert isinstance(system, dict) and system.get('schema_version') == 1
+          assert isinstance(system.get('readings'), dict) and system['readings']
+          assert isinstance(system.get('sequential'), bool)
+          print('Memory and system JSON smoke tests passed')
+          PY
+          test "$(git rev-parse HEAD)" = "$(cat /tmp/xynoos-source-commit)"
           mkdir -p artifact
           cp "$binary" artifact/xynoos-cli
           (cd artifact && sha256sum xynoos-cli > SHA256SUMS && sha256sum -c SHA256SUMS)
@@ -55,7 +78,7 @@ jobs:
           def read(path):
               return pathlib.Path(path).read_text()
           info = {
-              'source_commit': command('git', 'rev-parse', 'HEAD'),
+              'source_commit': read('/tmp/xynoos-source-commit').strip(),
               'rust_version': command('rustc', '--version', '--verbose'),
               'target': 'x86_64-unknown-linux-gnu',
               'runner_os': command('uname', '-a'),
