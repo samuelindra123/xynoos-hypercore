@@ -48,6 +48,11 @@ fn stale_bounds_and_unsafe_targets_are_declined() {
 #[test]
 fn telemetry_errors_are_not_accepted() {
     let mut s = collect_system();
+    // Isolate meminfo from hosts where PSI is unavailable or restricted.
+    s.memory.psi.result = Ok(xynoos_pressureiq::parse_psi(
+        "some avg10=0 avg60=0 avg300=0 total=0\nfull avg10=0 avg60=0 avg300=0 total=0",
+    )
+    .unwrap());
     s.memory.mem.result = Err(xynoos_pressureiq::Error::Permission);
     let audit = prepare(
         &s,
