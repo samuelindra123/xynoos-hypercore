@@ -30,11 +30,13 @@ Cloud environment:
 - New CLI contract test verifies read-only plans, source/unit/error values and refusal of an apply option. No system service is installed/enabled by checks.
 - Build logs/check summaries and benchmark data are retained under this directory. Existing Cargo example basename collisions produce warnings; they predate this work and do not fail checks.
 
-CI: the integrated PR runs existing CLI/distribution/musl checks plus Phase 5 formatting, workspace tests, strict Clippy, release build and resources smoke. CI completion is recorded separately after remote execution; local success is not called CI success. Release signing/publication and website deployment are not triggered intentionally.
+CI: the integrated PR runs existing CLI/distribution/musl checks plus Phase 5 formatting, workspace tests, strict Clippy, release build and resources smoke. At source 76d8c820819ab64fc2284b052ea4c6973ad5a7d4, both PR workflows passed: [Phase 5 validation](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44034423440) and [CLI/distribution/musl validation](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44034423432). The latter includes Python distribution tests, static musl build and bounded product diagnostics. Release signing/publication and website deployment are not triggered intentionally.
 
 Physical hardware: none tested during this mission. N5000/UHD 605 driver exposure, battery behavior, thermal counters, i915 PMU access and Debian/MX physical compatibility remain unverified. Use DISTRIBUTION.md for acceptance steps.
 
 ## Performance scope
+
+Measured resources median: 12.91 ms wall, 11.68 ms CPU, 5.60 ms hardware collection; wall range 11.39–32.83 ms, standard deviation 5.74 ms. Memory median: 104.97 ms wall including sleep, 4.18 ms CPU. Per-child RSS high-water was 13,260 KiB for resources and 13,412 KiB for memory, subject to the inherited-page caveat below.
 
 overhead.json contains 20 samples per release CLI command with per-child wait4 CPU time, wall time, peak RSS, and min/median/max/sample standard deviation. Run python3 scripts/resource-overhead.py after the release build. Hardware collection is measured inside the command. The memory command includes a 100 ms sleep and must not be compared directly to collection time. Per-child peak RSS may include inherited pre-exec pages; it is not steady-state RSS.
 
