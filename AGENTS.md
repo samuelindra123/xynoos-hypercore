@@ -1,0 +1,13 @@
+# Xynoos engineering rules
+
+Completed work must be committed, pushed and independently verified on GitHub. Never leave a completed local-only task. Create every new PR open and Ready for Review (`draft=false`); convert sufficiently implemented surviving drafts to Ready. PR descriptions must explain behavior/implementation, validation evidence and remaining limitations. Search issues before documenting every blocker or owner action; reuse existing issues where appropriate.
+
+Use normal protected PR operations. Never force-push, rewrite shared history, delete existing branches, bypass protection or merge unfinished/failing work. Close only genuinely superseded PRs, with exact replacement commits and preserved evidence. Verify actual heads, bases, reviews, unresolved threads and checks before merge decisions. Only claim a push, merge, test or publication after independent read-back.
+
+Preserve the standalone signed installer, its pinned Ed25519 trust anchor, branding, Studio and immutable release history. Debian builds use the debian-package feature and APT/dpkg authority; standalone builds use private user paths. Never allow either installation manager to overwrite foreign files. Do not enable services or mutate global kernel/swap/ZRAM/CPU/GPU settings as a packaging side effect.
+
+Production APT metadata requires a dedicated approved OpenPGP identity, protected environment secrets and an independently pinned public fingerprint. Never commit/log/upload private keys or publish unsigned fallback metadata. If signing configuration is absent, push implementation and document the exact owner setup in issues. Preview is not stable. Retain package/history bytes; new bytes require a new version. Use exact-source builds and independently verify attestations before release publication.
+
+The only Pages deployment must combine current Studio at root with verified retained /apt history. A missing state branch must not erase a live archive. Public HTTP read-back is required before claiming deployment or promoting installation commands. Wiki sources live in docs/wiki and must also be pushed to the actual Wiki when initialized/authorized; never claim local sources mean published pages.
+
+Run heavy builds on GitHub Actions. Destructive package lifecycle tests run only in explicitly disposable Debian containers, never on the owner's physical laptop. Keep implemented, CI/cloud/physical-tested, not-implemented and not-verified statuses distinct. Never claim proven N5000/desktop gains, universal GPU support or production readiness without evidence. See docs/distribution/OWNER-SETUP.md and REPORT.md plus the live tracking issues.

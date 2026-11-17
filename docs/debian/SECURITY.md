@@ -1,5 +1,16 @@
 # Privilege and distribution trust
 
+## Current distribution status
+
+The native APT publication design and protected workflows are proposed in
+[PR #40](https://github.com/samuelindra123/xynoos-hypercore/pull/40). The PR is
+not yet merged and the public APT archive and Debian GitHub release do not yet
+exist. Current package CI uses disposable test keys; these are not production
+signing credentials. See the [distribution report](../distribution/REPORT.md)
+and its [internal security assessment](../distribution/SECURITY-ASSESSMENT.md)
+for current evidence and owner gates. The internal assessment is not an
+independent external audit or approval.
+
 The package has no maintainer scripts, capabilities, setuid files, daemon,
 Polkit rules, kernel/module/sysctl settings, swap/ZRAM changes, CPU/GPU controls,
 desktop startup or shell changes. APT/dpkg needs root to write system files;
@@ -21,17 +32,17 @@ retain that behavior. Debian builds are separate artifacts with different bytes
 and dynamic linkage. The old manifest verifier requires the musl target; it must
 not be pointed at a `.deb`. A checksum beside a file is not authentication.
 
-Current CI artifacts are unsigned review outputs. `.changes` and `.buildinfo` are
-also unsigned (`-us -uc`). Workflow identity, source commit and hashes support
-inspection but do not make them a release. No release, tag, APT repository or
-signature is created by this change.
+The original Debian package implementation produced unsigned CI review outputs;
+`.changes` and `.buildinfo` were also unsigned (`-us -uc`). Workflow identity,
+source commit and hashes support inspection but do not by themselves make those
+outputs authenticated releases. PR #40 adds a separate release-attestation and
+APT-signing path; it is not active on `main` until that PR is normally merged.
 
-Future distribution needs a separately reviewed trust design: either an APT
-repository whose InRelease/Release signatures bind Packages indexes and `.deb`
-hashes to a pinned repository key, or a versioned manifest explicitly covering
-the `.deb` architecture, version, byte size, SHA256 and source, authenticated by
-the existing Ed25519 key under a new reviewed schema. Pin keys independently,
-document rotation/revocation, archive matching source, and verify before root
-installation. Do not extend the current manifest silently or call it compatible.
-Future publication must require reviewed source and passing gates. Installing a
-local file with APT does not authenticate its origin.
+The APT design in PR #40 signs `InRelease` and `Release.gpg`; the signed Release
+binds package indexes and package SHA256 values to a dedicated, independently
+pinned OpenPGP fingerprint. GitHub OIDC attestations authenticate build
+provenance separately. The existing standalone Ed25519 manifest does not cover
+`.deb` files and must not be reused for them or described as compatible. Keep
+key rotation/revocation and archive recovery under the owner procedure. Verify
+production signatures and public bytes before any root installation. Installing
+a local file with APT does not authenticate its origin.

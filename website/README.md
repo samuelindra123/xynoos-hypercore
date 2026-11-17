@@ -31,7 +31,7 @@ Checks cover HTML structure, CSS parsing, JavaScript syntax, asset bytes over HT
 
 ## Deployment
 
-`.github/workflows/studio-pages.yml` validates website-only PRs. A push to `main` uploads only `website/` as a Pages artifact and deploys through the `github-pages` environment. PRs never deploy. Action versions are pinned; validation has only `contents: read`, while the deployment job has `pages: write` and `id-token: write`.
+`.github/workflows/studio-pages.yml` validates website-only PRs. A push to `main` assembles byte-identical `website/` content with the verified retained archive from `distribution/apt-history` under `/apt/`, then deploys one Pages artifact through `github-pages`. The same reusable workflow handles APT publication/promotion/renewal. One global Pages concurrency group prevents competing deployment paths. Missing history cannot erase an already public archive. Public read-back checks Studio, assets, signatures and all retained package digests. First APT publication remains pending dedicated signing setup (#36). PRs never deploy. Action versions are pinned; validation has only `contents: read`, while the deployment job has `pages: write` and `id-token: write`.
 
 One-time repository setting: **Settings → Pages → Build and deployment → Source: GitHub Actions**. If a token cannot enable Pages (HTTP 403), a repository administrator must select this setting, then run **Actions → Xynoos Studio Pages → Run workflow → main**, or re-run the failed deployment. A workflow file alone does not enable Pages.
 

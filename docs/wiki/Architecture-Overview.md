@@ -1,0 +1,7 @@
+# Architecture Overview
+
+**Experimental preview.** Implemented capabilities and test evidence are described separately. Physical N5000 performance gains, complete GPU support and production readiness are **not verified**. Native APT publication is **BLOCKED** on [signing setup](https://github.com/samuelindra123/xynoos-hypercore/issues/36); Wiki publication is tracked in [#37](https://github.com/samuelindra123/xynoos-hypercore/issues/37). These maintained sources do not claim a live Wiki or APT endpoint.
+
+The workspace separates contracts/storage, telemetry, policy, control research and consumers. `xynoos-core` supplies shared types; HyperMemory owns cooperating private buffers; PressureIQ reads Linux evidence; AURA and decision modules produce deterministic research recommendations; linux-control contains gated experimental APIs; CLI/bench are consumers.
+
+Current resource intelligence flows from bounded observation → diagnosis → read-only recommendation → preparation rejection when no backend exists. Hardware adapter responsibilities do not imply writable CPU/GPU tuning. See [architecture](https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/ARCHITECTURE.md) and [resource-engine implementation report](https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/resource-engine/https://github.com/samuelindra123/xynoos-hypercoreRT.md). PR14/15's old larger engine and control-session stack remains unmerged under #38; do not treat it as the current package architecture.

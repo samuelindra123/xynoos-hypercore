@@ -21,3 +21,7 @@ See [packaging and reproducible builds](debian/PACKAGING.md),
 [MX installation](debian/MX-LINUX.md), [lifecycle and recovery](debian/LIFECYCLE.md),
 [security](debian/SECURITY.md), [hardware acceptance](debian/HARDWARE.md), and
 [engineering evidence](debian/REPORT.md). Unsigned CI artifacts are not releases.
+
+## Distribution ecosystem and developer Wiki
+
+[Installation channels/status](distribution/INSTALLATION.md) · [Owner signing setup](distribution/OWNER-SETUP.md) · [Archive maintenance](distribution/MAINTENANCE.md) · [Validation report](distribution/REPORT.md) · [25 maintained Wiki pages](wiki/Home.md). Public APT and Wiki publication remain explicitly pending until verified.
