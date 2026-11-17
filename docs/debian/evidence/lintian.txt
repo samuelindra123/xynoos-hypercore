@@ -1,0 +1,3 @@
+N: This is an upstream CI package, not an upload to the Debian archive. No
+N: Debian ITP bug exists, so claiming a Closes number would be false.
+O: xynoos-hypercore: initial-upload-closes-no-bugs [usr/share/doc/xynoos-hypercore/changelog.Debian.gz:1]

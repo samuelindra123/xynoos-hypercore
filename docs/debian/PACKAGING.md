@@ -22,10 +22,10 @@ Cargo, GPU library or systemd is required at runtime. The optional build feature
 
 The source uses `Option::is_none_or` (Rust 1.82). Locked dependencies declare
 requirements at or below that level. Rust 1.82 tests and release builds passed in
-CI and the manifests declare it. Trixie's packaged 1.85.1 is suitable in principle; Bookworm's 1.63
+CI and the manifests declare it. Trixie's packaged 1.85.1 passed clean builds; Bookworm's 1.63
 cannot compile this source or parse the v4 lockfile. Do not replace the system
 compiler or install rustup on the target desktop. Build on Trixie. Bookworm runtime
-tests are separate from build support. CI also validates the existing 1.100.0
+tests passed and are separate from build support. CI also validates the existing 1.100.0
 toolchain; the signed release workflow is untouched.
 
 Sources: [Trixie rustc](https://packages.debian.org/trixie/rustc),

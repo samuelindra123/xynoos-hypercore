@@ -34,12 +34,12 @@ def main():
         raise SystemExit("Output must be outside the checkout")
     out.mkdir(parents=True, exist_ok=False)
     commit = run("git", "rev-parse", "HEAD", cwd=root, text=True).strip()
-    epoch = int(run("git", "show", "-s", "--format=%ct", "HEAD", cwd=root))
-    cargo = tomllib.loads((root / "crates/xynoos-cli/Cargo.toml").read_text())
+    epoch = int(run("git", "show", "-s", "--format=%ct", commit, cwd=root))
+    cargo = tomllib.loads(run("git", "show", commit + ":crates/xynoos-cli/Cargo.toml", cwd=root, text=True))
     version = debian_version(cargo["package"]["version"])
     tree = out / f"xynoos-hypercore-{version}"
     tree.mkdir()
-    with tarfile.open(fileobj=io.BytesIO(run("git", "archive", "HEAD", cwd=root))) as archive:
+    with tarfile.open(fileobj=io.BytesIO(run("git", "archive", commit, cwd=root))) as archive:
         archive.extractall(tree, filter="data")
     lock_before = (tree / "Cargo.lock").read_bytes()
     config = run("cargo", "vendor", "--locked", "--versioned-dirs", "vendor", cwd=tree, text=True)

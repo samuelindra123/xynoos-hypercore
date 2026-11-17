@@ -285,7 +285,7 @@ pub fn run(args: &[String]) -> Result<bool, Box<dyn Error>> {
     }
     #[cfg(feature = "debian-package")]
     if matches!(command, "update" | "rollback" | "uninstall") {
-        return Err("Managed by dpkg/APT: use apt install, apt install --allow-downgrades, or apt remove xynoos-hypercore; see /usr/share/doc/xynoos-hypercore/LIFECYCLE.md.gz".into());
+        return Err("Managed by dpkg/APT: use apt install, apt install --allow-downgrades, or apt remove xynoos-hypercore; see /usr/share/doc/xynoos-hypercore/".into());
     }
     #[cfg(not(feature = "debian-package"))]
     if matches!(command, "update" | "rollback" | "uninstall") {

@@ -2,9 +2,9 @@
 
 | Environment | Status |
 |---|---|
-| Debian 13 amd64 | Target; see REPORT.md and CI for actual results |
+| Debian 13 amd64 | PASS: clean build and container lifecycle; no desktop validation |
 | MX based on Debian 13 amd64 | NOT TESTED; init-independent design only |
-| Debian 12 amd64 | Runtime candidate; stock compiler unsupported; see CI |
+| Debian 12 amd64 | PASS: container lifecycle; stock compiler unsupported |
 | Other Debian derivatives | NOT TESTED |
 | ARM/arm64, i386 and other architectures | NOT TESTED and not declared |
 | N5000 / UHD 605 / 4 GB | NOT TESTED for this package |
