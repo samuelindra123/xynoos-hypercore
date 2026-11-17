@@ -14,6 +14,7 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+          fetch-depth: 2
       - name: Install Debian index and signature verification utilities
         run: sudo apt-get update && sudo apt-get install -y apt-utils gnupg
       - name: Actual signature/APT chain and adversarial archive tests

@@ -5,7 +5,7 @@ test -f /.dockerenv
 test "$(dpkg --print-architecture)" = amd64
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends python3 gnupg apt-utils ca-certificates curl
+apt-get install -y --no-install-recommends python3 gnupg apt-utils ca-certificates curl util-linux
 rm -f /etc/dpkg/dpkg.cfg.d/docker
 work=$(mktemp -d)
 chmod 755 "$work"
@@ -54,7 +54,10 @@ test "$(dpkg-query -W -f='${Version}' xynoos-hypercore)" = "$version"
 /usr/bin/xynoos --version --json
 /usr/bin/xynoos doctor --json
 # APT authority: package CLI cannot invoke the standalone update manager.
-if /usr/bin/xynoos update; then echo 'Package manager authority failure'; exit 1; fi
+for operation in update rollback uninstall; do
+  if /usr/bin/xynoos "$operation"; then echo 'Package manager authority failure'; exit 1; fi
+done
+setpriv --reuid=65534 --regid=65534 --clear-groups python3 /work/repository/coexistence.py
 if test -n "$older"; then
   if apt-get install -y "xynoos-hypercore=$older"; then echo 'Unapproved downgrade accepted'; exit 1; fi
   apt-get install -y --allow-downgrades "xynoos-hypercore=$older"
@@ -63,6 +66,11 @@ if test -n "$older"; then
 fi
 apt-get purge -y xynoos-hypercore
 test ! -e /usr/bin/xynoos
+# APT itself must reject changed package bytes authenticated by the signed index.
+package=$(find "$work/apt/pool" -name "*_${version}_amd64.deb")
+test -n "$package"
+printf x >> "$package"
+if (cd "$work" && apt-get download "xynoos-hypercore=$version"); then echo 'Modified package accepted'; exit 1; fi
 # Signature chain must fail if authenticated metadata is modified.
 sed -i 's/Origin: Xynoos/Origin: Tampered/' "$work/apt/dists/preview/InRelease"
 rm -f /var/lib/apt/lists/127.0.0.1* /var/lib/apt/lists/partial/127.0.0.1*

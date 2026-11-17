@@ -13,3 +13,5 @@
 - Historical safety/MVP #14/#15 remain unmerged; delegation races, durable physical recovery and physical cleanup acceptance remain open (#17–#20, #38).
 
 See [distribution report](https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/distribution/https://github.com/samuelindra123/xynoos-hypercoreRT.md) for exact CI/publication classifications and URLs.
+
+Follow-up acceptance: [real upgrades #41](https://github.com/samuelindra123/xynoos-hypercore/issues/41), [physical distribution #42](https://github.com/samuelindra123/xynoos-hypercore/issues/42), [archive operations #43](https://github.com/samuelindra123/xynoos-hypercore/issues/43), [future stable/architectures #44](https://github.com/samuelindra123/xynoos-hypercore/issues/44).
