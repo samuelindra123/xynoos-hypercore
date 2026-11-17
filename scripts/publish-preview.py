@@ -23,7 +23,9 @@ notes = f"""Experimental Developer Preview — {tag}
 
 Xynoos HyperCore provides rootless, read-only Linux resource diagnostics. Physical kernel mutation is disabled. Desktop performance benefit is NOT PROVEN.
 
-Target: Linux x86_64, static musl binary. Primary laptop target: Debian 13, Pentium Silver N5000, 4 GB RAM; hardware validation remains pending.
+Target: Linux x86_64, static musl binary. Primary laptop target: Debian 13, Pentium Silver N5000, 4 GB RAM; preview.3 physical installation validation remains pending. Earlier physical testing confirmed isolated binary/signature/checksum/CLI/telemetry/update/rollback behavior and reported installer permission failures.
+
+Installer fixes in preview.3: new private directories are explicitly secured as 0700 despite inherited default ACLs; existing group/other-writable ~/.local/bin is refused with an exact manual chmod remedy. Existing user directories are never chmodded automatically. Symlink, owner, traversal, signature, update/rollback and data-preservation checks remain enforced. The convenience bootstrap now pins the fixed installer by SHA256. See INSTALL.md for the pinned alternative and permission remedies.
 
 Source: {m['source_commit']}
 Build: https://github.com/{repo}/actions/runs/{m['provenance']['run_id']}

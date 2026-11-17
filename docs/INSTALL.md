@@ -1,10 +1,11 @@
 # Xynoos HyperCore — Experimental Developer Preview
 
-The public one-line installation, real upgrade and offline rollback were verified
-against published `v0.1.0-preview.2` and `v0.1.0-preview.1` on Ubuntu 24.04 Codespaces.
-See [captured output](reports/preview-public-lifecycle-2.txt). Debian/N5000 hardware
-validation remains pending. Publication and public read-back remain gates for each
-new release; a workflow file alone is not evidence of working distribution.
+Preview.3 fixes the installer permission failures reported on Debian 13 / Intel
+N5000. The physical preview.2 test confirmed the published binary, Ed25519/SHA256,
+CLI, telemetry, isolated update and rollback, but normal HOME installation failed
+on permissions. **Preview.3 installation on the physical N5000 is pending independent
+OpenCode validation.** Codespaces regression tests do not certify that laptop.
+See [compatibility](COMPATIBILITY.md) and [regression evidence](reports/PREVIEW-3-INSTALLER.md).
 
 ## Supported baseline
 
@@ -13,8 +14,9 @@ OpenSSL 3 with Ed25519 support. No Git, Cargo, Rust, GitHub CLI, GitHub login, s
 or archive extraction is needed by end users. The executable is static musl and
 built for the baseline x86_64 CPU, without native CPU flags. Other architectures
 are refused. Other distributions are compatibility targets, not tested promises.
-Debian 13 / XFCE / Pentium Silver N5000 / 4 GB is the primary **untested hardware**
-target; Codespaces testing does not certify the laptop.
+Debian 13 / XFCE / Pentium Silver N5000 / 4 GB is the primary hardware target.
+Prior physical results cover isolated execution; preview.3 normal HOME installation
+requires a new physical check.
 
 ## Trust model
 
@@ -48,16 +50,21 @@ GitHub CLI is not required to install or run Xynoos.
 
 ## Pinned, auditable alternative
 
-Pin the reviewed installer source below, inspect it, and verify the digest locally
+The bootstrap in main is mutable; `--version` alone pins the binary selection,
+not the bootstrap. The alternative below fetches the versioned preview.3 manager
+and pins its exact bytes by SHA256. Pin the reviewed installer source, inspect it,
+and verify the digest locally
 **before** running Python. Confirm the commit/digest through your trusted channel;
 copying both from a compromised page would not provide independent authentication.
 
 ```sh
-curl --proto '=https' --tlsv1.2 -fsSLo xynoos-installer.py https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/12e4ac1ea7e3153853cb0553e3afc19865c162b3/distribution/manager.py
-printf '%s  %s\n' 4b40a9f891c6f015244be211563ed0ae523ebaba32c51a06a7f70ac258b575c9 xynoos-installer.py | sha256sum -c -
-# Run this only after the check above succeeds and you have inspected the script:
-python3 -I xynoos-installer.py install --version v0.1.0-preview.2
+curl --proto '=https' --tlsv1.2 --connect-timeout 15 --max-time 120 --max-filesize 1048576 -fsSLo xynoos-installer.py https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/v0.1.0-preview.3/distribution/manager.py
+printf '%s  %s\n' 700df539d58227b1e90dbc754585afea723de8b1ea171b159077fcc71f3ab849 xynoos-installer.py | sha256sum -c - &&
+python3 -I xynoos-installer.py install --version v0.1.0-preview.3
 ```
+
+Inspect the downloaded script before running the verification/execution pair.
+A failed digest check prevents Python execution.
 
 There is one primary convenience command in the README/site. This multi-step
 alternative intentionally makes initial trust and inspection explicit.
@@ -69,7 +76,43 @@ switched `current` symlink. Releases: `${XDG_DATA_HOME:-~/.local/share}/xynoos/v
 State/evidence: `${XDG_STATE_HOME:-~/.local/state}/xynoos/`. No config or cache is
 created unnecessarily. Private Xynoos directories require mode 0700; owned files
 cannot be symlinks, hardlinks or writable by another user. Unsafe ancestor
-permissions and symlinks fail closed. XDG roots must be absolute.
+permissions and symlinks fail closed. XDG roots must be absolute without `..`.
+New directories are explicitly set to 0700 using a no-follow directory descriptor,
+including when a default ACL would otherwise produce 0500 under umask 077. New
+files receive explicit 0600 (metadata) or 0700 (binary). Existing directories are
+validated without changing their permissions, owners or ACLs.
+
+### Existing ~/.local/bin at mode 0775
+
+Group write permits another group member to replace an executable link. Preview.3
+refuses this directory before creating release/state directories or downloading a
+release and prints the exact path and manual remedy. It does not assume a private
+user group or accept an environment override. An existing user-owned 0755 or 0700
+bin directory is accepted without chmod.
+
+Inspect the path first. If it is your directory and it should not be writable by
+other users, explicitly remove group/other write and retry:
+
+```sh
+stat -c '%U %G %a %n' "$HOME" "$HOME/.local" "$HOME/.local/bin"
+# Inspect ACLs too, when getfacl is available:
+getfacl -p "$HOME/.local/bin"
+# Operator action, never done automatically by Xynoos:
+chmod go-w -- "$HOME/.local/bin"
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/v0.1.0-preview.3/install.sh | sh -s -- --version v0.1.0-preview.3
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+If the shared permissions are intentional, stop and consult the directory owner;
+do not weaken verification or use sudo to install. Group/other-writable ancestors
+also require an explicit operator decision. Foreign owners and symlink ancestors
+are refused without permission changes.
+
+A private Xynoos directory left at 0500 by an earlier attempt is also preserved
+and refused with an exact manual `chmod 0700 -- PATH` remedy. Inspect that path
+and its ACL/ownership before deciding to run it; do not recursively chmod HOME.
+No automatic repair of existing directories occurs. Record inherited default ACLs
+with `getfacl` to help explain any recurrence on the physical machine.
 
 The primary command adds `~/.local/bin` to the current terminal PATH. Debian's
 default `~/.profile` normally adds it on subsequent logins once it exists. Custom

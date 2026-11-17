@@ -1,0 +1,47 @@
+test_fixed_source_digest_and_arguments (test_bootstrap.BootstrapTests.test_fixed_source_digest_and_arguments) ... ok
+test_tampered_source_never_executes_and_stage_removed (test_bootstrap.BootstrapTests.test_tampered_source_never_executes_and_stage_removed) ... ok
+test_bin_symlink_and_traversing_xdg_refused (test_manager.DistributionTests.test_bin_symlink_and_traversing_xdg_refused) ... ok
+test_clean_default_home_umask_077_real_install (test_manager.DistributionTests.test_clean_default_home_umask_077_real_install) ... ok
+test_corrupted_binary_never_executes (test_manager.DistributionTests.test_corrupted_binary_never_executes) ... ok
+test_corrupted_signature_never_executes (test_manager.DistributionTests.test_corrupted_signature_never_executes) ... ok
+test_crash_boundaries_recover_prior_selection (test_manager.DistributionTests.test_crash_boundaries_recover_prior_selection) ... ok
+test_crashed_staging_is_cleaned_under_lock (test_manager.DistributionTests.test_crashed_staging_is_cleaned_under_lock) ... ok
+test_current_corruption_refuses_update_and_rollback (test_manager.DistributionTests.test_current_corruption_refuses_update_and_rollback) ... ok
+test_default_acl_0500_full_lifecycle (test_manager.DistributionTests.test_default_acl_0500_full_lifecycle) ... ok
+test_discovery_semver_prerelease_and_platform (test_manager.DistributionTests.test_discovery_semver_prerelease_and_platform) ... ok
+test_downgrade_refused (test_manager.DistributionTests.test_downgrade_refused) ... ok
+test_entry_collision_preserved (test_manager.DistributionTests.test_entry_collision_preserved) ... ok
+test_entry_symlink_collision_preserved (test_manager.DistributionTests.test_entry_symlink_collision_preserved) ... ok
+test_existing_bin_0775_actionable_refusal_and_manual_retry (test_manager.DistributionTests.test_existing_bin_0775_actionable_refusal_and_manual_retry) ... ok
+test_existing_private_0500_is_preserved_with_remedy (test_manager.DistributionTests.test_existing_private_0500_is_preserved_with_remedy) ... ok
+test_existing_safe_directories_never_chmodded (test_manager.DistributionTests.test_existing_safe_directories_never_chmodded) ... ok
+test_foreign_owner_and_root_owned_bin_refused (test_manager.DistributionTests.test_foreign_owner_and_root_owned_bin_refused) ... ok
+test_health_failure_restores_previous (test_manager.DistributionTests.test_health_failure_restores_previous) ... ok
+test_interrupted_download_preserves_working_version (test_manager.DistributionTests.test_interrupted_download_preserves_working_version) ... ok
+test_lock_refuses_concurrent_subprocess (test_manager.DistributionTests.test_lock_refuses_concurrent_subprocess) ... ok
+test_manifest_symlink_and_hardlink_refused (test_manager.DistributionTests.test_manifest_symlink_and_hardlink_refused) ... ok
+test_metadata_and_redirect_rejections (test_manager.DistributionTests.test_metadata_and_redirect_rejections) ... ok
+test_network_size_and_partial_response (test_manager.DistributionTests.test_network_size_and_partial_response) ... ok
+test_new_tree_modes_under_umask_matrix (test_manager.DistributionTests.test_new_tree_modes_under_umask_matrix) ... ok
+test_no_previous_refuses_rollback (test_manager.DistributionTests.test_no_previous_refuses_rollback) ... ok
+test_partial_atomic_write_leaves_old_state (test_manager.DistributionTests.test_partial_atomic_write_leaves_old_state) ... ok
+test_permissive_default_acl_does_not_widen_new_paths (test_manager.DistributionTests.test_permissive_default_acl_does_not_widen_new_paths) ... ok
+test_real_signed_install_health_and_entry (test_manager.DistributionTests.test_real_signed_install_health_and_entry) ... ok
+test_sigkill_at_switch_boundaries_releases_lock_and_recovers (test_manager.DistributionTests.test_sigkill_at_switch_boundaries_releases_lock_and_recovers) ... ok
+test_signed_wrong_metadata_refused (test_manager.DistributionTests.test_signed_wrong_metadata_refused) ... ok
+test_symlink_parent_refused (test_manager.DistributionTests.test_symlink_parent_refused) ... ok
+test_uninstall_unknown_file_preserved (test_manager.DistributionTests.test_uninstall_unknown_file_preserved) ... ok
+test_update_failure_preserves_working_version (test_manager.DistributionTests.test_update_failure_preserves_working_version) ... ok
+test_upgrade_offline_rollback_and_preserving_uninstall (test_manager.DistributionTests.test_upgrade_offline_rollback_and_preserving_uninstall) ... ok
+test_writable_parent_refused (test_manager.DistributionTests.test_writable_parent_refused) ... ok
+test_wrong_architecture_never_executes (test_manager.DistributionTests.test_wrong_architecture_never_executes) ... ok
+test_failed_or_pending_source_checks_refused (test_release_gate.ReleaseGateTests.test_failed_or_pending_source_checks_refused) ... ok
+test_publication_permission_failure_does_not_change_reviewed_source (test_release_gate.ReleaseGateTests.test_publication_permission_failure_does_not_change_reviewed_source) ... ok
+test_tag_source_version_disagreement_refused (test_release_gate.ReleaseGateTests.test_tag_source_version_disagreement_refused) ... ok
+test_unmerged_source_refused (test_release_gate.ReleaseGateTests.test_unmerged_source_refused) ... ok
+
+----------------------------------------------------------------------
+Ran 41 tests in 3.523s
+
+OK
+Merged main source and validation checks verified: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa

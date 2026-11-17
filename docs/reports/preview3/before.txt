@@ -1,0 +1,7 @@
+Baseline main 32a55d8; published preview.2 installer matches preview.1 bootstrap pin.
+plain umask 077: locked PASS; root mode=0o700
+existing bin 0775: Refusal: Writable directory refused: $DISPOSABLE_HOME/.local/bin
+created data mode=0o700
+default ACL owner r-x + umask 077: PermissionError: [Errno 13] Permission denied: '$DISPOSABLE_HOME/data/xynoos'
+created data mode=0o500
+0500 reproduced with a real inherited default ACL. Plain umask 077 alone passes here. Laptop ACL/root cause not independently inspected.

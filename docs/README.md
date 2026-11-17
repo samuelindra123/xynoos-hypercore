@@ -5,6 +5,7 @@ Start with the [project overview and quick start](../README.md). The project is 
 | I want to… | Read |
 | --- | --- |
 | Install, update or roll back the preview | [Installation and trust model](INSTALL.md) · [Public distribution proof](reports/PREVIEW-DISTRIBUTION.md) |
+| Check preview compatibility and permission fixes | [Compatibility](COMPATIBILITY.md) · [Preview.3 regression evidence](reports/PREVIEW-3-INSTALLER.md) |
 | Validate on the N5000 laptop | [Compact OpenCode protocol](N5000-PREVIEW-VALIDATION.md) |
 | Understand the components | [Architecture](ARCHITECTURE.md) · [Unified telemetry](reports/TASK-014-UNIFIED-SYSTEM-INTELLIGENCE-REPORT.md) |
 | Review safety and limitations | [Kernel transaction report](reports/TASK-015C-REAL-KERNEL-TRANSACTION-REPORT.md) · [Telemetry reliability](reports/TASK-015A-TELEMETRY-RELIABILITY-REPORT.md) |

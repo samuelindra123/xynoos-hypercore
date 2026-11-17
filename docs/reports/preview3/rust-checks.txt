@@ -1,0 +1,286 @@
+    Checking serde_core v1.0.229
+    Checking zmij v1.0.23
+    Checking xynoos-core v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-core)
+    Checking memchr v2.8.3
+    Checking itoa v1.0.19
+    Checking libc v0.2.191
+    Checking cfg-if v1.0.5
+    Checking crc32fast v1.5.5
+    Checking lz4_flex v0.11.7
+    Checking xynoos-aura v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-aura)
+    Checking xynoos-hypermemory v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-hypermemory)
+   Compiling xynoos-cli v0.1.0-preview.3 (/tmp/xynoos-preview3/crates/xynoos-cli)
+    Checking xynoos-bench v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-bench)
+    Checking serde v1.0.229
+    Checking serde_json v1.0.154
+    Checking xynoos-pressureiq v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-pressureiq)
+    Checking xynoos-linux-control v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-linux-control)
+    Checking xynoos-decision v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-decision)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 4.15s
+warning: output filename collision at /tmp/xynoos-preview3/target/debug/examples/validation
+  |
+  = note: the example target `validation` in package `xynoos-decision v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-decision)` has the same output filename as the example target `validation` in package `xynoos-aura v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-aura)`
+  = note: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+  = help: consider changing their names to be unique or compiling them separately
+warning: output filename collision at /tmp/xynoos-preview3/target/debug/examples/validation.dwp
+  |
+  = note: the example target `validation` in package `xynoos-decision v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-decision)` has the same output filename as the example target `validation` in package `xynoos-aura v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-aura)`
+  = note: this may become a hard error in the future; see <https://github.com/rust-lang/cargo/issues/6313>
+  = help: consider changing their names to be unique or compiling them separately
+   Compiling xynoos-aura v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-aura)
+   Compiling xynoos-cli v0.1.0-preview.3 (/tmp/xynoos-preview3/crates/xynoos-cli)
+   Compiling xynoos-decision v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-decision)
+   Compiling xynoos-bench v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-bench)
+   Compiling xynoos-hypermemory v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-hypermemory)
+   Compiling xynoos-linux-control v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-linux-control)
+   Compiling xynoos-pressureiq v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-pressureiq)
+   Compiling xynoos-core v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-core)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 5.61s
+     Running unittests src/lib.rs (target/debug/build/xynoos-aura/1ce54bfa213956b7/out/xynoos_aura-1ce54bfa213956b7)
+
+running 41 tests
+test physical::journal_tests::injected_overflow ... ok
+test physical::journal_tests::scratch_simultaneous ... ok
+test physical::tests::atomic_error ... ok
+test physical::tests::fallback_and_budget ... ok
+test physical::tests::metadata_overcommit_overflow ... ok
+test physical::tests::entropy_no_free_capacity ... ok
+test physical::tests::shared_transition ... ok
+test physical::tests::temp_limit ... ok
+test physical::unwind_guard_tests::error_after_partial_mutation_restores ... ok
+test physical::unwind_guard_tests::staged_selector_and_capacity_error ... ok
+test physical::unwind_guard_tests::rollback_five_phases_and_same_index ... ok
+test placement::eligibility_tests::ineligible_access_does_not_migrate ... ok
+test placement::protection_tests::decision_error_is_atomic ... ok
+test placement::tests::budgets_capacity_confidence ... ok
+test placement::protection_tests::adversarial_limit_and_clock ... ok
+test placement::tests::cost_units_and_overflow ... ok
+test placement::tests::hysteresis_and_cooldown ... ok
+test placement::tests::invalid_rollback ... ok
+test placement::tests::refault_and_fallback ... ok
+test placement::tests::validation ... ok
+test selector::aware_tests::checks_are_pure_and_bounded ... ok
+test selector::aware_tests::multiple_rejections_progress ... ok
+test selector::fast_tests::failures_atomic ... ok
+test selector::fast_tests::invalid_order_and_empty ... ok
+test physical::tests::bounded_sequences ... ok
+test selector::fast_tests::prepared_is_private_until_validated_publication ... ok
+test placement::tests::determinism_and_accounting ... ok
+test selector::injected_tests::controlled_allocation_rejection ... ok
+test selector::injected_tests::stage_errors_rollback ... ok
+test selector::injected_tests::targeted_reservation_atomic ... ok
+test selector::injected_tests::unwind_before_commit_rollback ... ok
+test selector::reservation_tests::injected_reservation ... ok
+test selector::reservation_tests::reserve_overflow_is_distinct ... ok
+test physical::journal_tests::differential ... ok
+test selector::tests::empty_and_overflow_atomic ... ok
+test selector::tests::no_candidate_and_changing_mask ... ok
+test selector::tests::progress_and_ties ... ok
+test tests::deterministic ... ok
+test selector::reservation_tests::same_candidate_and_access ... ok
+test selector::fast_tests::six_sizes_budget_and_fallback ... ok
+test selector::fast_tests::multi_event_equivalence ... ok
+
+test result: ok. 41 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.64s
+
+     Running unittests src/main.rs (target/debug/build/xynoos-bench/f2e14fff0a6c044c/out/xynoos_bench-f2e14fff0a6c044c)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/xynoos.rs (target/debug/build/xynoos-cli/0e61fbbdd681ba7e/out/xynoos-0e61fbbdd681ba7e)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/build/xynoos-cli/1b920b42788624cb/out/xynoos_cli-1b920b42788624cb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/pressure.rs (target/debug/build/xynoos-cli/ec07d8938303d380/out/pressure-ec07d8938303d380)
+
+running 5 tests
+Error: Bounds
+test snapshot_has_csv_columns ... ok
+test human_snapshot ... ok
+Error: Bounds
+Error: "Parameter membutuhkan nilai"
+test invalid_bounds_and_missing_options ... ok
+test bounded_file_output_and_no_overwrite ... ok
+test unified_sample_csv ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/product.rs (target/debug/build/xynoos-cli/a7d8b3edf6298c5e/out/product-a7d8b3edf6298c5e)
+
+running 2 tests
+test plain_overview_and_bounded_diagnostics ... ok
+test product_json_and_read_only_contract ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s
+
+     Running tests/system_contract.rs (target/debug/build/xynoos-cli/72ab4843e6645505/out/system_contract-72ab4843e6645505)
+
+running 2 tests
+test json_contract_and_explicit_missing_disk ... ok
+test sampling_has_readiness_and_expiration ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-core/08e8fe2e5d48e9f5/out/xynoos_core-08e8fe2e5d48e9f5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-decision/b7d76fe429c67b8c/out/xynoos_decision-b7d76fe429c67b8c)
+
+running 5 tests
+test scoped_tests::refusal_on_stale_missing_denied_and_wrong_source ... ok
+test scoped_tests::shared_is_never_workload_recommendation_and_isolated_requires_two ... ok
+test tests::rejects_invalid_and_resets_history ... ok
+test tests::boundaries_hysteresis_and_cooldown ... ok
+test tests::bounded_deterministic_and_no_action_without_capability ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.08s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-hypermemory/0f0a8f6adfdf8f64/out/xynoos_hypermemory-0f0a8f6adfdf8f64)
+
+running 13 tests
+test adaptive_tests::raw_corruption_is_detected ... ok
+test adaptive_tests::mixed_and_budget ... ok
+test budget_boundary_tests::boundary_and_reuse ... ok
+test budget_boundary_tests::overflow_and_raw_integrity ... ok
+test integrity_tests::checksum_and_length ... ok
+test integrity_tests::corruption_and_isolation ... ok
+test integrity_tests::failures_preserve_state ... ok
+test integrity_tests::truncation_and_decoder_failure ... ok
+test budget_boundary_tests::mixed_sequence ... ok
+test tests::invalid ... ok
+test malformed_tests::bounded_malformed_blocks ... ok
+test tests::round_trips_and_statistics ... ok
+test integrity_tests::generated_operation_sequences ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.40s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-linux-control/dd30554c6436112f/out/xynoos_linux_control-dd30554c6436112f)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/kernel_transaction.rs (target/debug/build/xynoos-linux-control/6ff5475c695c713a/out/kernel_transaction-6ff5475c695c713a)
+
+running 1 test
+test kernel_apply_restore_and_cleanup ... ignored, requires an isolated delegated cgroup v2 parent and explicit opt-in
+
+test result: ok. 0 passed; 0 failed; 1 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/linux.rs (target/debug/build/xynoos-linux-control/10148c514c0e6cc6/out/linux-10148c514c0e6cc6)
+
+running 3 tests
+test telemetry_errors_are_not_accepted ... ok
+test linux_discovery_and_read_only_decisions ... ok
+test stale_bounds_and_unsafe_targets_are_declined ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/transactions.rs (target/debug/build/xynoos-linux-control/039267d8158f0714/out/transactions-039267d8158f0714)
+
+running 9 tests
+test failed_apply_after_mutation_is_restored ... ok
+test apply_failure_and_verification_mismatch ... ok
+test real_backend_refuses_unauthorized_and_non_cgroup_parent ... ok
+test rollback_failure_is_explicit ... ok
+test concurrent_modification_is_not_overwritten ... ok
+test rollback_verification_failure_is_reported ... ok
+test success_applies_and_restores ... ok
+test identity_failure_never_triggers_blind_write_or_rollback ... ok
+test unauthorized_stale_and_bounds_never_write ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-pressureiq/fc54d0140a5d8e7f/out/xynoos_pressureiq-fc54d0140a5d8e7f)
+
+running 15 tests
+test cgroup_pressure::tests::paths_and_independent_deltas ... ok
+test delta_tests::monotonic_and_reset ... ok
+test system::contract_tests::filesystem_permission_and_missing_are_distinct ... ok
+test system::tests::cgroup_values ... ok
+test system::tests::cpu_delta_and_resets ... ok
+test system::tests::disk_units_identity_and_reset ... ok
+test tests::bounds ... ok
+test tests::meminfo_units_and_optional ... ok
+test tests::partial_and_csv ... ok
+test tests::psi_ok_and_optional ... ok
+test tests::psi_rejects_invalid ... ok
+test tests::vm_delta_and_reset ... ok
+test workload::tests::identity_and_intervals ... ok
+test system::contract_tests::freshness_and_readiness_preserve_errors_and_identity ... ok
+test system::contract_tests::discovery_preserves_partial_and_marks_truncation ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests xynoos_aura
+
+running 1 test
+test crates/xynoos-aura/src/selector.rs - selector::Selector::fast_event (line 241) - compile fail ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+   Doc-tests xynoos_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xynoos_decision
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xynoos_hypermemory
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xynoos_linux_control
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xynoos_pressureiq
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling proc-macro2 v1.0.107
+   Compiling unicode-ident v1.0.27
+   Compiling quote v1.0.47
+   Compiling serde_core v1.0.229
+   Compiling zmij v1.0.23
+   Compiling serde v1.0.229
+   Compiling serde_json v1.0.154
+   Compiling libc v0.2.191
+   Compiling memchr v2.8.3
+   Compiling syn v3.0.10
+   Compiling serde_derive v1.0.229
+   Compiling itoa v1.0.19
+   Compiling crc32fast v1.5.5
+   Compiling cfg-if v1.0.5
+   Compiling xynoos-cli v0.1.0-preview.3 (/tmp/xynoos-preview3/crates/xynoos-cli)
+   Compiling xynoos-core v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-core)
+   Compiling lz4_flex v0.11.7
+   Compiling xynoos-hypermemory v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-hypermemory)
+   Compiling xynoos-pressureiq v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-pressureiq)
+   Compiling xynoos-linux-control v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-linux-control)
+   Compiling xynoos-decision v0.1.0 (/tmp/xynoos-preview3/crates/xynoos-decision)
+    Finished `release` profile [optimized] target(s) in 15.76s
