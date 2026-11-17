@@ -3,6 +3,7 @@ name = "xynoos-cli"
 default-run = "xynoos"
 version = "0.1.0-preview.3"
 edition = "2021"
+rust-version.workspace = true
 license = "GPL-3.0-only"
 [features]
 # Distribution builds use dpkg/APT and emit diagnostics only to stdout.

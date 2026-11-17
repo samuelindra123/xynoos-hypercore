@@ -5,8 +5,10 @@ test -f /.dockerenv
 test "$(dpkg --print-architecture)" = amd64
 export DEBIAN_FRONTEND=noninteractive
 snapshot=http://snapshot.debian.org/archive/debian/20261116T000000Z
+security=http://snapshot.debian.org/archive/debian-security/20261116T000000Z
 rm -f /etc/apt/sources.list.d/debian.sources
 printf 'deb [check-valid-until=no] %s trixie main\n' "$snapshot" > /etc/apt/sources.list
+printf 'deb [check-valid-until=no] %s trixie-updates main\ndeb [check-valid-until=no] %s trixie-security main\n' "$snapshot" "$security" >> /etc/apt/sources.list
 printf 'Acquire::Retries "2";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80xynoos-timeouts
 apt-get update
 apt-get install -y --no-install-recommends sbuild mmdebstrap uidmap debhelper dpkg-dev lintian python3 ca-certificates
@@ -25,7 +27,9 @@ mmdebstrap --variant=buildd --architectures=amd64 \
   --aptopt='Acquire::Retries "2"' \
   --aptopt='Acquire::http::Timeout "30"' \
   --customize-hook='echo "Acquire::Check-Valid-Until \"false\";" > "$1/etc/apt/apt.conf.d/99snapshot"' \
-  trixie /srv/trixie-amd64.tar "$snapshot"
+  trixie /srv/trixie-amd64.tar "$snapshot" \
+  "deb [check-valid-until=no] $snapshot trixie-updates main" \
+  "deb [check-valid-until=no] $security trixie-security main"
 sha256sum /srv/trixie-amd64.tar > /out/build-root.sha256
 for pass in first second; do
   # Each invocation extracts a fresh build root; no build cache is shared.
