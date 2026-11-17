@@ -49,7 +49,7 @@ def main():
     # Cargo may emit an absolute path. Keep the source archive relocatable.
     config = re.sub(r'directory = .*', 'directory = "vendor"', config)
     (tree / ".cargo/config.toml").write_text(config + "\n[net]\noffline = true\n")
-    deps, notices = [], []
+    deps, notices, copyright_stanzas = [], [], []
     allowed = {"MIT", "MIT OR Apache-2.0", "Unlicense OR MIT", "(MIT OR Apache-2.0) AND Unicode-3.0"}
     lock = tomllib.loads(lock_before.decode())
     for package in lock["package"]:
@@ -72,6 +72,23 @@ def main():
         notices.append(f"\n=== {name} ({metadata['license']}) ===\n")
         for path in files:
             notices.extend([f"\n--- {path.relative_to(crate)} ---\n", path.read_text()])
+        # Select the MIT alternative, preserving its exact terms and Unicode terms.
+        mit = crate / "LICENSE-MIT"
+        if not mit.exists():
+            mit = crate / "LICENSE"
+        selected = mit.read_text()
+        license_name = "MIT"
+        if metadata["license"] == "(MIT OR Apache-2.0) AND Unicode-3.0":
+            selected += "\n" + (crate / "LICENSE-UNICODE").read_text()
+            license_name = "MIT and Unicode-3.0"
+        holders = [line.strip() for line in selected.splitlines() if re.search(r"copyright.*\d", line, re.I)]
+        if not holders:
+            holders = ["Not stated in upstream license; see Cargo authors in packaging/dependencies.json"]
+        terms = "\n".join(" " + (line if line.strip() else ".") for line in selected.splitlines())
+        copyright_stanzas.append(f"\nFiles: vendor/{name}/*\nCopyright: " + "\n ".join(holders)
+                                 + f"\nLicense: {license_name}\n{terms}\n")
+    with (tree / "debian/copyright").open("a") as stream:
+        stream.write("".join(copyright_stanzas))
     (tree / "packaging/dependencies.json").write_text(json.dumps(deps, sort_keys=True, indent=2) + "\n")
     (tree / "packaging/THIRD_PARTY_NOTICES").write_text("".join(notices))
     source = {"commit": commit, "source_date_epoch": epoch, "upstream_version": cargo["package"]["version"],

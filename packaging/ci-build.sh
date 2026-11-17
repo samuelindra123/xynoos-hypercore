@@ -3,6 +3,7 @@
 set -euo pipefail
 test -f /.dockerenv
 test "$(dpkg --print-architecture)" = amd64
+trap 'status=$?; python3 /work/packaging/build-logs.py /out; exit "$status"' EXIT
 export DEBIAN_FRONTEND=noninteractive
 snapshot=http://snapshot.debian.org/archive/debian/20261116T000000Z
 security=http://snapshot.debian.org/archive/debian-security/20261116T000000Z
@@ -33,7 +34,7 @@ mmdebstrap --variant=buildd --architectures=amd64 \
 sha256sum /srv/trixie-amd64.tar > /out/build-root.sha256
 for pass in first second; do
   # Each invocation extracts a fresh build root; no build cache is shared.
-  runuser -u builder -- sbuild --chroot-mode=unshare --chroot=/srv/trixie-amd64.tar \
+  runuser -u builder -- sbuild --verbose --chroot-mode=unshare --chroot=/srv/trixie-amd64.tar \
     --dist=trixie --arch=amd64 --no-enable-network --no-run-lintian \
     --build-dir="/out/$pass" --build-path="/build/$pass" \
     /out/source/*.dsc

@@ -21,8 +21,8 @@ Cargo, GPU library or systemd is required at runtime. The optional build feature
 `debian-package` disables the embedded installer and automatic diagnostic saving.
 
 The source uses `Option::is_none_or` (Rust 1.82). Locked dependencies declare
-requirements at or below that level. Rust 1.82 is the candidate minimum until
-CI proves it. Trixie's packaged 1.85.1 is suitable in principle; Bookworm's 1.63
+requirements at or below that level. Rust 1.82 tests and release builds passed in
+CI and the manifests declare it. Trixie's packaged 1.85.1 is suitable in principle; Bookworm's 1.63
 cannot compile this source or parse the v4 lockfile. Do not replace the system
 compiler or install rustup on the target desktop. Build on Trixie. Bookworm runtime
 tests are separate from build support. CI also validates the existing 1.100.0
@@ -44,7 +44,7 @@ From a clean, committed checkout, with an exact toolchain and network available:
 rustup run 1.100.0 python3 packaging/prepare.py /tmp/xynoos-source
 ```
 
-Python 3.11+ and Cargo are required. The output directory must not exist and must
+Python 3.12+ and Cargo are required. The output directory must not exist and must
 be outside the checkout. Preparation exports Git HEAD, runs `cargo vendor --locked
 --versioned-dirs`, verifies the lock is unchanged, generates relative Cargo source
 replacement configuration, dependency metadata and complete license notices, and
@@ -55,7 +55,8 @@ The source archive contains it all, including Cargo.lock and provenance.
 The 15 registry crates have MIT alternatives, with Unicode-3.0 additionally
 required for unicode-ident. The generator copies all LICENSE/COPYING/NOTICE/
 COPYRIGHT files, records authors, versions, checksums and declared licenses, and
-refuses unknown licenses or sources. Those notices and the compiler's standard
+refuses unknown licenses or sources. It appends complete MIT license text per crate
+to Debian copyright, adding Unicode terms where required. Those notices and the compiler's standard
 library copyright are installed. Project code is GPL-3.0-only. `Built-Using`
 records the Rust source package version. Retain the matching Debian compiler
 source when redistributing; the snapshot identifies it. Vendoring is an upstream
@@ -69,7 +70,8 @@ Heavy work runs only in `.github/workflows/debian-package.yml`. The build contai
 is pinned by OCI digest. Its privileged capability is confined to a disposable
 GitHub runner so sbuild can create namespaces. No secrets, signing or publishing
 permissions are granted. Source preparation happens before isolation; dependency
-installation uses the fixed Debian snapshot `20261116T000000Z`. Archive signatures
+installation uses the fixed Debian and security snapshots `20261116T000000Z`,
+including the updates suite. Archive signatures
 remain mandatory. Historical expiry checks alone are disabled. This snapshot must
 be deliberately refreshed for security updates; it is not a runtime repository.
 
