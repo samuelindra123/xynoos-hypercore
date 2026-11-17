@@ -1,1 +1,35 @@
-/bin/bash: line 1: /usr/bin/time: No such file or directory
+{
+  "method": "Linux wait4 per child; peak RSS may include inherited pre-exec pages",
+  "wall_seconds": 2.1135996489992976,
+  "user_cpu_seconds": 0.014227,
+  "system_cpu_seconds": 0.074693,
+  "lifetime_cpu_percent": 4.207040819773979,
+  "peak_rss_kib": 11120,
+  "sampling": {
+    "idle_after_collection_rss_kib": 2288,
+    "samples": 20,
+    "samples_ns": [
+      5456682,
+      5900985,
+      4320386,
+      5590591,
+      5017391,
+      4079538,
+      4494217,
+      5724199,
+      3821280,
+      3978390,
+      4532484,
+      5457847,
+      4718808,
+      3625852,
+      4005497,
+      4418011,
+      8460968,
+      5489833,
+      4447656,
+      4486268
+    ],
+    "sleep_ms": 2000
+  }
+}
