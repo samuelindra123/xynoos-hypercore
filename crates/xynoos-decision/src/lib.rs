@@ -29,6 +29,8 @@ pub enum Kind {
 #[derive(Debug, Serialize)]
 pub struct Decision {
     pub kind: Kind,
+    /// Hysteresis state for CPU, memory and I/O, respectively. No write authority.
+    pub active_pressure: [bool; 3],
     pub explanation: String,
     pub pressure_percent: Option<[f64; 3]>,
     pub cgroup_memory_bytes: Option<u64>,
@@ -69,6 +71,7 @@ impl Engine {
     ) -> Decision {
         let mut out = Decision {
             kind: Kind::Decline,
+            active_pressure: [false; 3],
             explanation: String::new(),
             pressure_percent: None,
             cgroup_memory_bytes: None,
@@ -249,6 +252,7 @@ impl Engine {
             .enumerate()
             .filter_map(|(i, n)| self.active[i].then_some(n))
             .collect();
+        out.active_pressure = self.active;
         if names.is_empty() {
             out.kind = Kind::Observe;
             out.explanation = if cooling {

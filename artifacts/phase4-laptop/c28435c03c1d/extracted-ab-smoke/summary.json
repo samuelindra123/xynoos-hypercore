@@ -1,0 +1,76 @@
+{
+  "status": "complete",
+  "environment": "Codespaces",
+  "label": "extracted portable static archive default AB; Codespaces only",
+  "expected_runs": 12,
+  "warmup": [
+    {
+      "arm": "baseline",
+      "status": "complete",
+      "error": null
+    },
+    {
+      "arm": "observe",
+      "status": "complete",
+      "error": null
+    }
+  ],
+  "complete_runs": {
+    "baseline": 6,
+    "observe": 6,
+    "active": 0
+  },
+  "paired": [
+    {
+      "repeat": 0,
+      "observe": {
+        "p95_over_baseline": 1.2442192881153205,
+        "foreground_completion_over_baseline": 1.0058087832642104,
+        "background_completion_over_baseline": 1.0941344905880062
+      }
+    },
+    {
+      "repeat": 1,
+      "observe": {
+        "p95_over_baseline": 0.9302589512325306,
+        "foreground_completion_over_baseline": 0.9974469607036425,
+        "background_completion_over_baseline": 1.0552731062854432
+      }
+    },
+    {
+      "repeat": 2,
+      "observe": {
+        "p95_over_baseline": 0.9489588619463818,
+        "foreground_completion_over_baseline": 1.0007252201372703,
+        "background_completion_over_baseline": 0.9944108075028921
+      }
+    },
+    {
+      "repeat": 3,
+      "observe": {
+        "p95_over_baseline": 0.5968976387001539,
+        "foreground_completion_over_baseline": 0.9943555177747193,
+        "background_completion_over_baseline": 0.8682085289960333
+      }
+    },
+    {
+      "repeat": 4,
+      "observe": {
+        "p95_over_baseline": 0.9325730112157927,
+        "foreground_completion_over_baseline": 0.9977902254577907,
+        "background_completion_over_baseline": 1.0323794235012467
+      }
+    },
+    {
+      "repeat": 5,
+      "observe": {
+        "p95_over_baseline": 1.091797563815826,
+        "foreground_completion_over_baseline": 1.0050955893853293,
+        "background_completion_over_baseline": 1.0072861605139702
+      }
+    }
+  ],
+  "failed_runs": 0,
+  "desktop_improvement_established": false,
+  "interpretation": "source-search task latency only; GUI/browser evidence is separate; report background completion cost and session variability; no pooled significance claim"
+}

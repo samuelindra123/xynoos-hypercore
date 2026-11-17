@@ -49,6 +49,21 @@ fn cpu_ns() -> Option<u64> {
 }
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
+    if args.get(1).map(String::as_str) == Some("--mvp") {
+        if args.len() != 3 {
+            return Err("usage: xynoos-bench --mvp baseline|observe|simulate".into());
+        }
+        let mode = match args[2].as_str() {
+            "baseline" => xynoos_engine::Mode::Baseline,
+            "observe" => xynoos_engine::Mode::Observe,
+            "simulate" => xynoos_engine::Mode::Simulate,
+            _ => return Err("invalid MVP benchmark mode".into()),
+        };
+        let report =
+            xynoos_engine::replay::run(&xynoos_engine::replay::default_trace(), mode, true)?;
+        println!("{}", serde_json::to_string(&report)?);
+        return Ok(());
+    }
     if args.len() == 1 {
         println!("dataset,backend,run,insert_batch_ns_per_page,get_batch_ns_per_page,codec_compress_mib_s,codec_decompress_mib_s,payload_bytes,capacity_bytes,metadata_bytes,map_capacity,raw_pages,compressed_pages,rss_before_kib,rss_loaded_kib,peak_kib,cpu_ns");
         for (index, kind) in ["zero", "pattern", "structured", "entropy", "mixed"]
@@ -70,6 +85,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
     let kind = &args[1];
+    if args.len() != 3
+        || !["zero", "pattern", "structured", "entropy", "mixed"].contains(&kind.as_str())
+        || !["raw", "lz4", "adaptive"].contains(&args[2].as_str())
+    {
+        return Err("usage: xynoos-bench [DATASET raw|lz4|adaptive] | --mvp MODE".into());
+    }
     let backend = &args[2];
     let pages = dataset(kind);
     // Pembuatan dataset di luar seluruh interval pengukuran.

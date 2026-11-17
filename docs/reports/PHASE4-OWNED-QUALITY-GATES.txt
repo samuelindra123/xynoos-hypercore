@@ -1,0 +1,696 @@
+MVP gates 2026-11-16T06:11:41.650724+00:00
+
+$ cargo fmt --all -- --check
+exit=0
+
+$ cargo clippy --workspace --all-targets -- -D warnings
+    Checking xynoos-engine v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-engine)
+    Checking xynoos-cli v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-cli)
+    Checking xynoos-bench v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-bench)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.84s
+exit=0
+
+$ cargo check --workspace --all-targets
+    Checking xynoos-engine v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-engine)
+    Checking xynoos-cli v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-cli)
+    Checking xynoos-bench v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-bench)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.60s
+exit=0
+
+$ cargo test --workspace --all-targets
+   Compiling xynoos-engine v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-engine)
+   Compiling xynoos-cli v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-cli)
+   Compiling xynoos-bench v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-bench)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1.95s
+     Running unittests src/lib.rs (target/debug/build/xynoos-aura/1ce54bfa213956b7/out/xynoos_aura-1ce54bfa213956b7)
+
+running 42 tests
+test cooperative::tests::real_choice_requires_retention_and_admits_backoff ... ok
+test physical::journal_tests::injected_overflow ... ok
+test physical::journal_tests::scratch_simultaneous ... ok
+test physical::tests::atomic_error ... ok
+test physical::tests::entropy_no_free_capacity ... ok
+test physical::tests::fallback_and_budget ... ok
+test physical::tests::metadata_overcommit_overflow ... ok
+test physical::tests::shared_transition ... ok
+test physical::tests::temp_limit ... ok
+test physical::unwind_guard_tests::error_after_partial_mutation_restores ... ok
+test physical::unwind_guard_tests::rollback_five_phases_and_same_index ... ok
+test physical::unwind_guard_tests::staged_selector_and_capacity_error ... ok
+test placement::eligibility_tests::ineligible_access_does_not_migrate ... ok
+test placement::protection_tests::decision_error_is_atomic ... ok
+test placement::protection_tests::adversarial_limit_and_clock ... ok
+test placement::tests::budgets_capacity_confidence ... ok
+test placement::tests::cost_units_and_overflow ... ok
+test placement::tests::hysteresis_and_cooldown ... ok
+test placement::tests::invalid_rollback ... ok
+test placement::tests::refault_and_fallback ... ok
+test placement::tests::validation ... ok
+test selector::aware_tests::checks_are_pure_and_bounded ... ok
+test selector::aware_tests::multiple_rejections_progress ... ok
+test selector::fast_tests::failures_atomic ... ok
+test selector::fast_tests::invalid_order_and_empty ... ok
+test physical::tests::bounded_sequences ... ok
+test selector::fast_tests::prepared_is_private_until_validated_publication ... ok
+test placement::tests::determinism_and_accounting ... ok
+test physical::journal_tests::differential ... ok
+test selector::injected_tests::stage_errors_rollback ... ok
+test selector::injected_tests::targeted_reservation_atomic ... ok
+test selector::injected_tests::controlled_allocation_rejection ... ok
+test selector::injected_tests::unwind_before_commit_rollback ... ok
+test selector::reservation_tests::injected_reservation ... ok
+test selector::reservation_tests::reserve_overflow_is_distinct ... ok
+test selector::tests::empty_and_overflow_atomic ... ok
+test selector::tests::no_candidate_and_changing_mask ... ok
+test selector::tests::progress_and_ties ... ok
+test tests::deterministic ... ok
+test selector::reservation_tests::same_candidate_and_access ... ok
+test selector::fast_tests::six_sizes_budget_and_fallback ... ok
+test selector::fast_tests::multi_event_equivalence ... ok
+
+test result: ok. 42 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.65s
+
+     Running unittests examples/validation.rs (target/debug/build/xynoos-aura/2a22fe28f6e44f01/out/aura_validation-2a22fe28f6e44f01)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/completion.rs (target/debug/build/xynoos-aura/a9ecf62ea6ffcbaf/out/completion-a9ecf62ea6ffcbaf)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/fallible.rs (target/debug/build/xynoos-aura/590479332bbe93fa/out/fallible-590479332bbe93fa)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/fastpath.rs (target/debug/build/xynoos-aura/3e04fc7e4f7fad7b/out/fastpath-3e04fc7e4f7fad7b)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/reliability.rs (target/debug/build/xynoos-aura/c284f2f539f581b4/out/reliability-c284f2f539f581b4)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/research.rs (target/debug/build/xynoos-aura/6d6ba4918a97f848/out/research-6d6ba4918a97f848)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/scalability.rs (target/debug/build/xynoos-aura/62d8f460d7781753/out/scalability-62d8f460d7781753)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/selector_research.rs (target/debug/build/xynoos-aura/8c4e777a34b9b2b1/out/selector_research-8c4e777a34b9b2b1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/tracker_validation.rs (target/debug/build/xynoos-aura/62d7c5fc5b5a1a38/out/tracker_validation-62d7c5fc5b5a1a38)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/typed_research.rs (target/debug/build/xynoos-aura/86706c0456668383/out/typed_research-86706c0456668383)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/build/xynoos-bench/be0fcfb1b4f3d5fe/out/xynoos_bench-be0fcfb1b4f3d5fe)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/build/xynoos-cli/ca101933b725a6ef/out/xynoos_cli-ca101933b725a6ef)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/xynoos-mvp.rs (target/debug/build/xynoos-cli/8a4da9032d93b0bb/out/xynoos_mvp-8a4da9032d93b0bb)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/mvp.rs (target/debug/build/xynoos-cli/2968446d55b9ec51/out/mvp-2968446d55b9ec51)
+
+running 5 tests
+test full_observe_command_is_structured_and_read_only ... ok
+test physical_admission_cannot_be_enabled_by_authorize_or_environment ... ok
+test full_simulation_command_exercises_real_policy_and_store ... ok
+test recovery_has_no_replay_option_and_cli_rejects_invalid_bounds ... ok
+test distribution_excludes_controlled_mode_and_journal_cli_preserves_evidence ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/pressure.rs (target/debug/build/xynoos-cli/33221c19889d6b63/out/pressure-33221c19889d6b63)
+
+running 5 tests
+Error: Bounds
+test snapshot_has_csv_columns ... ok
+test human_snapshot ... ok
+Error: Bounds
+Error: "Parameter membutuhkan nilai"
+test invalid_bounds_and_missing_options ... ok
+test bounded_file_output_and_no_overwrite ... ok
+test unified_sample_csv ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running tests/system_contract.rs (target/debug/build/xynoos-cli/7f5f952fac7df5f2/out/system_contract-7f5f952fac7df5f2)
+
+running 2 tests
+test json_contract_and_explicit_missing_disk ... ok
+test sampling_has_readiness_and_expiration ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.11s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-core/08e8fe2e5d48e9f5/out/xynoos_core-08e8fe2e5d48e9f5)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-decision/f8cb2083396793ba/out/xynoos_decision-f8cb2083396793ba)
+
+running 5 tests
+test scoped_tests::refusal_on_stale_missing_denied_and_wrong_source ... ok
+test scoped_tests::shared_is_never_workload_recommendation_and_isolated_requires_two ... ok
+test tests::rejects_invalid_and_resets_history ... ok
+test tests::boundaries_hysteresis_and_cooldown ... ok
+test tests::bounded_deterministic_and_no_action_without_capability ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.17s
+
+     Running unittests examples/cgroup_probe.rs (target/debug/build/xynoos-decision/290e388a2d648eae/out/cgroup_probe-290e388a2d648eae)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/validation.rs (target/debug/build/xynoos-decision/a60c2e86a2cf08a7/out/decision_validation-a60c2e86a2cf08a7)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/optimization_experiment.rs (target/debug/build/xynoos-decision/595eb892526147be/out/optimization_experiment-595eb892526147be)
+
+running 5 tests
+test tests::memory_guard_rejects_missing_and_low ... ok
+test tests::modes_fail_closed ... ok
+test tests::parent_preflight_refuses_unsafe_state ... ok
+test tests::physical_request_requires_separate_authorization_and_stays_disabled ... ok
+test tests::stop_reaps_child_and_is_idempotent ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+     Running unittests examples/workload_validation.rs (target/debug/build/xynoos-decision/60ff5e051ea49c38/out/workload_validation-60ff5e051ea49c38)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-engine/e4ac801613ab5b2a/out/xynoos_engine-e4ac801613ab5b2a)
+
+running 7 tests
+test observation::tests::streaming_preserves_schema_and_missing_telemetry ... ok
+test owned::tests::low_memory_missing_and_reset_telemetry_refuse_without_changes ... ok
+test owned::tests::state_transitions_and_cooldown ... ok
+test owned::tests::corruption_and_partial_restoration_failure_are_errors ... ok
+test owned::tests::compressed_corruption_after_partial_reverse_is_not_success ... ok
+test owned::tests::telemetry_authorization_backoff_and_entropy ... ok
+test owned::tests::compression_is_real_equivalent_and_reversible ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 2.79s
+
+     Running unittests src/bin/xynoos-owned.rs (target/debug/build/xynoos-engine/816bb34f36bd8cc3/out/xynoos_owned-816bb34f36bd8cc3)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/xynoos-perf.rs (target/debug/build/xynoos-engine/ea416af8770030c8/out/xynoos_perf-ea416af8770030c8)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/integrated.rs (target/debug/build/xynoos-engine/b0a13265ee987936/out/integrated-b0a13265ee987936)
+
+running 10 tests
+test evidence_io_failure_stops_execution_and_preserves_durable_intent ... ok
+test evidence_paths_refuse_symlinks_and_special_files ... ok
+test authorization_and_physical_lock_are_independent_of_caller_intent ... ok
+test policy_threshold_sweep_uses_real_parsers_and_aura_decisions ... ok
+test telemetry_refusals_reset_history_and_swap_counter_reset_is_not_activity ... ok
+test low_memory_and_cancellation_back_off_without_owned_mutations ... ok
+test traces_are_bounded_and_malformed_input_never_reaches_executor ... ok
+test corruption_reordering_and_changed_originals_preserve_valid_prefix ... ok
+test three_arms_share_trace_and_workload_but_only_simulation_compresses ... ok
+test durable_evidence_restart_and_every_interrupted_stage_fail_closed ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.14s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-hypermemory/0f0a8f6adfdf8f64/out/xynoos_hypermemory-0f0a8f6adfdf8f64)
+
+running 13 tests
+test adaptive_tests::raw_corruption_is_detected ... ok
+test adaptive_tests::mixed_and_budget ... ok
+test budget_boundary_tests::boundary_and_reuse ... ok
+test budget_boundary_tests::overflow_and_raw_integrity ... ok
+test integrity_tests::checksum_and_length ... ok
+test integrity_tests::failures_preserve_state ... ok
+test integrity_tests::corruption_and_isolation ... ok
+test integrity_tests::truncation_and_decoder_failure ... ok
+test tests::invalid ... ok
+test tests::round_trips_and_statistics ... ok
+test malformed_tests::bounded_malformed_blocks ... ok
+test budget_boundary_tests::mixed_sequence ... ok
+test integrity_tests::generated_operation_sequences ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.43s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-linux-control/802001a5e1ca8b01/out/xynoos_linux_control-802001a5e1ca8b01)
+
+running 95 tests
+test bound_child::tests::symlink_duplicate_and_removal_failure_are_preserved ... ok
+test bound_child::tests::creation_inspection_and_verified_removal ... ok
+test child_memory::tests::ambiguous_short_mismatch_and_no_retry ... ok
+test child_memory::tests::competing_value_and_restoration_failure_are_reported ... ok
+test child_memory::tests::refuses_authorization_identity_missing_and_permission ... ok
+test bound_child::tests::population_descendants_and_identity_changes_refuse_cleanup ... ok
+test child_memory::tests::successful_read_and_write_readback ... ok
+test bound_child::tests::wrong_parent_and_duplicate_refused ... ok
+test bound_child::tests::memory_low_read_is_descriptor_bound_and_rejects_bad_files ... ok
+test controller::observation_tests::missing_low_and_populated_child_are_visible ... ok
+test controller::session_io_tests::adapter_integration::adapter_authorization_covers_every_operation ... ok
+test controller::observation_tests::stale_hierarchy_and_failed_reads_are_visible ... ok
+test controller::observation_tests::observes_lifecycle_and_child ... ok
+test controller::observation_tests::unresolved_evidence_never_authorizes_retry ... ok
+test controller::session_io_tests::adapter_integration::controller_short_write_is_ambiguous_and_never_retried ... ok
+test controller::session_io_tests::adapter_integration::integrated_authorization_and_live_gate_stay_closed ... ok
+test controller::session_io_tests::adapter_integration::integrated_child_creation_failure_preserves_ownership ... ok
+test controller::session_io_tests::adapter_integration::integrated_competing_low_is_not_overwritten ... ok
+test controller::session_io_tests::adapter_integration::integrated_child_cleanup_failure_blocks_parent_restoration ... ok
+test controller::session_io_tests::adapter_integration::integrated_complete_lifecycle ... ok
+test controller::session_io_tests::adapter_integration::integrated_controller_activation_failure_latches ... ok
+test controller::session_io_tests::adapter_integration::integrated_controller_restoration_refuses_with_child ... ok
+test controller::session_io_tests::adapter_integration::integrated_controller_restoration_write_failure_is_ambiguous ... ok
+test controller::session_io_tests::adapter_integration::integrated_low_prewrite_refusal_recovers_in_order ... ok
+test controller::session_io_tests::adapter_integration::integrated_low_restoration_failure_retains_cause_and_child ... ok
+test controller::session_io_tests::adapter_integration::integrated_evidence_budget_refuses_without_discarding_history_or_writing ... ok
+test controller::session_io_tests::adapter_integration::integrated_low_ambiguity_and_readback_mismatch_never_retry ... ok
+test controller::session_io_tests::adapter_integration::integrated_stale_binding_refuses_without_mutation ... ok
+test controller::session_io_tests::adapter_integration::integrated_typed_controller_refusal_and_child_cleanup_guard ... ok
+test controller::session_io_tests::adapter_integration::integrated_recovery_failures_stop_reverse_cleanup ... ok
+test controller::session_io_tests::adapter_integration::late_competing_changes_are_checked_at_child_operation_boundary ... ok
+test controller::session_io_tests::adapter_integration::integrated_telemetry_refusal_blocks_all_later_mutations ... ok
+test controller::session_io_tests::adapter_integration::integrated_cancellation_runs_existing_reverse_recovery ... ok
+test controller::session_io_tests::ambiguous_controller_write_retains_expected_and_observed_certainty ... ok
+test controller::session_io_tests::child_cleanup_failure_latches_and_blocks_controller_restoration ... ok
+test controller::session_io_tests::child_creation_failure_retains_ownership_and_blocks_retry ... ok
+test controller::session_io_tests::adapter_integration::transient_telemetry_refusal_recovers_without_reopening_forward_authority ... ok
+test controller::session_io_tests::controller_change_between_observations_is_not_cached_authority ... ok
+test controller::session_io_tests::controller_change_during_observation_is_invalid ... ok
+test controller::session_io_tests::adapter_integration::second_cancellation_is_deferred_during_bounded_recovery ... ok
+test controller::session_io_tests::adapter_integration::unavailable_recovery_telemetry_preserves_verified_resources ... ok
+test controller::session_io_tests::controller_read_failure_is_unknown_and_refuses_activation ... ok
+test controller::session_io_tests::controller_readback_error_is_ambiguous_with_unknown_observed_state ... ok
+test controller::session_io_tests::controller_write_readback_mismatch_is_ambiguous_with_observed_state ... ok
+test controller::session_io_tests::identity_failure_after_write_is_ambiguous ... ok
+test controller::session_io_tests::controller_restoration_failure_before_write_is_not_retried ... ok
+test controller::session_io_tests::controller_restoration_write_failure_or_mismatch_stays_ambiguous ... ok
+test controller::session_io_tests::parent_identity_mismatch_invalidates_and_refuses ... ok
+test controller::session_io_tests::memory_low_read_failure_is_typed_and_incomplete ... ok
+test controller::session_io_tests::observation_and_fixture_identity_cannot_enable_writes ... ok
+test controller::session_io_tests::populated_registered_child_refuses_cleanup_without_mutation ... ok
+test controller::session_io_tests::pre_write_refusal_uses_real_hierarchy_and_population_checks ... ok
+test controller::session_io_tests::registered_child_inode_mismatch_preserves_child ... ok
+test controller::session_io_tests::unresolved_mutation_blocks_retry_even_after_valid_io_returns ... ok
+test controller::tests::authorized_write_and_readback ... ok
+test controller::tests::competing_change_before_write_is_not_overwritten ... ok
+test controller::session_io_tests::valid_session_observation_and_verified_lifecycle ... ok
+test controller::tests::guarded_restoration_and_failures ... ok
+test controller::tests::hierarchy_requires_only_manager_and_no_other_descendants ... ok
+test controller::tests::newly_populated_parent_never_writes ... ok
+test controller::tests::post_activation_identity_failure_is_ambiguous ... ok
+test controller::tests::read_only_session_readiness_refuses_changed_state_without_writes ... ok
+test controller::tests::preconditions_never_write ... ok
+test controller::tests::tracked_activation_retains_original_and_refuses_retry_after_ambiguity ... ok
+test controller::tests::typed_restoration_results_and_retry_guard ... ok
+test controller::tests::typed_activation_reports_verified_refusal_and_ambiguity_without_retry ... ok
+test controller::tests::typed_child_lifecycle_and_failures ... ok
+test controller::tests::unit_or_manager_verification_failure_never_writes ... ok
+test controller::tests::write_and_readback_fail_closed ... ok
+test empty_child_coordinator::tests::complete_and_explicit_authorization ... ok
+test empty_child_coordinator::tests::competing_changes_and_identity_replacement_never_get_overwritten ... ok
+test empty_child_coordinator::tests::cancellation_at_each_stage_runs_ordered_bounded_recovery ... ok
+test empty_child_coordinator::tests::mutation_errors_after_effect_are_ambiguous_and_not_retried ... ok
+test empty_child_coordinator::tests::recovery_write_ambiguities_are_not_retried ... ok
+test empty_child_coordinator::tests::recovery_failures_do_not_restore_parent_with_child ... ok
+test safety::tests::collection_failure ... ok
+test safety::tests::fresh_valid_and_threshold_equality ... ok
+test empty_child_coordinator::tests::each_failable_stage_before_and_read_only_after ... ok
+test safety::tests::inconsistent_memory_and_missing_total ... ok
+test empty_child_coordinator::tests::reverse_order_and_conflicts_during_recovery ... ok
+test safety::tests::insufficient ... ok
+test safety::tests::invalid_thresholds_refuse ... ok
+test safety::tests::malformed ... ok
+test safety::tests::malformed_psi_refuses ... ok
+test safety::tests::psi_present_is_diagnostic_even_when_high ... ok
+test safety::tests::missing_available ... ok
+test safety::tests::sequential_checks_recollect_and_detect_change ... ok
+test safety::tests::stale_and_age_equality ... ok
+test safety::tests::telemetry_grants_no_write_authority ... ok
+test safety::tests::psi_unavailable_is_explicit_optional_evidence ... ok
+test systemd_identity::tests::diagnostic_contains_bound_identities ... ok
+test systemd_identity::tests::busctl_mx_reply_fixtures ... ok
+test systemd_identity::tests::identity_fixtures_fail_closed ... ok
+test safety::tests::timestamps ... ok
+test systemd_identity::tests::real_read_only_linux_discovery ... ok
+
+test result: ok. 95 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.04s
+
+     Running tests/kernel_transaction.rs (target/debug/build/xynoos-linux-control/fd0d9b2d22b1bec4/out/kernel_transaction-fd0d9b2d22b1bec4)
+
+running 1 test
+test physical_constructor_is_disabled_even_with_authorization ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/linux.rs (target/debug/build/xynoos-linux-control/a8ba96dcc534747b/out/linux-a8ba96dcc534747b)
+
+running 3 tests
+test telemetry_errors_are_not_accepted ... ok
+test stale_bounds_and_unsafe_targets_are_declined ... ok
+test linux_discovery_and_read_only_decisions ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/transactions.rs (target/debug/build/xynoos-linux-control/581cd5f9c120d51d/out/transactions-581cd5f9c120d51d)
+
+running 14 tests
+test failed_apply_after_mutation_is_preserved_without_rollback ... ok
+test apply_failure_and_verification_mismatch ... ok
+test failed_operation_restores_and_reports_failure ... ok
+test failed_authorization_and_verification_never_release_worker ... ok
+test concurrent_modification_is_not_overwritten ... ok
+test real_backend_refuses_unauthorized_and_non_cgroup_parent ... ok
+test operation_conflict_is_not_overwritten ... ok
+test operation_runs_only_while_verified_policy_is_active ... ok
+test rollback_failure_is_explicit ... ok
+test success_applies_and_restores ... ok
+test rollback_verification_failure_is_reported ... ok
+test unauthorized_stale_and_bounds_never_write ... ok
+test identity_failure_never_triggers_blind_write_or_rollback ... ok
+test unreaped_worker_blocks_restoration_and_preserves_control ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests examples/probe.rs (target/debug/build/xynoos-linux-control/2e1f28c06524d064/out/probe-2e1f28c06524d064)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests examples/transaction_bench.rs (target/debug/build/xynoos-linux-control/3101642b700cae81/out/transaction_bench-3101642b700cae81)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/lib.rs (target/debug/build/xynoos-pressureiq/fc54d0140a5d8e7f/out/xynoos_pressureiq-fc54d0140a5d8e7f)
+
+running 15 tests
+test delta_tests::monotonic_and_reset ... ok
+test cgroup_pressure::tests::paths_and_independent_deltas ... ok
+test system::contract_tests::filesystem_permission_and_missing_are_distinct ... ok
+test system::tests::cgroup_values ... ok
+test system::tests::cpu_delta_and_resets ... ok
+test system::tests::disk_units_identity_and_reset ... ok
+test tests::bounds ... ok
+test tests::meminfo_units_and_optional ... ok
+test tests::partial_and_csv ... ok
+test tests::psi_ok_and_optional ... ok
+test tests::psi_rejects_invalid ... ok
+test tests::vm_delta_and_reset ... ok
+test workload::tests::identity_and_intervals ... ok
+test system::contract_tests::freshness_and_readiness_preserve_errors_and_identity ... ok
+test system::contract_tests::discovery_preserves_partial_and_marks_truncation ... ok
+
+test result: ok. 15 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s
+
+     Running unittests examples/pressureiq_research.rs (target/debug/build/xynoos-pressureiq/990718934b0b2464/out/pressureiq_research-990718934b0b2464)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit=0
+
+$ cargo test --workspace --doc
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+   Doc-tests xynoos_aura
+
+running 1 test
+test crates/xynoos-aura/src/selector.rs - selector::Selector::fast_event (line 241) - compile fail ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.03s
+
+   Doc-tests xynoos_core
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xynoos_decision
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xynoos_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.00s
+
+   Doc-tests xynoos_hypermemory
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests xynoos_linux_control
+
+running 8 tests
+test crates/xynoos-linux-control/src/controller.rs - controller::ControllerSession (line 370) - compile fail ... ok
+test crates/xynoos-linux-control/src/controller.rs - controller::ControllerSession (line 366) - compile fail ... ok
+test crates/xynoos-linux-control/src/controller.rs - controller::ControllerSession (line 362) - compile fail ... ok
+test crates/xynoos-linux-control/src/controller.rs - controller::ControllerSession (line 358) - compile fail ... ok
+test crates/xynoos-linux-control/src/controller.rs - controller::ControllerSession (line 374) - compile fail ... ok
+test crates/xynoos-linux-control/src/controller.rs - controller::ControllerSession (line 382) - compile fail ... ok
+test crates/xynoos-linux-control/src/controller.rs - controller::ControllerSession (line 379) - compile fail ... ok
+test crates/xynoos-linux-control/src/controller.rs - controller::ControllerSession (line 386) - compile fail ... ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.17s
+
+   Doc-tests xynoos_pressureiq
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+exit=0
+
+$ cargo build --release -p xynoos-engine --bin xynoos-perf --bin xynoos-owned -p xynoos-cli --bin xynoos-mvp
+   Compiling xynoos-cli v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-cli)
+   Compiling xynoos-engine v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-engine)
+    Finished `release` profile [optimized] target(s) in 1.49s
+exit=0
+
+$ python3 -m unittest discover -s scripts/tests -p test_*.py -v
+test_crash_tail_inspection_is_read_only (test_owned.OwnedTests.test_crash_tail_inspection_is_read_only) ... ok
+test_entropy_never_claims_savings (test_owned.OwnedTests.test_entropy_never_claims_savings) ... ok
+test_hard_resource_limits_and_eof_reverse (test_owned.OwnedTests.test_hard_resource_limits_and_eof_reverse) ... ok
+test_independent_watchdog_with_open_idle_stdin (test_owned.OwnedTests.test_independent_watchdog_with_open_idle_stdin) ... ok
+test_matched_real_intervention_output_and_restoration (test_owned.OwnedTests.test_matched_real_intervention_output_and_restoration) ... ok
+test_missing_memavailable_and_low_headroom_refuse (test_owned.OwnedTests.test_missing_memavailable_and_low_headroom_refuse) ... ok
+test_no_authorization_no_child (test_owned.OwnedTests.test_no_authorization_no_child) ... ok
+test_oversized_input_and_request_bound (test_owned.OwnedTests.test_oversized_input_and_request_bound) ... ok
+test_signals_restore_and_record_incomplete (test_owned.OwnedTests.test_signals_restore_and_record_incomplete) ... ok
+test_worker_death_timeout_and_output_bound (test_owned.OwnedTests.test_worker_death_timeout_and_output_bound) ... ok
+test_corrupt_complete_event_is_rejected (test_physical_benchmark.BenchmarkTests.test_corrupt_complete_event_is_rejected) ... ok
+test_crash_tail_is_read_only_and_cleanup_unknown (test_physical_benchmark.BenchmarkTests.test_crash_tail_is_read_only_and_cleanup_unknown) ... ok
+test_end_marker_cannot_promote_failed_runs (test_physical_benchmark.BenchmarkTests.test_end_marker_cannot_promote_failed_runs) ... ok
+test_existing_output_and_incorrect_environment_are_refused (test_physical_benchmark.BenchmarkTests.test_existing_output_and_incorrect_environment_are_refused) ... ok
+test_high_pressure_stops_and_reaps_launched_worker (test_physical_benchmark.BenchmarkTests.test_high_pressure_stops_and_reaps_launched_worker) ... ok
+test_kill_escalation_is_explicit_and_incomplete (test_physical_benchmark.BenchmarkTests.test_kill_escalation_is_explicit_and_incomplete) ... ok
+test_lost_memavailable_stops_owned_children (test_physical_benchmark.BenchmarkTests.test_lost_memavailable_stops_owned_children) ... ok
+test_missing_psi_stays_unknown (test_physical_benchmark.BenchmarkTests.test_missing_psi_stays_unknown) ... ok
+test_mounted_cgroup_low_headroom_refuses (test_physical_benchmark.BenchmarkTests.test_mounted_cgroup_low_headroom_refuses) ... ok
+test_observer_termination_is_not_zero_overhead (test_physical_benchmark.BenchmarkTests.test_observer_termination_is_not_zero_overhead) ... ok
+test_output_bound_stops_child (test_physical_benchmark.BenchmarkTests.test_output_bound_stops_child) ... ok
+test_real_observation_overlaps_identical_work (test_physical_benchmark.BenchmarkTests.test_real_observation_overlaps_identical_work) ... ok
+test_real_workload_integrity_and_proc_resources (test_physical_benchmark.BenchmarkTests.test_real_workload_integrity_and_proc_resources) ... ok
+test_refusal_and_missing_decision_telemetry_are_explicit (test_physical_benchmark.BenchmarkTests.test_refusal_and_missing_decision_telemetry_are_explicit) ... ok
+test_signals_preserve_partial_evidence_and_cleanup (test_physical_benchmark.BenchmarkTests.test_signals_preserve_partial_evidence_and_cleanup) ... ok
+test_stalled_worker_times_out_and_is_reaped (test_physical_benchmark.BenchmarkTests.test_stalled_worker_times_out_and_is_reaped) ... ok
+test_worker_rejects_long_input_and_unsupported_modes (test_physical_benchmark.BenchmarkTests.test_worker_rejects_long_input_and_unsupported_modes) ... ok
+test_workload_termination_is_not_a_complete_run (test_physical_benchmark.BenchmarkTests.test_workload_termination_is_not_a_complete_run) ... ok
+test_absence_without_identity_never_passes (test_unit_cleanup.Fixtures.test_absence_without_identity_never_passes) ... ok
+test_active (test_unit_cleanup.Fixtures.test_active) ... ok
+test_bus_unavailable_and_command_timeout (test_unit_cleanup.Fixtures.test_bus_unavailable_and_command_timeout) ... ok
+test_cleanup_timeout (test_unit_cleanup.Fixtures.test_cleanup_timeout) ... ok
+test_collected_preserved_identity (test_unit_cleanup.Fixtures.test_collected_preserved_identity) ... ok
+test_contradictory (test_unit_cleanup.Fixtures.test_contradictory) ... ok
+test_diagnostic_failure_cannot_pass (test_unit_cleanup.Fixtures.test_diagnostic_failure_cannot_pass) ... ok
+test_duplicate_manager_record (test_unit_cleanup.Fixtures.test_duplicate_manager_record) ... ok
+test_inactive_awaiting_collection (test_unit_cleanup.Fixtures.test_inactive_awaiting_collection) ... ok
+test_invocation_and_name_reuse (test_unit_cleanup.Fixtures.test_invocation_and_name_reuse) ... ok
+test_malformed_manager_json (test_unit_cleanup.Fixtures.test_malformed_manager_json) ... ok
+test_missing_malformed_bus (test_unit_cleanup.Fixtures.test_missing_malformed_bus) ... ok
+test_missing_output_and_diagnostic_failure (test_unit_cleanup.Fixtures.test_missing_output_and_diagnostic_failure) ... ok
+test_normal_snapshot (test_unit_cleanup.Fixtures.test_normal_snapshot) ... ok
+test_partial_trailing_record (test_unit_cleanup.Fixtures.test_partial_trailing_record) ... ok
+test_present_and_removed_exact_evidence (test_unit_cleanup.Fixtures.test_present_and_removed_exact_evidence) ... ok
+test_replaced_parent_and_child (test_unit_cleanup.Fixtures.test_replaced_parent_and_child) ... ok
+test_stale_record_and_missing_inactive_invocation (test_unit_cleanup.Fixtures.test_stale_record_and_missing_inactive_invocation) ... ok
+test_supervised_pass_inactive_and_collected (test_unit_cleanup.Fixtures.test_supervised_pass_inactive_and_collected) ... ok
+test_uncertain_or_replaced_ancestor (test_unit_cleanup.Fixtures.test_uncertain_or_replaced_ancestor) ... ok
+
+----------------------------------------------------------------------
+Ran 48 tests in 30.408s
+
+OK
+exit=0
+
+$ cargo test -p xynoos-decision --example optimization_experiment
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.02s
+     Running unittests examples/optimization_experiment.rs (target/debug/build/xynoos-decision/00ccbc8e593e286f/out/optimization_experiment-00ccbc8e593e286f)
+
+running 5 tests
+test tests::memory_guard_rejects_missing_and_low ... ok
+test tests::modes_fail_closed ... ok
+test tests::parent_preflight_refuses_unsafe_state ... ok
+test tests::physical_request_requires_separate_authorization_and_stays_disabled ... ok
+test tests::stop_reaps_child_and_is_idempotent ... ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.01s
+
+exit=0
+
+$ cargo build --workspace --release
+   Compiling xynoos-cli v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-cli)
+   Compiling xynoos-bench v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-bench)
+    Finished `release` profile [optimized] target(s) in 1.66s
+exit=0
+
+$ RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps
+ Documenting xynoos-engine v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-engine)
+ Documenting xynoos-bench v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-bench)
+ Documenting xynoos-cli v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 2.13s
+   Generated /workspaces/xynoos-hypercore/target/doc/xynoos_aura/index.html and 11 other files
+exit=0
+
+$ sh scripts/tests/test-018e-launcher.sh
+....................
+----------------------------------------------------------------------
+Ran 20 tests in 0.026s
+
+OK
+exit=0
+
+$ cargo build -p xynoos-cli --bin xynoos-mvp --release --target x86_64-unknown-linux-musl
+   Compiling xynoos-cli v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-cli)
+    Finished `release` profile [optimized] target(s) in 1.18s
+exit=0
+
+$ cargo build -p xynoos-engine --bin xynoos-perf --bin xynoos-owned --release --target x86_64-unknown-linux-musl
+   Compiling xynoos-engine v0.1.0 (/workspaces/xynoos-hypercore/crates/xynoos-engine)
+    Finished `release` profile [optimized] target(s) in 0.79s
+exit=0
+
+$ file target/x86_64-unknown-linux-musl/release/xynoos-mvp target/x86_64-unknown-linux-musl/release/xynoos-perf target/x86_64-unknown-linux-musl/release/xynoos-owned
+target/x86_64-unknown-linux-musl/release/xynoos-mvp:   ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=69de173f43e885ba07b8a0daefa7a29159950083, not stripped
+target/x86_64-unknown-linux-musl/release/xynoos-perf:  ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=c89192480699384428f5b9175c4411b3cba316b4, not stripped
+target/x86_64-unknown-linux-musl/release/xynoos-owned: ELF 64-bit LSB pie executable, x86-64, version 1 (SYSV), static-pie linked, BuildID[sha1]=2dacae4258da105d723860634985773fc4a2858a, not stripped
+exit=0
+
+$ git diff --check
+exit=0
+
+$ python3 -m unittest discover -s scripts/tests -p test_*.py -v # after unknown-HWM reporting fix
+test_crash_tail_inspection_is_read_only (test_owned.OwnedTests.test_crash_tail_inspection_is_read_only) ... ok
+test_entropy_never_claims_savings (test_owned.OwnedTests.test_entropy_never_claims_savings) ... ok
+test_hard_resource_limits_and_eof_reverse (test_owned.OwnedTests.test_hard_resource_limits_and_eof_reverse) ... ok
+test_independent_watchdog_with_open_idle_stdin (test_owned.OwnedTests.test_independent_watchdog_with_open_idle_stdin) ... ok
+test_matched_real_intervention_output_and_restoration (test_owned.OwnedTests.test_matched_real_intervention_output_and_restoration) ... ok
+test_missing_memavailable_and_low_headroom_refuse (test_owned.OwnedTests.test_missing_memavailable_and_low_headroom_refuse) ... ok
+test_missing_peak_memory_is_unknown_not_zero (test_owned.OwnedTests.test_missing_peak_memory_is_unknown_not_zero) ... ok
+test_no_authorization_no_child (test_owned.OwnedTests.test_no_authorization_no_child) ... ok
+test_oversized_input_and_request_bound (test_owned.OwnedTests.test_oversized_input_and_request_bound) ... ok
+test_signals_restore_and_record_incomplete (test_owned.OwnedTests.test_signals_restore_and_record_incomplete) ... ok
+test_worker_death_timeout_and_output_bound (test_owned.OwnedTests.test_worker_death_timeout_and_output_bound) ... ok
+test_corrupt_complete_event_is_rejected (test_physical_benchmark.BenchmarkTests.test_corrupt_complete_event_is_rejected) ... ok
+test_crash_tail_is_read_only_and_cleanup_unknown (test_physical_benchmark.BenchmarkTests.test_crash_tail_is_read_only_and_cleanup_unknown) ... ok
+test_end_marker_cannot_promote_failed_runs (test_physical_benchmark.BenchmarkTests.test_end_marker_cannot_promote_failed_runs) ... ok
+test_existing_output_and_incorrect_environment_are_refused (test_physical_benchmark.BenchmarkTests.test_existing_output_and_incorrect_environment_are_refused) ... ok
+test_high_pressure_stops_and_reaps_launched_worker (test_physical_benchmark.BenchmarkTests.test_high_pressure_stops_and_reaps_launched_worker) ... ok
+test_kill_escalation_is_explicit_and_incomplete (test_physical_benchmark.BenchmarkTests.test_kill_escalation_is_explicit_and_incomplete) ... ok
+test_lost_memavailable_stops_owned_children (test_physical_benchmark.BenchmarkTests.test_lost_memavailable_stops_owned_children) ... ok
+test_missing_psi_stays_unknown (test_physical_benchmark.BenchmarkTests.test_missing_psi_stays_unknown) ... ok
+test_mounted_cgroup_low_headroom_refuses (test_physical_benchmark.BenchmarkTests.test_mounted_cgroup_low_headroom_refuses) ... ok
+test_observer_termination_is_not_zero_overhead (test_physical_benchmark.BenchmarkTests.test_observer_termination_is_not_zero_overhead) ... ok
+test_output_bound_stops_child (test_physical_benchmark.BenchmarkTests.test_output_bound_stops_child) ... ok
+test_real_observation_overlaps_identical_work (test_physical_benchmark.BenchmarkTests.test_real_observation_overlaps_identical_work) ... ok
+test_real_workload_integrity_and_proc_resources (test_physical_benchmark.BenchmarkTests.test_real_workload_integrity_and_proc_resources) ... ok
+test_refusal_and_missing_decision_telemetry_are_explicit (test_physical_benchmark.BenchmarkTests.test_refusal_and_missing_decision_telemetry_are_explicit) ... ok
+test_signals_preserve_partial_evidence_and_cleanup (test_physical_benchmark.BenchmarkTests.test_signals_preserve_partial_evidence_and_cleanup) ... ok
+test_stalled_worker_times_out_and_is_reaped (test_physical_benchmark.BenchmarkTests.test_stalled_worker_times_out_and_is_reaped) ... ok
+test_worker_rejects_long_input_and_unsupported_modes (test_physical_benchmark.BenchmarkTests.test_worker_rejects_long_input_and_unsupported_modes) ... ok
+test_workload_termination_is_not_a_complete_run (test_physical_benchmark.BenchmarkTests.test_workload_termination_is_not_a_complete_run) ... ok
+test_absence_without_identity_never_passes (test_unit_cleanup.Fixtures.test_absence_without_identity_never_passes) ... ok
+test_active (test_unit_cleanup.Fixtures.test_active) ... ok
+test_bus_unavailable_and_command_timeout (test_unit_cleanup.Fixtures.test_bus_unavailable_and_command_timeout) ... ok
+test_cleanup_timeout (test_unit_cleanup.Fixtures.test_cleanup_timeout) ... ok
+test_collected_preserved_identity (test_unit_cleanup.Fixtures.test_collected_preserved_identity) ... ok
+test_contradictory (test_unit_cleanup.Fixtures.test_contradictory) ... ok
+test_diagnostic_failure_cannot_pass (test_unit_cleanup.Fixtures.test_diagnostic_failure_cannot_pass) ... ok
+test_duplicate_manager_record (test_unit_cleanup.Fixtures.test_duplicate_manager_record) ... ok
+test_inactive_awaiting_collection (test_unit_cleanup.Fixtures.test_inactive_awaiting_collection) ... ok
+test_invocation_and_name_reuse (test_unit_cleanup.Fixtures.test_invocation_and_name_reuse) ... ok
+test_malformed_manager_json (test_unit_cleanup.Fixtures.test_malformed_manager_json) ... ok
+test_missing_malformed_bus (test_unit_cleanup.Fixtures.test_missing_malformed_bus) ... ok
+test_missing_output_and_diagnostic_failure (test_unit_cleanup.Fixtures.test_missing_output_and_diagnostic_failure) ... ok
+test_normal_snapshot (test_unit_cleanup.Fixtures.test_normal_snapshot) ... ok
+test_partial_trailing_record (test_unit_cleanup.Fixtures.test_partial_trailing_record) ... ok
+test_present_and_removed_exact_evidence (test_unit_cleanup.Fixtures.test_present_and_removed_exact_evidence) ... ok
+test_replaced_parent_and_child (test_unit_cleanup.Fixtures.test_replaced_parent_and_child) ... ok
+test_stale_record_and_missing_inactive_invocation (test_unit_cleanup.Fixtures.test_stale_record_and_missing_inactive_invocation) ... ok
+test_supervised_pass_inactive_and_collected (test_unit_cleanup.Fixtures.test_supervised_pass_inactive_and_collected) ... ok
+test_uncertain_or_replaced_ancestor (test_unit_cleanup.Fixtures.test_uncertain_or_replaced_ancestor) ... ok
+
+----------------------------------------------------------------------
+Ran 49 tests in 30.456s
+
+OK
+exit=0

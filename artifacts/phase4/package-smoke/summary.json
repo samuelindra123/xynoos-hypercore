@@ -1,0 +1,383 @@
+{
+  "schema_version": 1,
+  "status": "complete",
+  "environment": "Codespaces",
+  "label": "Codespaces extracted static package smoke, not N5000, 10 requests",
+  "expected_measured_runs": 4,
+  "recorded_measured_runs": 4,
+  "arms": {
+    "baseline": {
+      "complete_runs": 2,
+      "response_ns": {
+        "count": 20,
+        "p50": 1848034,
+        "p95": 2173841,
+        "p99": 2309444
+      },
+      "service_ns": {
+        "count": 20,
+        "p50": 1772303,
+        "p95": 2102308,
+        "p99": 2239965
+      },
+      "per_run_response_ns": [
+        {
+          "count": 10,
+          "p50": 1788684,
+          "p95": 2309444,
+          "p99": 2309444
+        },
+        {
+          "count": 10,
+          "p50": 1929586,
+          "p95": 2173841,
+          "p99": 2173841
+        }
+      ],
+      "completion_ns": {
+        "count": 2,
+        "p50": 111499211,
+        "p95": 112801920,
+        "p99": 112801920
+      },
+      "completion_cv": 0.008213550807398703,
+      "host_context_per_run": [
+        {
+          "sample_window_ns": 105170707,
+          "cpu_busy_fraction": 0.0975609756097561,
+          "minimum_mem_available_kib": 14134984,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 531
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 101198641,
+          "cpu_busy_fraction": 0.275,
+          "minimum_mem_available_kib": 14134852,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 1887
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        }
+      ],
+      "process_rss_kib": {
+        "workload": {
+          "count": 4,
+          "p50": 1004,
+          "p95": 2860,
+          "p99": 2860
+        },
+        "observer": null,
+        "harness": {
+          "count": 4,
+          "p50": 23096,
+          "p95": 23152,
+          "p99": 23152
+        }
+      },
+      "child_cpu_ns": {
+        "workload": {
+          "count": 2,
+          "p50": 19760000,
+          "p95": 20923000,
+          "p99": 20923000
+        },
+        "observer": null
+      },
+      "harness_cpu_ns": {
+        "count": 2,
+        "p50": 4620178,
+        "p95": 4929666,
+        "p99": 4929666
+      },
+      "timer_lateness_ns": {
+        "count": 18,
+        "p50": 2085409,
+        "p95": 2849867,
+        "p99": 2849867
+      }
+    },
+    "observe": {
+      "complete_runs": 2,
+      "response_ns": {
+        "count": 20,
+        "p50": 1783323,
+        "p95": 2247198,
+        "p99": 2752366
+      },
+      "service_ns": {
+        "count": 20,
+        "p50": 1704156,
+        "p95": 2152391,
+        "p99": 2634560
+      },
+      "per_run_response_ns": [
+        {
+          "count": 10,
+          "p50": 1856380,
+          "p95": 2247198,
+          "p99": 2247198
+        },
+        {
+          "count": 10,
+          "p50": 1665092,
+          "p95": 2752366,
+          "p99": 2752366
+        }
+      ],
+      "completion_ns": {
+        "count": 2,
+        "p50": 111685363,
+        "p95": 112413228,
+        "p99": 112413228
+      },
+      "completion_cv": 0.004593320064991809,
+      "host_context_per_run": [
+        {
+          "sample_window_ns": 100908281,
+          "cpu_busy_fraction": 0.07894736842105263,
+          "minimum_mem_available_kib": 14135060,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 441
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 100353335,
+          "cpu_busy_fraction": 0.17073170731707318,
+          "minimum_mem_available_kib": 14134800,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 1655
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        }
+      ],
+      "process_rss_kib": {
+        "workload": {
+          "count": 4,
+          "p50": 1304,
+          "p95": 2808,
+          "p99": 2808
+        },
+        "observer": {
+          "count": 4,
+          "p50": 832,
+          "p95": 956,
+          "p99": 956
+        },
+        "harness": {
+          "count": 4,
+          "p50": 23112,
+          "p95": 23136,
+          "p99": 23136
+        }
+      },
+      "child_cpu_ns": {
+        "workload": {
+          "count": 2,
+          "p50": 20150000,
+          "p95": 20602000,
+          "p99": 20602000
+        },
+        "observer": {
+          "count": 2,
+          "p50": 1988000,
+          "p95": 2291000,
+          "p99": 2291000
+        }
+      },
+      "harness_cpu_ns": {
+        "count": 2,
+        "p50": 5735144,
+        "p95": 6008978,
+        "p99": 6008978
+      },
+      "timer_lateness_ns": {
+        "count": 18,
+        "p50": 1943459,
+        "p95": 3307345,
+        "p99": 3307345
+      }
+    }
+  },
+  "paired": [
+    {
+      "repeat": 0,
+      "completion_observe_over_baseline": 1.0081975198909703,
+      "p50_response_observe_over_baseline": 1.0678863588340057
+    },
+    {
+      "repeat": 1,
+      "completion_observe_over_baseline": 0.9901016135186351,
+      "p50_response_observe_over_baseline": 0.8697564999541719
+    }
+  ],
+  "failed_runs": 0,
+  "interpretation": "timer lateness is a harness scheduling proxy, not GUI/frame/input latency; shared telemetry is context, not attributed benefit",
+  "active_optimization": {
+    "status": "NO-GO",
+    "available": false,
+    "reason": "no demonstrated admissible active action; simulation is excluded"
+  }
+}

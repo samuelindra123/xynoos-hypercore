@@ -1,0 +1,24 @@
+test_active_without_authorization_refused (test_desktop.DesktopTests.test_active_without_authorization_refused) ... ok
+test_admission_missing_reset_stale_pressure_and_oom (test_desktop.DesktopTests.test_admission_missing_reset_stale_pressure_and_oom) ... ok
+test_cancel_before_launch_and_ambiguous_protocol_stop (test_desktop.DesktopTests.test_cancel_before_launch_and_ambiguous_protocol_stop) ... ok
+test_group_writable_binary_rejected (test_desktop.DesktopTests.test_group_writable_binary_rejected) ... ok
+test_identity_mismatch_stops_admission_and_reaps_exact_child (test_desktop.DesktopTests.test_identity_mismatch_stops_admission_and_reaps_exact_child) ... ok
+test_low_memory_after_launch_stops_all_children (test_desktop.DesktopTests.test_low_memory_after_launch_stops_all_children) ... ok
+test_matched_three_arms_equal_work_and_observer_contract (test_desktop.DesktopTests.test_matched_three_arms_equal_work_and_observer_contract) ... ok
+test_missing_memory_refuses_before_children (test_desktop.DesktopTests.test_missing_memory_refuses_before_children) ... ok
+test_nan_psi_and_cgroup_change_refuse (test_desktop.DesktopTests.test_nan_psi_and_cgroup_change_refuse) ... ok
+test_parent_sigkill_leaves_unknown_log_but_no_live_owned_workers (test_desktop.DesktopTests.test_parent_sigkill_leaves_unknown_log_but_no_live_owned_workers) ... ok
+test_real_tasks_match_independent_whole_corpus_index (test_desktop.DesktopTests.test_real_tasks_match_independent_whole_corpus_index) ... ok
+test_sealed_corpus_cannot_be_modified (test_desktop.DesktopTests.test_sealed_corpus_cannot_be_modified) ... ok
+test_signal_preserves_incomplete_evidence_and_reaps (test_desktop.DesktopTests.test_signal_preserves_incomplete_evidence_and_reaps) ... ok
+test_stale_telemetry_and_partial_pipe_write_fail_closed (test_desktop.DesktopTests.test_stale_telemetry_and_partial_pipe_write_fail_closed) ... ok
+test_truncated_logs_do_not_certify_cleanup (test_desktop.DesktopTests.test_truncated_logs_do_not_certify_cleanup) ... ok
+test_worker_input_bound_and_parent_eof (test_desktop.DesktopTests.test_worker_input_bound_and_parent_eof) ... ok
+test_low_pressure_admits_and_missing_full_refuses (test_desktop.DeterministicAdmissionTests.test_low_pressure_admits_and_missing_full_refuses) ... ok
+test_short_window_and_full_counter_reset_refuse (test_desktop.DeterministicAdmissionTests.test_short_window_and_full_counter_reset_refuse) ... ok
+test_telemetry_scope_and_limits_fail_closed (test_desktop.DeterministicAdmissionTests.test_telemetry_scope_and_limits_fail_closed) ... ok
+
+----------------------------------------------------------------------
+Ran 19 tests in 0.923s
+
+OK

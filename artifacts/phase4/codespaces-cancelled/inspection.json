@@ -1,0 +1,60 @@
+{
+  "status": "partial",
+  "read_only": true,
+  "environment": "Codespaces",
+  "truncated_final_event": false,
+  "unresolved_runs_cleanup_unknown": [],
+  "expected_measured_runs": 4,
+  "recorded_measured_runs": 0,
+  "cleanup": "see_recorded_child_results",
+  "arms": {
+    "baseline": {
+      "complete_runs": 0,
+      "response_ns": null,
+      "service_ns": null,
+      "per_run_response_ns": [],
+      "completion_ns": null,
+      "completion_cv": null,
+      "host_context_per_run": [],
+      "process_rss_kib": {
+        "workload": null,
+        "observer": null,
+        "harness": null
+      },
+      "child_cpu_ns": {
+        "workload": null,
+        "observer": null
+      },
+      "harness_cpu_ns": null,
+      "timer_lateness_ns": null
+    },
+    "observe": {
+      "complete_runs": 0,
+      "response_ns": null,
+      "service_ns": null,
+      "per_run_response_ns": [],
+      "completion_ns": null,
+      "completion_cv": null,
+      "host_context_per_run": [],
+      "process_rss_kib": {
+        "workload": null,
+        "observer": null,
+        "harness": null
+      },
+      "child_cpu_ns": {
+        "workload": null,
+        "observer": null
+      },
+      "harness_cpu_ns": null,
+      "timer_lateness_ns": null
+    }
+  },
+  "paired": [],
+  "failed_runs": 0,
+  "interpretation": "timer lateness is a harness scheduling proxy, not GUI/frame/input latency; shared telemetry is context, not attributed benefit",
+  "active_optimization": {
+    "status": "NO-GO",
+    "available": false,
+    "reason": "no demonstrated admissible active action; simulation is excluded"
+  }
+}

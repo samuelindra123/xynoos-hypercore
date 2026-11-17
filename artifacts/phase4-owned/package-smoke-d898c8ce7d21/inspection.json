@@ -1,0 +1,1200 @@
+{
+  "status": "complete",
+  "read_only": true,
+  "environment": "Codespaces",
+  "truncated_final_row": false,
+  "unresolved_cleanup_unknown": [],
+  "expected_runs_including_warmup": 21,
+  "recorded_runs_including_warmup": 21,
+  "arms": {
+    "baseline": {
+      "complete_runs": 6,
+      "response_ns": {
+        "count": 96,
+        "p50": 596071,
+        "p95": 1202260,
+        "p99": 1683888
+      },
+      "service_ns": {
+        "count": 96,
+        "p50": 528305,
+        "p95": 1110520,
+        "p99": 1584733
+      },
+      "elapsed_ns": {
+        "count": 96,
+        "p50": 528595,
+        "p95": 1111210,
+        "p99": 1585545
+      },
+      "completion_ns": {
+        "count": 6,
+        "p50": 12614388,
+        "p95": 13409621,
+        "p99": 13409621
+      },
+      "arm_wall_ns": {
+        "count": 6,
+        "p50": 111832212,
+        "p95": 120928039,
+        "p99": 120928039
+      },
+      "child_cpu_ns": {
+        "count": 6,
+        "p50": 107364000,
+        "p95": 116074000,
+        "p99": 116074000
+      },
+      "harness_cpu_ns": {
+        "count": 6,
+        "p50": 7315653,
+        "p95": 8017846,
+        "p99": 8017846
+      },
+      "steady_payload_bytes": {
+        "count": 48,
+        "p50": 17825792,
+        "p95": 17825792,
+        "p99": 17825792
+      },
+      "steady_rss_kib": {
+        "count": 48,
+        "p50": 18224,
+        "p95": 18260,
+        "p99": 18260
+      },
+      "sampled_peak_hwm_kib": {
+        "count": 6,
+        "p50": 19240,
+        "p95": 19288,
+        "p99": 19288
+      },
+      "harness_rss_kib": {
+        "count": 12,
+        "p50": 23684,
+        "p95": 24224,
+        "p99": 24224
+      },
+      "policy_effects": {},
+      "actions": 0,
+      "blocks_replaced": 0,
+      "action_ns": null,
+      "restoration_ns": {
+        "count": 6,
+        "p50": 54090996,
+        "p95": 62461513,
+        "p99": 62461513
+      },
+      "context_per_run": [
+        {
+          "sample_window_ns": 100536841,
+          "cpu_busy_fraction": 0.3,
+          "minimum_mem_available_kib": 14067908,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 877
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 105088929,
+          "cpu_busy_fraction": 0.45,
+          "minimum_mem_available_kib": 14058524,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 9539
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 100376999,
+          "cpu_busy_fraction": 0.325,
+          "minimum_mem_available_kib": 14056220,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 1529
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 101524118,
+          "cpu_busy_fraction": 0.35,
+          "minimum_mem_available_kib": 14042444,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 443
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 100811944,
+          "cpu_busy_fraction": 0.3333333333333333,
+          "minimum_mem_available_kib": 14042300,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 364
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 40
+              },
+              "full": {
+                "status": "available",
+                "delta": 27
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 100524604,
+          "cpu_busy_fraction": 0.28205128205128205,
+          "minimum_mem_available_kib": 14044904,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 853
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        }
+      ]
+    },
+    "observe": {
+      "complete_runs": 6,
+      "response_ns": {
+        "count": 96,
+        "p50": 1532957,
+        "p95": 2370498,
+        "p99": 3234688
+      },
+      "service_ns": {
+        "count": 96,
+        "p50": 540557,
+        "p95": 1135877,
+        "p99": 1498563
+      },
+      "elapsed_ns": {
+        "count": 96,
+        "p50": 1440575,
+        "p95": 2264490,
+        "p99": 3113071
+      },
+      "completion_ns": {
+        "count": 6,
+        "p50": 27638047,
+        "p95": 31774115,
+        "p99": 31774115
+      },
+      "arm_wall_ns": {
+        "count": 6,
+        "p50": 128004969,
+        "p95": 133754160,
+        "p99": 133754160
+      },
+      "child_cpu_ns": {
+        "count": 6,
+        "p50": 123173000,
+        "p95": 127513000,
+        "p99": 127513000
+      },
+      "harness_cpu_ns": {
+        "count": 6,
+        "p50": 8179275,
+        "p95": 10162522,
+        "p99": 10162522
+      },
+      "steady_payload_bytes": {
+        "count": 48,
+        "p50": 17825792,
+        "p95": 17825792,
+        "p99": 17825792
+      },
+      "steady_rss_kib": {
+        "count": 48,
+        "p50": 18356,
+        "p95": 18368,
+        "p99": 18368
+      },
+      "sampled_peak_hwm_kib": {
+        "count": 6,
+        "p50": 19372,
+        "p95": 19392,
+        "p99": 19392
+      },
+      "harness_rss_kib": {
+        "count": 12,
+        "p50": 23652,
+        "p95": 24176,
+        "p99": 24176
+      },
+      "policy_effects": {
+        "observed": 96
+      },
+      "actions": 0,
+      "blocks_replaced": 0,
+      "action_ns": null,
+      "restoration_ns": {
+        "count": 6,
+        "p50": 54474251,
+        "p95": 55471449,
+        "p99": 55471449
+      },
+      "context_per_run": [
+        {
+          "sample_window_ns": 102117250,
+          "cpu_busy_fraction": 0.7,
+          "minimum_mem_available_kib": 14052960,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 10277
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 100237988,
+          "cpu_busy_fraction": 0.5897435897435898,
+          "minimum_mem_available_kib": 14056080,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 12522
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 83
+              },
+              "full": {
+                "status": "available",
+                "delta": 7
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 104158201,
+          "cpu_busy_fraction": 0.30952380952380953,
+          "minimum_mem_available_kib": 14056132,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 2736
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 104529760,
+          "cpu_busy_fraction": 0.2926829268292683,
+          "minimum_mem_available_kib": 14042312,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 738
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 101075051,
+          "cpu_busy_fraction": 0.4146341463414634,
+          "minimum_mem_available_kib": 14042316,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 1153
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 101709301,
+          "cpu_busy_fraction": 0.325,
+          "minimum_mem_available_kib": 14044744,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 981
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        }
+      ]
+    },
+    "active": {
+      "complete_runs": 6,
+      "response_ns": {
+        "count": 96,
+        "p50": 1503492,
+        "p95": 25861553,
+        "p99": 40155017
+      },
+      "service_ns": {
+        "count": 96,
+        "p50": 562809,
+        "p95": 1112684,
+        "p99": 1394779
+      },
+      "elapsed_ns": {
+        "count": 96,
+        "p50": 1428823,
+        "p95": 25692381,
+        "p99": 40039053
+      },
+      "completion_ns": {
+        "count": 6,
+        "p50": 52973984,
+        "p95": 67968093,
+        "p99": 67968093
+      },
+      "arm_wall_ns": {
+        "count": 6,
+        "p50": 162286527,
+        "p95": 188725700,
+        "p99": 188725700
+      },
+      "child_cpu_ns": {
+        "count": 6,
+        "p50": 155680000,
+        "p95": 178995000,
+        "p99": 178995000
+      },
+      "harness_cpu_ns": {
+        "count": 6,
+        "p50": 8242245,
+        "p95": 9788378,
+        "p99": 9788378
+      },
+      "steady_payload_bytes": {
+        "count": 48,
+        "p50": 5390498,
+        "p95": 5390498,
+        "p99": 5390498
+      },
+      "steady_rss_kib": {
+        "count": 48,
+        "p50": 6172,
+        "p95": 6196,
+        "p99": 6196
+      },
+      "sampled_peak_hwm_kib": {
+        "count": 6,
+        "p50": 19508,
+        "p95": 19528,
+        "p99": 19528
+      },
+      "harness_rss_kib": {
+        "count": 12,
+        "p50": 23752,
+        "p95": 24124,
+        "p99": 24124
+      },
+      "policy_effects": {
+        "kept": 6,
+        "compressed": 6,
+        "back_off": 84
+      },
+      "actions": 6,
+      "blocks_replaced": 96,
+      "action_ns": {
+        "count": 6,
+        "p50": 24511600,
+        "p95": 37354630,
+        "p99": 37354630
+      },
+      "restoration_ns": {
+        "count": 6,
+        "p50": 65167869,
+        "p95": 80782136,
+        "p99": 80782136
+      },
+      "context_per_run": [
+        {
+          "sample_window_ns": 101143725,
+          "cpu_busy_fraction": 0.5128205128205128,
+          "minimum_mem_available_kib": 14061532,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 7755
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 101497290,
+          "cpu_busy_fraction": 0.6923076923076923,
+          "minimum_mem_available_kib": 14058524,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 25376
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 104631896,
+          "cpu_busy_fraction": 0.375,
+          "minimum_mem_available_kib": 14042312,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 3808
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 102878288,
+          "cpu_busy_fraction": 0.2926829268292683,
+          "minimum_mem_available_kib": 14042368,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 1005
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 100707423,
+          "cpu_busy_fraction": 0.475,
+          "minimum_mem_available_kib": 14042248,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 5703
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        },
+        {
+          "sample_window_ns": 103450511,
+          "cpu_busy_fraction": 0.3,
+          "minimum_mem_available_kib": 14042340,
+          "swap_pages": {
+            "pswpin": {
+              "status": "available",
+              "delta": 0
+            },
+            "pswpout": {
+              "status": "available",
+              "delta": 0
+            }
+          },
+          "psi_total_us": {
+            "cpu": {
+              "some": {
+                "status": "available",
+                "delta": 1113
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "memory": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            },
+            "io": {
+              "some": {
+                "status": "available",
+                "delta": 0
+              },
+              "full": {
+                "status": "available",
+                "delta": 0
+              }
+            }
+          },
+          "zram_first": [],
+          "zram_last": []
+        }
+      ]
+    }
+  },
+  "paired": [
+    {
+      "repeat": 0,
+      "correctness_equivalent": true,
+      "observe_completion_ratio": 2.5359403233324183,
+      "active_completion_ratio": 4.84231670486978,
+      "observe_wall_ratio": 1.1958397015963576,
+      "active_wall_ratio": 1.6873171254753025
+    },
+    {
+      "repeat": 1,
+      "correctness_equivalent": true,
+      "observe_completion_ratio": 2.2628942695494763,
+      "active_completion_ratio": 5.124697793060903,
+      "observe_wall_ratio": 1.0986092646387824,
+      "active_wall_ratio": 1.5024077170390566
+    },
+    {
+      "repeat": 2,
+      "correctness_equivalent": true,
+      "observe_completion_ratio": 2.205913097020054,
+      "active_completion_ratio": 4.344393193699931,
+      "observe_wall_ratio": 1.1237735669975986,
+      "active_wall_ratio": 1.456967164712195
+    },
+    {
+      "repeat": 3,
+      "correctness_equivalent": true,
+      "observe_completion_ratio": 2.0451873322892573,
+      "active_completion_ratio": 3.8149923103717844,
+      "observe_wall_ratio": 1.1119177030683245,
+      "active_wall_ratio": 1.414141078503112
+    },
+    {
+      "repeat": 4,
+      "correctness_equivalent": true,
+      "observe_completion_ratio": 2.1909938872975845,
+      "active_completion_ratio": 5.035407425235374,
+      "observe_wall_ratio": 1.1446162667335955,
+      "active_wall_ratio": 1.564396606945412
+    },
+    {
+      "repeat": 5,
+      "correctness_equivalent": true,
+      "observe_completion_ratio": 2.2298806336600845,
+      "active_completion_ratio": 3.9068616864750574,
+      "observe_wall_ratio": 1.162028155500408,
+      "active_wall_ratio": 1.4445994300521343
+    }
+  ],
+  "failed_runs": 0,
+  "refused_policy_samples": 0,
+  "interpretation": "Private cooperative corpus only. Steady memory excludes first 8 requests; CPU/wall include generation, policy, verification, restoration. Host counters are shared context. No desktop benefit claim."
+}

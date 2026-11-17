@@ -1,5 +1,66 @@
 # Xynoos HyperCore
 
+Live PressureIQ observation → deterministic pressure decisions → AURA policy →
+typed safety gate → private HyperMemory workload → verified outcomes and JSON.
+Physical kernel mutation remains **NO-GO / NOT VERIFIED**. Desktop performance
+improvement and production readiness have not been established.
+
+```sh
+cargo build --workspace --release
+./target/release/xynoos-cli mvp observe --count 5 --interval-ms 1000
+./target/release/xynoos-cli mvp simulate
+./target/release/xynoos-cli mvp recovery --human
+python3 scripts/benchmark_mvp.py --repeats 12 --output /tmp/xynoos-mvp-new.json
+```
+
+Simulation uses real compression on a fixed 256-KiB owned corpus and synthetic
+pressure; observe never changes controls or workload buffers. The static
+`xynoos-mvp` package exposes only observe, simulate and read-only recovery.
+
+[Exact commands](docs/MVP-QUICKSTART.md) · [Architecture](docs/MVP-ARCHITECTURE.md) ·
+[Safety/recovery](docs/MVP-SAFETY-RECOVERY.md) · [Benchmark method](docs/MVP-BENCHMARK.md) ·
+[Measured results](docs/reports/MVP-RESULTS.md) · [N5000 validation](docs/MVP-N5000-VALIDATION.md)
+
+Phase 4 adds a real owned-workload baseline/observe A/B harness, component profiling,
+and a static N5000 handoff. See [exact physical commands](docs/PHASE4-N5000.md) and
+[performance evidence and arm decisions](docs/reports/PHASE4-PERFORMANCE.md).
+
+The subsequent active experiment losslessly compresses an owned 16 MiB corpus,
+releases the raw allocations, verifies matched reads and restores every block.
+It measures retained memory, RSS, CPU and latency across baseline/observe/active
+arms. This requires application cooperation and cannot control other desktop
+applications. See [measured tradeoffs](docs/reports/PHASE4-OWNED-PERFORMANCE.md)
+and the [exact N5000 procedure](docs/PHASE4-OWNED-N5000.md). Phase 4 remains PARTIAL
+pending physical evidence; kernel mutation remains disabled.
+
+```sh
+cargo build --release -p xynoos-engine --bin xynoos-owned
+python3 scripts/benchmark_owned.py --environment Codespaces --label 'Codespaces owned corpus' --authorize-owned --output /tmp/xynoos-owned-new
+```
+
+```sh
+cargo build --release -p xynoos-engine --bin xynoos-perf -p xynoos-cli --bin xynoos-mvp
+python3 scripts/benchmark_physical.py --environment Codespaces --label 'Codespaces session' --output /tmp/xynoos-physical-ab
+```
+
+The laptop-focused experiment adds a read-only bottleneck diagnostic and matched
+source-search/indexing workload. Active mode only defers new chunks to its own
+disposable indexer. Three Codespaces sessions found inconsistent foreground
+latency and 69–95% longer background completion; **no responsiveness benefit was
+established**. See [measured results](docs/reports/PHASE4-LAPTOP-RESULTS.md),
+[mechanism comparison](docs/PHASE4-LAPTOP-RESEARCH.md),
+[safety and physical admission blockers](docs/PHASE4-LAPTOP-SAFETY.md), and
+[exact OpenCode N5000 instructions](docs/PHASE4-LAPTOP-N5000.md).
+
+```sh
+python3 scripts/laptop_diagnostic.py --environment Codespaces --label 'Codespaces' --seconds 10 --output /tmp/xynoos-diagnostic-new.jsonl
+# Build/package only from committed sources; default benchmark is baseline/observe.
+python3 scripts/package-laptop.py
+```
+
+Earlier research milestones follow; their standalone simulators and historical
+status notes should be read with the current MVP scope above.
+
 Fondasi riset userspace untuk optimasi sumber daya Linux pada perangkat terbatas. Milestone TASK 002 menyediakan simulasi penyimpanan halaman terkompresi dan kebijakan AURA baseline; ini bukan pengganti memory manager, swap, atau zram dan belum siap produksi.
 
 ## Menjalankan
