@@ -1,0 +1,124 @@
+name: Debian package validation
+on:
+  pull_request:
+  push:
+    branches: [main, distribution/debian-packaging]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: debian-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  rust:
+    name: Rust ${{ matrix.toolchain }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        toolchain: ['1.82.0', '1.100.0']
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install exact toolchain
+        env:
+          TOOLCHAIN: ${{ matrix.toolchain }}
+        run: rustup toolchain install "$TOOLCHAIN" --profile minimal && rustup default "$TOOLCHAIN"
+      - name: Locked tests and release build
+        run: |
+          cargo test --workspace --locked
+          cargo build --workspace --release --locked
+          cargo test -p xynoos-cli --features debian-package --locked
+      - name: Strict current-toolchain checks
+        if: matrix.toolchain == '1.100.0'
+        run: |
+          rustup component add --toolchain 1.100.0 rustfmt clippy
+          cargo fmt --all -- --check
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          cargo clippy --workspace --all-targets --locked --features xynoos-cli/debian-package -- -D warnings
+          python3 -m unittest discover -s distribution -p 'test_*.py' -v
+          python3 -m unittest discover -s packaging -p 'test_*.py' -v
+  build:
+    name: Clean Trixie sbuild and reproducibility
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Prepare locked source
+        run: |
+          rustup toolchain install 1.100.0 --profile minimal
+          rustup default 1.100.0
+          python3 packaging/prepare.py "$RUNNER_TEMP/debian-source"
+          mkdir -p dist-debian
+          mv "$RUNNER_TEMP/debian-source" dist-debian/source
+      - name: Two isolated builds, lintian, checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --privileged --platform linux/amd64 \
+            -v "$PWD:/work:ro" -v "$PWD/dist-debian:/out" \
+            debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 \
+            bash /work/packaging/ci-build.sh 2>&1 | tee dist-debian/build.log
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: debian-amd64-unsigned
+          path: |
+            dist-debian/first/*
+            dist-debian/second/*
+            dist-debian/source/*.xz
+            dist-debian/source/*.dsc
+            dist-debian/source/*.changes
+            dist-debian/source/*.buildinfo
+            dist-debian/*.txt
+            dist-debian/*.json
+            dist-debian/*.sha256
+            dist-debian/*.log
+            dist-debian/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 30
+  lifecycle:
+    name: Lifecycle ${{ matrix.suite }} amd64
+    needs: build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: trixie
+            image: debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2
+          - suite: bookworm
+            image: debian:bookworm-slim@sha256:734a72b3d6142a71993b4bc580ca01d8ca687f77a2c422d96a961d3376b179bc
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: debian-amd64-unsigned
+          path: artifacts
+      - name: Disposable lifecycle matrix
+        env:
+          IMAGE: ${{ matrix.image }}
+          SUITE: ${{ matrix.suite }}
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD:/work:ro" -v "$PWD/artifacts:/artifacts:ro" -v "$PWD/results:/results" \
+            "$IMAGE" bash /work/packaging/ci-lifecycle.sh "$SUITE" 2>&1 | tee "results/lifecycle-$SUITE.log"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: always()
+        with:
+          name: lifecycle-${{ matrix.suite }}-amd64
+          path: results/
+          if-no-files-found: error
+          retention-days: 30

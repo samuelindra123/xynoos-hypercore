@@ -1,0 +1,42 @@
+#!/usr/bin/make -f
+
+include /usr/share/dpkg/pkg-info.mk
+export CARGO_HOME = $(CURDIR)/debian/cargo-home
+export CARGO_TARGET_DIR = $(CURDIR)/target
+export CARGO_NET_OFFLINE = true
+# Ignore host flags, remap varying build paths and target baseline x86-64.
+export RUSTFLAGS = --remap-path-prefix=$(CURDIR)=/usr/src/xynoos-hypercore -C target-cpu=x86-64 -C debuginfo=0 -C link-arg=-Wl,-z,relro,-z,now
+export CARGO_INCREMENTAL = 0
+export XYNOOS_SOURCE_COMMIT = $(shell python3 -c 'import json; print(json.load(open("packaging/source.json"))["commit"])')
+
+%:
+	dh $@
+
+override_dh_auto_configure:
+	test -d vendor
+	python3 packaging/validate_source.py
+	mkdir -p $(CARGO_HOME)
+	dpkg-query -W -f='$${source:Package} (= $${source:Version})\n' rustc > debian/rust-built-using
+	cp /usr/share/doc/libstd-rust-dev/copyright debian/RUST-STDLIB-NOTICES
+
+override_dh_auto_build:
+	cargo build --frozen --release -p xynoos-cli --bin xynoos --features debian-package
+
+override_dh_auto_test:
+ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
+	cargo test --workspace --frozen --features xynoos-cli/debian-package
+endif
+
+override_dh_auto_install:
+	install -D -m 0755 target/release/xynoos debian/xynoos-hypercore/usr/bin/xynoos
+
+override_dh_gencontrol:
+	dh_gencontrol -- -Vxynoos:Built-Using="$$(cat debian/rust-built-using)"
+
+override_dh_strip:
+	dh_strip --no-automatic-dbgsym
+
+override_dh_auto_clean:
+	rm -rf target debian/cargo-home
+	rm -f debian/rust-built-using
+	rm -f debian/RUST-STDLIB-NOTICES

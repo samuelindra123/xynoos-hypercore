@@ -18,6 +18,13 @@ rustc-ice-*.txt
 
 # Release work products and Python bytecode
 dist-release/
+dist-debian/
+/debian/.debhelper/
+/debian/debhelper-build-stamp
+/debian/files
+/debian/*.substvars
+/debian/xynoos-hypercore/
+/debian/cargo-home/
 __pycache__/
 *.pyc
 

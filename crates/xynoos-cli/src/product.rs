@@ -1,16 +1,18 @@
 use serde_json::{json, Value};
+#[cfg(not(feature = "debian-package"))]
+use std::process::Command;
 use std::{
     error::Error,
     fs,
     io::IsTerminal,
     path::PathBuf,
-    process::Command,
     time::{Duration, Instant},
 };
 use xynoos_pressureiq::system::{collect_system, cpu_utilization, SystemSnapshot};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const COMMIT: &str = env!("XYNOOS_SOURCE_COMMIT");
+#[cfg(not(feature = "debian-package"))]
 const MANAGER: &str = include_str!("../../../distribution/manager.py");
 
 fn read(path: &str) -> Option<String> {
@@ -33,6 +35,13 @@ fn last_diagnostic() -> Option<Value> {
     }
     serde_json::from_slice(&fs::read(p).ok()?).ok()
 }
+#[cfg(feature = "debian-package")]
+fn manager(_args: &[String]) -> Result<Value, Box<dyn Error>> {
+    Ok(
+        json!({"status":"DEBIAN PACKAGE", "detail":"Managed by dpkg/APT; integrity is not checked here. Run dpkg --verify xynoos-hypercore."}),
+    )
+}
+#[cfg(not(feature = "debian-package"))]
 fn manager(args: &[String]) -> Result<Value, Box<dyn Error>> {
     let out = Command::new("python3")
         .arg("-I")
@@ -132,6 +141,8 @@ fn render(command: &str, v: &Value, color: bool) {
         println!("Diagnose: --count 1..60 --interval-ms 100..10000 (max 60s)");
         println!("Update: --channel preview|stable or --version vX.Y.Z[-preview.N]");
         println!("Research compatibility: pressure, system, shadow");
+        #[cfg(feature = "debian-package")]
+        println!("Debian package: use APT for update, rollback and removal. Diagnose writes JSON to stdout only; redirect it to retain evidence.");
         return;
     }
     if command == "capabilities" {
@@ -268,6 +279,11 @@ pub fn run(args: &[String]) -> Result<bool, Box<dyn Error>> {
         }
         return Ok(true);
     }
+    #[cfg(feature = "debian-package")]
+    if matches!(command, "update" | "rollback" | "uninstall") {
+        return Err("Managed by dpkg/APT: use apt install, apt install --allow-downgrades, or apt remove xynoos-hypercore; see /usr/share/doc/xynoos-hypercore/LIFECYCLE.md.gz".into());
+    }
+    #[cfg(not(feature = "debian-package"))]
     if matches!(command, "update" | "rollback" | "uninstall") {
         if !json_output {
             let status = Command::new("python3")
@@ -390,25 +406,32 @@ pub fn run(args: &[String]) -> Result<bool, Box<dyn Error>> {
             "summary":"Read-only counters captured; missing fields remain null.",
             "inference":"Counters alone do not establish an application bottleneck or performance benefit.",
             "timestamp_unix_s":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_secs()});
-        // The manager creates private paths and writes atomically under its lock.
-        let saved = Command::new("python3")
-            .args(["-I", "-c", MANAGER, "record-diagnostic"])
-            .stdin(std::process::Stdio::piped())
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::piped())
-            .spawn();
-        match saved {
-            Ok(mut child) => {
-                use std::io::Write;
-                if let Some(mut stdin) = child.stdin.take() {
-                    stdin.write_all(serde_json::to_string(&d)?.as_bytes())?;
+        #[cfg(feature = "debian-package")]
+        {
+            v["evidence_persistence"] = json!("stdout only; redirect output to retain evidence");
+        }
+        #[cfg(not(feature = "debian-package"))]
+        {
+            // The manager creates private paths and writes atomically under its lock.
+            let saved = Command::new("python3")
+                .args(["-I", "-c", MANAGER, "record-diagnostic"])
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::piped())
+                .spawn();
+            match saved {
+                Ok(mut child) => {
+                    use std::io::Write;
+                    if let Some(mut stdin) = child.stdin.take() {
+                        stdin.write_all(serde_json::to_string(&d)?.as_bytes())?;
+                    }
+                    let output = child.wait_with_output()?;
+                    if !output.status.success() {
+                        v["evidence_save_error"] = json!(String::from_utf8_lossy(&output.stderr));
+                    }
                 }
-                let output = child.wait_with_output()?;
-                if !output.status.success() {
-                    v["evidence_save_error"] = json!(String::from_utf8_lossy(&output.stderr));
-                }
+                Err(e) => v["evidence_save_error"] = json!(e.to_string()),
             }
-            Err(e) => v["evidence_save_error"] = json!(e.to_string()),
         }
         v["diagnostic"] = d;
     }
