@@ -12,7 +12,7 @@ The protected workflows now run `repository/check_signing_key.py` after import. 
 
 ## GitHub configuration
 
-Create environment **apt-preview** in Settings → Environments. Restrict deployment branches to protected/reviewed main; configure a required owner reviewer where available. Allow only reviewed main publication workflows to access its secrets. PR validation sees no signing secrets.
+**Current GitHub configuration (2026-11-17):** environment `apt-preview` has been created. Its custom deployment branch policy permits only `main`, and its required reviewer is the sole repository owner/collaborator (`samuelindra123`). Self-review prevention is disabled because there is no second collaborator; do not represent this as independent review. No secrets or fingerprint variable are configured. Before publication, verify this policy, add an independent authorized reviewer if one is available, and add only the approved production values below. PR validation receives no signing secrets.
 
 | Name | Scope | Purpose |
 | --- | --- | --- |
@@ -61,7 +61,7 @@ See [#37](https://github.com/samuelindra123/xynoos-hypercore/issues/37). If the 
 ## Owner actions still required
 
 1. Arrange an independent security review and provide the required human approval on PR #40 after reviewing its exact current head and checks.
-2. Create the protected `apt-preview` GitHub environment, restricted to protected `main`, with required owner review where supported.
+2. Review the existing `apt-preview` environment’s `main`-only deployment policy and owner approval gate; add a second authorized reviewer if available.
 3. Configure the approved dedicated OpenPGP signing-subkey export and passphrase as environment secrets, and set the independently verified full public fingerprint as the repository variable. Never send private key material or passphrases in chat, issues, or commits.
 4. After merge, run the exact-main publication workflow; verify signatures, package indexes, hashes, public HTTP read-back, and installation before advertising APT commands.
 5. Initialize the GitHub Wiki by saving its first Home page, then publish the maintained sources and verify public pages.

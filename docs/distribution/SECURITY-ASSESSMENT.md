@@ -28,11 +28,11 @@ The review was static, with local test-key checks and hosted CI evidence below. 
 
 **Classification:** **OWNER ACTION REQUIRED — publication gate**, not an implementation security defect. No current secret exposure is evidenced. This blocks production publication, but does not require the unconfigured credentials to be merged into source.
 
-At the time of assessment, GitHub reports no `apt-preview` environment, repository Actions secrets, or fingerprint variable. Consequently no production signing has occurred and the publish job cannot complete. Creating the environment without branch restrictions and required owner review would weaken the intended trust boundary.
+At the initial assessment, GitHub had no `apt-preview` environment, repository Actions secrets, or fingerprint variable. The environment has since been created with a custom branch rule permitting only `main` and a required reviewer set to the sole repository owner. Self-review prevention is disabled because no second collaborator exists; this is an owner approval gate, not independent review. No production signing has occurred, and the publish job still cannot complete because secrets and fingerprint are absent.
 
-**Evidence:** GitHub API returned 404 for `apt-preview`; repository Actions secret and variable listings were empty; only the unrelated `github-pages` environment existed. Public Studio root returned HTTP 200, while the APT key/index endpoints were unavailable (key and index 404; `InRelease` 503). Issue [#36](https://github.com/samuelindra123/xynoos-hypercore/issues/36) records the exact owner setup.
+**Evidence:** GitHub API read-back of `apt-preview` confirms its required reviewer and `main` deployment branch policy; repository Actions secrets and variables remain empty. Public Studio root returned HTTP 200, while current public APT `InRelease` and `Release.gpg` endpoints return 404. Issue [#36](https://github.com/samuelindra123/xynoos-hypercore/issues/36) records the exact remaining owner setup.
 
-**Remediation:** Owner creates `apt-preview`, restricts it to protected `main`, enables required owner review, configures only the approved delegated key/passphrase as environment secrets, and independently pins the approved full fingerprint as a repository Actions variable. Then normal PR review/merge and exact-main workflow gates must pass before dispatch. Never use the standalone Ed25519 key for APT.
+**Remediation:** Owner configures only the approved delegated key/passphrase as environment secrets and independently pins the approved full fingerprint as a repository Actions variable. Add a second environment reviewer if available. Then normal PR review/merge and exact-main workflow gates must pass before dispatch. Never use the standalone Ed25519 key for APT.
 
 ### F-03 — GitHub release and history immutability depend partly on repository settings
 
@@ -100,4 +100,4 @@ All listed current-candidate runs passed. These are CI tests with explicitly dis
 
 **APPROVE FOR MAINTAINER MERGE**, conditional on all exact-head required CI passing, no unresolved conversations, and retaining the protected-main status checks and force-push/deletion restrictions. No unresolved CRITICAL or HIGH implementation security finding was identified. The online-primary-key import risk is addressed by code and passing exact-head CI. This is an internal maintainer assessment, not an independent external audit or fabricated GitHub approval.
 
-Production publication remains **BLOCKED** until the owner configures the protected `apt-preview` environment and approved production signing identity/fingerprint, then verifies the public signed archive. Approval to merge the source is not approval to publish packages.
+Production publication remains **BLOCKED** until the owner configures the approved production signing identity/fingerprint in the existing protected `apt-preview` environment, then verifies the public signed archive. Approval to merge the source is not approval to publish packages.
