@@ -10,7 +10,17 @@ use xynoos_linux_control::{
     transaction::{run, Backend, DisposableCgroup, Identity, Outcome},
     Action, MAX_LOW_BYTES,
 };
-use xynoos_pressureiq::system::collect_system;
+use xynoos_pressureiq::system::{collect_system as collect_host, SystemSnapshot};
+fn collect_system() -> SystemSnapshot {
+    let mut snapshot = collect_host();
+    snapshot.memory.psi.result = Ok(xynoos_pressureiq::parse_psi(
+        "some avg10=0 avg60=0 avg300=0 total=0\nfull avg10=0 avg60=0 avg300=0 total=0",
+    )
+    .unwrap());
+    snapshot.memory.mem.result =
+        Ok(xynoos_pressureiq::parse_meminfo("MemTotal: 4096 kB\nMemAvailable: 2048 kB").unwrap());
+    snapshot
+}
 static NEXT: AtomicU64 = AtomicU64::new(0);
 struct Fixture {
     dir: PathBuf,
