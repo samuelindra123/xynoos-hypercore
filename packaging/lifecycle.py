@@ -91,7 +91,7 @@ def main():
                 path.write_text("operator-owned preserve\n")
             preserved = {p: p.read_bytes() for p in home.rglob("*") if p.is_file()}
             env = dict(os.environ, HOME=str(home), XDG_STATE_HOME=str(home / ".local/state"),
-                       XDG_CONFIG_HOME=str(home / ".config"), PATH="/usr/bin:/bin")
+                       XDG_CONFIG_HOME=str(home / ".config"), PATH="/no-external-commands")
 
             def unchanged():
                 require({p: p.read_bytes() for p in home.rglob("*") if p.is_file()} == preserved,
@@ -110,11 +110,11 @@ def main():
 
             def execution():
                 for argv in (["--version", "--json"], ["help", "--json"], ["doctor", "--json"],
-                             ["status", "--json"], ["capabilities", "--json"], ["resources", "--json"],
+                             ["status", "--json"], ["capabilities", "--json"], ["resources", "--json"], ["benchmark", "--json"],
                              ["system", "snapshot", "--json"], ["memory", "--interval-ms", "100"],
                              ["diagnose", "--count", "2", "--interval-ms", "100", "--json"]):
                     # Execute as nobody, with the test HOME inaccessible; stdout must still work.
-                    v = json.loads(command("runuser", "-u", "nobody", "--", "/usr/bin/xynoos", *argv, env=env).stdout)
+                    v = json.loads(command("/usr/sbin/runuser", "-u", "nobody", "--", "/usr/bin/xynoos", *argv, env=env).stdout)
                     require(v["schema_version"] == 1, "Wrong JSON schema")
                     if argv[0] == "--version":
                         installed = Path("/usr/share/doc/xynoos-hypercore/source.json")
@@ -122,6 +122,8 @@ def main():
                         require(v["source_commit"] == source["commit"] and v["version"] == source["upstream_version"], "Identity mismatch")
                     if argv[0] == "diagnose":
                         require("evidence_save_error" not in v, "Diagnostic tried to save")
+                    if argv[0] == "doctor":
+                        require(v["installation"]["status"] == "DEBIAN PACKAGE", "Wrong health reporting")
                 for action in ("update", "rollback", "uninstall"):
                     for extra in ([], ["--json"]):
                         result = command("/usr/bin/xynoos", action, *extra, ok=False, env=env)

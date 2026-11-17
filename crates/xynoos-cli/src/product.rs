@@ -136,9 +136,13 @@ fn render(command: &str, v: &Value, color: bool) {
     }
     if command == "help" {
         println!("Observe first. Physical kernel mutation: DISABLED.\n");
+        #[cfg(not(feature = "debian-package"))]
         println!("  doctor        Check host support and release integrity\n  status        Inspect pressure, swap and engine state\n  capabilities  Show available and experimental features\n  diagnose      Capture bounded read-only telemetry\n  benchmark     Measure telemetry overhead (no workload tuning)\n  update        Install the latest verified preview\n  rollback      Restore the previous verified version offline\n  uninstall     Remove owned software; preserve evidence\n");
+        #[cfg(feature = "debian-package")]
+        println!("  doctor        Check host support and package information\n  status        Inspect pressure, swap and engine state\n  capabilities  Show available and experimental features\n  diagnose      Capture bounded read-only telemetry\n  benchmark     Measure telemetry overhead (no workload tuning)\n");
         println!("Use --json for structured output; --no-color for plain text.");
         println!("Diagnose: --count 1..60 --interval-ms 100..10000 (max 60s)");
+        #[cfg(not(feature = "debian-package"))]
         println!("Update: --channel preview|stable or --version vX.Y.Z[-preview.N]");
         println!("Research compatibility: pressure, system, shadow");
         #[cfg(feature = "debian-package")]

@@ -12,7 +12,7 @@ printf 'deb [check-valid-until=no] %s trixie main\n' "$snapshot" > /etc/apt/sour
 printf 'deb [check-valid-until=no] %s trixie-updates main\ndeb [check-valid-until=no] %s trixie-security main\n' "$snapshot" "$security" >> /etc/apt/sources.list
 printf 'Acquire::Retries "2";\nAcquire::http::Timeout "30";\n' > /etc/apt/apt.conf.d/80xynoos-timeouts
 apt-get update
-apt-get install -y --no-install-recommends sbuild mmdebstrap uidmap debhelper dpkg-dev lintian python3 ca-certificates
+apt-get install -y --no-install-recommends sbuild mmdebstrap uidmap iproute2 debhelper dpkg-dev lintian python3 ca-certificates
 dpkg-query -W > /out/bootstrap-packages.txt
 useradd --create-home --uid 1000 builder
 mkdir -p /out/first /out/second
