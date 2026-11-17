@@ -16,11 +16,13 @@ Xynoos HyperCore is a Rust workspace investigating Linux resource telemetry, pol
 ## Install the developer preview
 
 Published Linux x86_64 preview. The public release installation lifecycle has been
-verified in a disposable HOME on Ubuntu 24.04 Codespaces. Debian 13 / XFCE on the
-Pentium Silver N5000 remains the primary **untested hardware target**.
+verified in disposable HOME directories on Ubuntu 24.04 Codespaces. Preview.3
+fixes permission failures reported on Debian 13 / Intel N5000; its normal HOME
+installation still requires independent physical validation. Earlier laptop tests
+confirmed isolated binary verification, diagnostics, update and rollback.
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/main/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/v0.1.0-preview.3/install.sh | sh -s -- --version v0.1.0-preview.3 && export PATH="$HOME/.local/bin:$PATH"
 ```
 
 ```sh
@@ -39,6 +41,12 @@ The small HTTPS bootstrap pins installer source. The installer verifies a pinned
 Ed25519 release signature, signed provenance identity, binary SHA256, platform and
 executable identity **before** activation. Initial bootstrap trust is GitHub/TLS and
 repository control; checksum sidecars alone are not authenticated provenance.
+
+Existing `~/.local/bin` at 0775 is refused with a manual `chmod go-w` remedy;
+Xynoos never changes permissions on an existing user directory. New private
+directories receive 0700 under umask 077, including with restrictive default ACLs.
+See [permission handling](docs/INSTALL.md#existing-localbin-at-mode-0775) and
+[compatibility evidence](docs/COMPATIBILITY.md).
 
 [Release notes and assets](https://github.com/samuelindra123/xynoos-hypercore/releases) ·
 [Trust model and pinned alternative](docs/INSTALL.md#pinned-auditable-alternative) ·

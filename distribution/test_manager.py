@@ -1,5 +1,9 @@
 """Adversarial distribution tests. Test signing key is ephemeral, never production."""
 import contextlib
+import ctypes
+import ctypes.util
+import errno
+import stat
 import hashlib
 import importlib.util
 import io
@@ -34,6 +38,14 @@ class DistributionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.home = Path(self.temp.name)
+        # Test fixtures must not inherit the host /tmp default ACL. Individual
+        # ACL regressions below install their own real Linux default ACL.
+        try:
+            os.removexattr(self.home, "system.posix_acl_default")
+        except OSError as e:
+            if e.errno not in (errno.ENODATA, errno.ENOTSUP):
+                raise
+        self.old_umask = os.umask(0o077)
         self.env = patch.dict(os.environ, {"HOME": str(self.home), "XDG_DATA_HOME": str(self.home / "data"), "XDG_STATE_HOME": str(self.home / "state")})
         self.env.start()
         self.key = patch.object(m, "PUBLIC_KEY", self.public)
@@ -45,6 +57,7 @@ class DistributionTests(unittest.TestCase):
         self.key.stop()
         self.env.stop()
         self.temp.cleanup()
+        os.umask(self.old_umask)
 
     def package(self, tag="v0.1.0-preview.1", data=None):
         data = self.binary if data is None else data
@@ -54,6 +67,7 @@ class DistributionTests(unittest.TestCase):
         raw = json.dumps(manifest).encode()
         source = self.home / "sign-input"
         source.write_bytes(raw)
+        source.chmod(0o600)
         sig = subprocess.check_output(["openssl", "pkeyutl", "-sign", "-rawin", "-inkey", str(self.private), "-in", str(source)])
         return raw, sig, data
 
@@ -67,6 +81,149 @@ class DistributionTests(unittest.TestCase):
                 (contextlib.nullcontext() if real_health else patch.object(m, "health_binary")):
             with self.inst.locked():
                 return self.inst.install("preview", tag)
+
+    def default_acl(self, text):
+        library = ctypes.util.find_library("acl")
+        if not library:
+            self.skipTest("Linux libacl unavailable")
+        acl = ctypes.CDLL(library, use_errno=True)
+        acl.acl_from_text.argtypes = [ctypes.c_char_p]
+        acl.acl_from_text.restype = ctypes.c_void_p
+        acl.acl_set_file.argtypes = [ctypes.c_char_p, ctypes.c_int, ctypes.c_void_p]
+        acl.acl_free.argtypes = [ctypes.c_void_p]
+        value = acl.acl_from_text(text.encode())
+        self.assertTrue(value)
+        try:
+            self.assertEqual(acl.acl_set_file(os.fsencode(self.home), 0x4000, value), 0,
+                             "Cannot set regression default ACL: " + str(ctypes.get_errno()))
+        finally:
+            acl.acl_free(value)
+
+    def assert_private_tree(self):
+        for path in (self.inst.bin_dir, self.inst.root, self.inst.state,
+                     self.inst.root / "versions", *list((self.inst.root / "versions").iterdir())):
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o700, str(path))
+        self.assertEqual(stat.S_IMODE((self.inst.root / "manager.lock").stat().st_mode), 0o600)
+
+    def test_clean_default_home_umask_077_real_install(self):
+        with patch.dict(os.environ, {"XDG_DATA_HOME": "", "XDG_STATE_HOME": ""}):
+            # Absent XDG variables, as in a normal laptop account.
+            del os.environ["XDG_DATA_HOME"]
+            del os.environ["XDG_STATE_HOME"]
+            self.inst = m.Installation()
+            self.install("v" + self.identity["version"], real_health=True)
+            self.assert_private_tree()
+
+    def test_new_tree_modes_under_umask_matrix(self):
+        for mask in (0o000, 0o027, 0o077, 0o777):
+            with self.subTest(umask=oct(mask)):
+                old = os.umask(mask)
+                try:
+                    with patch.dict(os.environ, {"HOME": str(self.home / oct(mask)),
+                                                "XDG_DATA_HOME": str(self.home / oct(mask) / "data"),
+                                                "XDG_STATE_HOME": str(self.home / oct(mask) / "state")}):
+                        self.inst = m.Installation()
+                        self.install("v" + self.identity["version"], real_health=True)
+                        self.assert_private_tree()
+                finally:
+                    os.umask(old)
+
+    def test_default_acl_0500_full_lifecycle(self):
+        self.default_acl("u::r-x,g::---,o::---")
+        self.install("v" + self.identity["version"], real_health=True)
+        self.assert_private_tree()
+        # Signed fixture versions exercise update/recovery/rollback offline.
+        self.install("v0.2.0-preview.1")
+        with self.inst.locked():
+            self.inst.switch("v" + self.identity["version"])
+            m.atomic_json(self.inst.root / "transaction.json", {
+                "before": "v0.2.0-preview.1", "previous": "v" + self.identity["version"]})
+        with patch.object(m, "download", side_effect=AssertionError("network used")), patch.object(m, "health_binary"):
+            with self.inst.locked():
+                self.assertEqual(self.inst.current(), "v0.2.0-preview.1")
+                self.inst.rollback()
+        marker = self.inst.state / "operator.txt"
+        marker.write_text("preserve")
+        with self.inst.locked(): self.inst.uninstall()
+        self.assertEqual(marker.read_text(), "preserve")
+        self.assertFalse(self.inst.entry.is_symlink())
+
+    def test_permissive_default_acl_does_not_widen_new_paths(self):
+        self.default_acl("u::rwx,g::rwx,o::rwx")
+        self.install("v" + self.identity["version"], real_health=True)
+        self.assert_private_tree()
+
+    def test_existing_safe_directories_never_chmodded(self):
+        self.inst.bin_dir.mkdir(parents=True)
+        self.inst.bin_dir.chmod(0o755)
+        self.install()
+        package = self.package("v0.1.0-preview.2")
+        original = m.os.fchmod
+        def new_only(fd, mode):
+            existing = {p.stat().st_ino for p in (self.home, self.inst.bin_dir.parent, self.inst.bin_dir,
+                        self.inst.root, self.inst.state, self.inst.root / "versions")}
+            self.assertNotIn(os.fstat(fd).st_ino, existing)
+            return original(fd, mode)
+        with patch.object(m.os, "chmod", side_effect=AssertionError("path chmod")), patch.object(m.os, "fchmod", side_effect=new_only):
+            self.install("v0.1.0-preview.2", package=package)
+        self.assertEqual(stat.S_IMODE(self.inst.bin_dir.stat().st_mode), 0o755)
+
+    def test_existing_bin_0775_actionable_refusal_and_manual_retry(self):
+        self.inst.bin_dir.mkdir(parents=True)
+        self.inst.bin_dir.chmod(0o775)
+        marker = self.inst.bin_dir / "unrelated"
+        marker.write_text("preserve")
+        with patch.object(m, "download", side_effect=AssertionError("network used")), \
+                patch.object(m.os, "chmod", side_effect=AssertionError("existing chmod")), \
+                patch.object(m.os, "fchmod", side_effect=AssertionError("existing fchmod")):
+            with self.assertRaisesRegex(m.Refusal, "chmod go-w -- ") as error:
+                with self.inst.locked(): pass
+        self.assertIn(str(self.inst.bin_dir), str(error.exception))
+        self.assertEqual(stat.S_IMODE(self.inst.bin_dir.stat().st_mode), 0o775)
+        self.assertFalse(self.inst.root.exists())
+        # Explicit operator action, never performed by the installer.
+        self.inst.bin_dir.chmod(0o755)
+        self.install()
+        self.assertEqual(marker.read_text(), "preserve")
+        self.assertEqual(stat.S_IMODE(self.inst.bin_dir.stat().st_mode), 0o755)
+
+    def test_existing_private_0500_is_preserved_with_remedy(self):
+        with self.inst.locked(): pass
+        self.inst.root.chmod(0o500)
+        try:
+            with patch.object(m.os, "fchmod", side_effect=AssertionError("existing fchmod")):
+                with self.assertRaisesRegex(m.Refusal, "chmod 0700 -- "):
+                    with self.inst.locked(): pass
+            self.assertEqual(stat.S_IMODE(self.inst.root.stat().st_mode), 0o500)
+        finally:
+            self.inst.root.chmod(0o700)
+
+    def test_foreign_owner_and_root_owned_bin_refused(self):
+        with self.inst.locked(): pass
+        original = Path.lstat
+        for uid in (os.getuid() + 1, 0):
+            def foreign(path, *args, **kwargs):
+                st = original(path, *args, **kwargs)
+                if path == self.inst.bin_dir:
+                    values = list(st); values[4] = uid
+                    return os.stat_result(values)
+                return st
+            with self.subTest(uid=uid), patch.object(Path, "lstat", foreign):
+                with self.assertRaises(m.Refusal):
+                    with self.inst.locked(): pass
+
+    def test_bin_symlink_and_traversing_xdg_refused(self):
+        self.inst.bin_dir.parent.mkdir()
+        target = self.home / "elsewhere"
+        target.mkdir()
+        self.inst.bin_dir.symlink_to(target, target_is_directory=True)
+        with self.assertRaises(m.Refusal):
+            with self.inst.locked(): pass
+        self.assertTrue(self.inst.bin_dir.is_symlink())
+        self.inst.bin_dir.unlink()
+        with patch.dict(os.environ, {"XDG_DATA_HOME": str(self.home / "../escape")}):
+            with self.assertRaisesRegex(m.Refusal, "without traversal"):
+                with m.Installation().locked(): pass
 
     def test_real_signed_install_health_and_entry(self):
         tag = "v" + self.identity["version"]

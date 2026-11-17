@@ -1,34 +1,35 @@
-# OpenCode protocol — Debian 13 / N5000 / 4 GB
+# OpenCode handoff — preview.3 / Debian 13 / N5000
 
-Use only the official command shown in the README **after its published-release
-verification is recorded**. Do not clone or build. Do not authorize optimization.
+After publication and GitHub read-back, give OpenCode this prompt. Do not modify
+source, build locally, run optimization experiments or claim PASS in advance.
 
-1. Install with that one line. Record the output, `xynoos --version --json` and
-   `xynoos doctor --json`. The installation must report signature + SHA256 VERIFIED,
-   the intended preview version/channel and source commit. Stop on verification
-   failure. Host prerequisites are curl, Python 3.9+, OpenSSL 3 and CA certificates.
-2. Run `xynoos doctor` and `xynoos status`. Record actual MemAvailable, swap/ZRAM,
-   PSI and unavailable interfaces. Do not hide current memory pressure or bypass
-   a safety refusal. Active optimization is unavailable in this preview.
-3. Use Firefox and VS Code normally. Capture read-only evidence:
-   `xynoos diagnose --count 30 --interval-ms 1000 --json > xynoos-laptop.json`.
-   Also use `/usr/bin/time -v` around that command when available, recording user
-   CPU, system CPU, elapsed time and maximum RSS. Calculate process CPU overhead as
-   `(user_seconds + system_seconds) / elapsed_seconds * 100`; this is whole-command
-   process overhead, not an inferred desktop improvement. Include the diagnostic
-   collector's child process costs. Do not start synthetic stress workloads.
-4. Run `xynoos update`. If a newer published preview exists, verify its version and
-   origin, then disconnect network and run `xynoos rollback`. Confirm the prior
-   verified version is restored. If already current or no previous version exists,
-   record that truthful result; never fabricate an upgrade. A pinned older version
-   may be installed into a separate disposable HOME to exercise a real upgrade.
-5. Perform uninstall/reinstall only in a separate disposable HOME using that same
-   public bootstrap and explicit HOME/XDG variables. Put a marker in its Xynoos
-   state directory, uninstall, confirm the executable and versions are removed
-   while the marker remains, then reinstall and verify again. Do not repoint HOME
-   for Firefox/VS Code or delete the real user's evidence.
-6. Record version, origin, kernel/distro, pressure, overhead, lifecycle results and
-   limitations. Desktop performance benefit: **NOT PROVEN**. Stop here.
+> Validate published v0.1.0-preview.3 on this physical Debian 13 / Intel N5000
+> laptop. Do not modify source code. Record OS/kernel, `umask`, ownership/modes and
+> ACLs (if getfacl is installed) for HOME, ~/.local, ~/.local/bin and any existing
+> Xynoos data/state directories. If bin is 0775, run the installer once and confirm
+> the actionable refusal leaves its mode unchanged; inspect and explicitly apply
+> `chmod go-w -- "$HOME/.local/bin"` only if owned by this user and shared write
+> is not intentional. For a pre-existing Xynoos private directory at 0500, inspect
+> and explicitly apply only the printed 0700 remedy; never recursively chmod HOME.
+> Under `umask 077`, run the exact versioned installation command below. Stop on
+> any signature/checksum/ownership/symlink failure. Export PATH and capture
+> `xynoos --version --json`, `xynoos doctor`, `xynoos status`, and
+> `xynoos diagnose --count 2 --interval-ms 100 --json`. Confirm version preview.3,
+> signature + SHA256 verification, source commit, kernel mutation disabled,
+> ~/.local/bin/xynoos pointing into this user's verified installation, private
+> Xynoos directories 0700, metadata 0600 and installed binary 0700. Compare read-only
+> before/after snapshots of sysctl, swap/ZRAM, governor and service state; report
+> any unexpected system or unrelated file modification. Preserve user data and
+> diagnostics. Report PASS/FAIL per check with actual output and limitations.
+> Do not uninstall from the real HOME or change system settings.
 
-No sysctl, swap, ZRAM, governor, system service, cgroup mutation, process migration,
-or unrelated application modification is authorized by this protocol.
+```sh
+umask 077
+curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/v0.1.0-preview.3/install.sh | sh -s -- --version v0.1.0-preview.3
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+The HTTPS bootstrap initially trusts GitHub/TLS/repository control. For an
+independently pinned source digest, use the [auditable alternative](INSTALL.md#pinned-auditable-alternative)
+and confirm the pin through a separately trusted channel. Codespaces lifecycle
+results do not establish physical installation PASS or desktop performance benefit.

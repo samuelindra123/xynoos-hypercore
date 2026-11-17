@@ -15,6 +15,7 @@ from pathlib import Path
 import platform
 import re
 import shutil
+import shlex
 import ssl
 import stat
 import subprocess
@@ -152,7 +153,36 @@ def discover(channel, pinned=None):
     return max(eligible, key=version_key)
 
 
-def safe_directory(path, create=False, private=False):
+def seal_new_directory(path):
+    # Only call for a directory this process just created. An inherited default
+    # ACL can remove owner write even when mkdir(0700) runs under umask 077.
+    fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        require(os.fstat(fd).st_uid == os.getuid(), "New directory has unexpected owner: " + str(path))
+        os.fchmod(fd, 0o700)
+        require(stat.S_IMODE(os.fstat(fd).st_mode) == 0o700, "Cannot secure new directory: " + str(path))
+    finally:
+        os.close(fd)
+
+
+@contextlib.contextmanager
+def private_temporary_directory(**kwargs):
+    mask = os.umask(0o077)
+    try:
+        temporary = tempfile.TemporaryDirectory(**kwargs)
+    finally:
+        os.umask(mask)
+    with temporary as name:
+        seal_new_directory(name)
+        yield name
+
+
+def permission_remedy(path, mode):
+    return ("; no existing directory was changed. Inspect ownership/ACLs and, if this "
+            "directory should be writable only by you, run: chmod " + mode + " -- " + shlex.quote(str(path)) + "; then retry")
+
+
+def safe_directory(path, create=False, private=False, writable=False):
     path = Path(path)
     require(path.is_absolute() and ".." not in path.parts, "Installation paths must be absolute without traversal")
     current = Path(path.anchor)
@@ -162,15 +192,33 @@ def safe_directory(path, create=False, private=False):
             st = current.lstat()
         except FileNotFoundError:
             require(create, "Missing directory: " + str(current))
-            current.mkdir(mode=0o700)
+            # Bound the creation mask; never change permissions on an existing
+            # directory, including one created by a competing process.
+            mask = os.umask(0o077)
+            try:
+                current.mkdir(mode=0o700)
+            finally:
+                os.umask(mask)
+            seal_new_directory(current)
             st = current.lstat()
         require(stat.S_ISDIR(st.st_mode), "Symlink or non-directory refused: " + str(current))
         require(st.st_uid in (0, os.getuid()), "Directory has unexpected owner: " + str(current))
-        # Shared sticky ancestors such as /tmp are allowed; private final dirs are not.
-        require(not st.st_mode & 0o022 or (st.st_uid == 0 and st.st_mode & stat.S_ISVTX), "Writable directory refused: " + str(current))
-    if private:
-        st = path.lstat()
-        require(st.st_uid == os.getuid() and st.st_mode & 0o077 == 0, "Xynoos directory must be owned by you with mode 0700: " + str(path))
+        # Shared sticky root-owned ancestors such as /tmp are allowed. Never
+        # accept such an exception for the final application/executable directory.
+        shared_ancestor = current != path and st.st_uid == 0 and st.st_mode & stat.S_ISVTX
+        if st.st_mode & 0o022 and not shared_ancestor:
+            remedy = permission_remedy(current, "go-w") if st.st_uid == os.getuid() else "; ask the directory owner to secure it"
+            raise Refusal("Group/other-writable directory refused (executable replacement risk): " + str(current) + remedy)
+        require(st.st_mode & 0o100, "Directory is not searchable by its owner: " + str(current))
+    st = path.lstat()
+    if private or writable:
+        require(st.st_uid == os.getuid(), "Directory must be owned by you: " + str(path))
+        if private:
+            require(stat.S_IMODE(st.st_mode) == 0o700,
+                    "Xynoos directory requires mode 0700: " + str(path) + permission_remedy(path, "0700"))
+        else:
+            require(st.st_mode & 0o700 == 0o700,
+                    "Executable directory requires owner read/write/search: " + str(path) + permission_remedy(path, "u+rwx"))
     return path
 
 
@@ -194,6 +242,7 @@ def sync_dir(path):
 def write_new(path, data, mode=0o600):
     fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
     with os.fdopen(fd, "wb") as stream:
+        os.fchmod(stream.fileno(), mode)
         stream.write(data)
         stream.flush()
         os.fsync(stream.fileno())
@@ -204,6 +253,7 @@ def atomic_json(path, obj):
     fd, name = tempfile.mkstemp(prefix=".write-", dir=path.parent)
     try:
         with os.fdopen(fd, "wb") as stream:
+            os.fchmod(stream.fileno(), 0o600)
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())
@@ -218,7 +268,7 @@ def atomic_json(path, obj):
 
 def verify_signature(manifest, signature, directory):
     require(len(signature) == 64, "Invalid Ed25519 signature size")
-    with tempfile.TemporaryDirectory(prefix=".verify-", dir=directory) as temp:
+    with private_temporary_directory(prefix=".verify-", dir=directory) as temp:
         temp = Path(temp)
         for name, data in (("key", PUBLIC_KEY), ("manifest", manifest), ("signature", signature)):
             write_new(temp / name, data)
@@ -269,12 +319,17 @@ class Installation:
 
     @contextlib.contextmanager
     def locked(self):
+        safe_directory(self.bin_dir, create=True, writable=True)
         safe_directory(self.root, create=True, private=True)
         safe_directory(self.state, create=True, private=True)
-        safe_directory(self.bin_dir, create=True)
         safe_directory(self.root / "versions", create=True, private=True)
         path = self.root / "manager.lock"
-        fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
+        try:
+            fd = os.open(path, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+        except FileExistsError:
+            fd = os.open(path, os.O_RDWR | os.O_NOFOLLOW)
+        else:
+            os.fchmod(fd, 0o600)
         try:
             st = os.fstat(fd)
             require(stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid() and st.st_nlink == 1 and st.st_mode & 0o077 == 0, "Unsafe lock file")
@@ -422,7 +477,7 @@ class Installation:
             existing = self.verify_local(tag)
             require(existing == m, "Immutable version collision")
         else:
-            with tempfile.TemporaryDirectory(prefix=".stage-", dir=self.root / "versions") as temp:
+            with private_temporary_directory(prefix=".stage-", dir=self.root / "versions") as temp:
                 temp = Path(temp)
                 write_new(temp / "manifest.json", manifest)
                 write_new(temp / "manifest.json.sig", signature)
