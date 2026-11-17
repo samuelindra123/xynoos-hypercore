@@ -1,0 +1,1020 @@
+{
+  "base": "3c3402efad45d23eb9f047d085e21cf05d468a7e",
+  "head": "ef39a4ddfd35dbda390dcb7457af2b2e45322bbe",
+  "files": [
+    {
+      "path": ".gitattributes",
+      "added": "2",
+      "deleted": "0",
+      "category": "workspace/configuration"
+    },
+    {
+      "path": ".gitignore",
+      "added": "12",
+      "deleted": "0",
+      "category": "workspace/configuration"
+    },
+    {
+      "path": "Cargo.lock",
+      "added": "47",
+      "deleted": "0",
+      "category": "workspace/configuration"
+    },
+    {
+      "path": "README.md",
+      "added": "61",
+      "deleted": "0",
+      "category": "workspace/configuration"
+    },
+    {
+      "path": "artifacts/mvp/benchmark-final.json",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/mvp/benchmark-final.summary.json",
+      "added": "204",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/mvp/benchmark-preliminary.json",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/mvp/benchmark-preliminary.summary.json",
+      "added": "204",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/mvp/observe-static.json",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/mvp/observe.strace",
+      "added": "25",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/mvp/recovery-journal.json",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/mvp/recovery-static.json",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/mvp/simulate-journal.json",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/mvp/simulate-static.json",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/mvp/simulation-evidence.jsonl",
+      "added": "49",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/DELIVERY.md",
+      "added": "39",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/EXTRACTED-CHECKSUMS.txt",
+      "added": "18",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/EXTRACTED-INSPECTION.json",
+      "added": "66",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/PACKAGE-SOURCE-MANIFEST.json",
+      "added": "118",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/PACKAGE-VALIDATION.json",
+      "added": "24",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/PACKAGE.json",
+      "added": "9",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/diagnostic-smoke.jsonl",
+      "added": "7",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/extracted-ab-smoke/events.jsonl",
+      "added": "744",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/extracted-ab-smoke/summary.json",
+      "added": "76",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/package-inspection.json",
+      "added": "96",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/package-smoke/events.jsonl",
+      "added": "1354",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/package-smoke/summary.json",
+      "added": "111",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/c28435c03c1d/xynoos-laptop-c28435c03c1d-linux-x86_64.tar.gz.sha256",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/desktop-tests.txt",
+      "added": "24",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/diagnostic.jsonl",
+      "added": "23",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/final-checks.txt",
+      "added": "11",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/final-python-tests.txt",
+      "added": "72",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/final-source-session/events.jsonl",
+      "added": "13824",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/final-source-session/inspection.json",
+      "added": "96",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/final-source-session/summary.json",
+      "added": "111",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/quality-gates.txt",
+      "added": "652",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/session1/events.jsonl",
+      "added": "13864",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/session1/inspection.json",
+      "added": "96",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/session1/summary.json",
+      "added": "111",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/session2/events.jsonl",
+      "added": "13749",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/session2/inspection.json",
+      "added": "96",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/session2/summary.json",
+      "added": "111",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/source-corpus.manifest.json",
+      "added": "99",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-laptop/source-corpus.txt",
+      "added": "23692",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/DELIVERY.md",
+      "added": "38",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/EVIDENCE-VALIDATION.json",
+      "added": "38",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/EXTRACTED-CHECKSUM-VALIDATION.txt",
+      "added": "17",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/EXTRACTED-SMOKE-OUTPUT.txt",
+      "added": "1204",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/PACKAGE-SOURCE-MANIFEST.json",
+      "added": "108",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/PACKAGE-VALIDATION.json",
+      "added": "16",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/PACKAGE-d898c8ce7d21.json",
+      "added": "15",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/PACKAGE-d951c5b400e1.json",
+      "added": "15",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/PACKAGE.json",
+      "added": "15",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/SHA256SUMS",
+      "added": "45",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-cancelled/events.jsonl",
+      "added": "94",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-cancelled/inspection.json",
+      "added": "75",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-cancelled/summary.json",
+      "added": "72",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-entropy/events.jsonl",
+      "added": "1614",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-entropy/inspection.json",
+      "added": "1200",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-entropy/summary.json",
+      "added": "1197",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-mixed-1/events.jsonl",
+      "added": "3118",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-mixed-1/inspection.json",
+      "added": "1200",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-mixed-1/summary.json",
+      "added": "1197",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-mixed-2/events.jsonl",
+      "added": "3119",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-mixed-2/inspection.json",
+      "added": "1200",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/codespaces-mixed-2/summary.json",
+      "added": "1197",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/extracted-smoke-d898c8ce7d21/events.jsonl",
+      "added": "464",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/extracted-smoke-d898c8ce7d21/inspection.json",
+      "added": "1200",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/extracted-smoke-d898c8ce7d21/summary.json",
+      "added": "1197",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/extracted-smoke-d97b27c60080/events.jsonl",
+      "added": "464",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/extracted-smoke-d97b27c60080/inspection.json",
+      "added": "1200",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/extracted-smoke-d97b27c60080/summary.json",
+      "added": "1197",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/final-python-tests.txt",
+      "added": "54",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/mvp-regression.json",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/mvp-regression.summary.json",
+      "added": "204",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/package-smoke-d898c8ce7d21/events.jsonl",
+      "added": "464",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/package-smoke-d898c8ce7d21/inspection.json",
+      "added": "1200",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/package-smoke-d898c8ce7d21/summary.json",
+      "added": "1197",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/package-smoke-d951c5b400e1/events.jsonl",
+      "added": "464",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/package-smoke-d951c5b400e1/inspection.json",
+      "added": "1200",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/package-smoke-d951c5b400e1/summary.json",
+      "added": "1197",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/package-smoke-d97b27c60080/events.jsonl",
+      "added": "464",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/package-smoke-d97b27c60080/inspection.json",
+      "added": "1200",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/package-smoke-d97b27c60080/summary.json",
+      "added": "1197",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/quality-first-pass.txt",
+      "added": "646",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/refusal-fixture/events.jsonl",
+      "added": "4",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/refusal-fixture/inspection.json",
+      "added": "75",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/xynoos-owned-d898c8ce7d21-linux-x86_64.tar.gz.sha256",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/xynoos-owned-d951c5b400e1-linux-x86_64.tar.gz.sha256",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4-owned/xynoos-owned-d97b27c60080-linux-x86_64.tar.gz.sha256",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/PACKAGE.json",
+      "added": "12",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/PROVENANCE.json",
+      "added": "78",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/SHA256SUMS",
+      "added": "19",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/benchmark-tests.txt",
+      "added": "23",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/codespaces-ab/events.jsonl",
+      "added": "4115",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/codespaces-ab/inspection.json",
+      "added": "1075",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/codespaces-ab/summary.json",
+      "added": "1073",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/codespaces-cancelled/events.jsonl",
+      "added": "8",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/codespaces-cancelled/inspection.json",
+      "added": "60",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/codespaces-cancelled/summary.json",
+      "added": "58",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/mvp-regression.json",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/mvp-regression.summary.json",
+      "added": "204",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/package-smoke/events.jsonl",
+      "added": "89",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/package-smoke/inspection.json",
+      "added": "385",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/package-smoke/summary.json",
+      "added": "383",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/package-verification.txt",
+      "added": "407",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/profile-ab.json",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/profile-before.json",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "artifacts/phase4/xynoos-phase4-4b7b191742a2-linux-x86_64.tar.gz.sha256",
+      "added": "1",
+      "deleted": "0",
+      "category": "historical output"
+    },
+    {
+      "path": "benchmarks/desktop-probe.html",
+      "added": "84",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-aura/src/cooperative.rs",
+      "added": "32",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-aura/src/lib.rs",
+      "added": "1",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-bench/Cargo.toml",
+      "added": "2",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-bench/src/main.rs",
+      "added": "21",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-cli/Cargo.toml",
+      "added": "4",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-cli/src/bin/xynoos-mvp.rs",
+      "added": "19",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-cli/src/main.rs",
+      "added": "4",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-cli/src/mvp.rs",
+      "added": "159",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-cli/tests/mvp.rs",
+      "added": "110",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-decision/src/lib.rs",
+      "added": "4",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-engine/Cargo.toml",
+      "added": "19",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-engine/src/bin/xynoos-desktop.rs",
+      "added": "153",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-engine/src/bin/xynoos-owned.rs",
+      "added": "112",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-engine/src/bin/xynoos-perf.rs",
+      "added": "154",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-engine/src/lib.rs",
+      "added": "196",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-engine/src/observation.rs",
+      "added": "74",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-engine/src/owned.rs",
+      "added": "453",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-engine/src/recovery.rs",
+      "added": "277",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-engine/src/replay.rs",
+      "added": "360",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-engine/tests/integrated.rs",
+      "added": "332",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-linux-control/src/controller/session_adapter.rs",
+      "added": "21",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-linux-control/src/controller/session_io_tests.rs",
+      "added": "13",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "crates/xynoos-linux-control/src/lib.rs",
+      "added": "6",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "docs/ARCHITECTURE.md",
+      "added": "4",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/MVP-ARCHITECTURE.md",
+      "added": "71",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/MVP-BENCHMARK.md",
+      "added": "73",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/MVP-N5000-VALIDATION.md",
+      "added": "70",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/MVP-QUICKSTART.md",
+      "added": "69",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/MVP-SAFETY-RECOVERY.md",
+      "added": "89",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/PHASE4-LAPTOP-N5000.md",
+      "added": "192",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/PHASE4-LAPTOP-RESEARCH.md",
+      "added": "47",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/PHASE4-LAPTOP-SAFETY.md",
+      "added": "119",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/PHASE4-N5000.md",
+      "added": "128",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/PHASE4-OWNED-N5000.md",
+      "added": "131",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/reports/MVP-QUALITY-GATES.txt",
+      "added": "466",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/reports/MVP-RESULTS.md",
+      "added": "147",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/reports/PHASE4-LAPTOP-RESULTS.md",
+      "added": "148",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/reports/PHASE4-OWNED-PERFORMANCE.md",
+      "added": "218",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/reports/PHASE4-OWNED-QUALITY-GATES.txt",
+      "added": "696",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/reports/PHASE4-OWNED-SAFETY-REVIEW.md",
+      "added": "34",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/reports/PHASE4-PERFORMANCE.md",
+      "added": "180",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "docs/reports/PHASE4-QUALITY-GATES.txt",
+      "added": "556",
+      "deleted": "0",
+      "category": "documentation"
+    },
+    {
+      "path": "fixtures/mvp-trace.json",
+      "added": "21",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/benchmark_desktop.py",
+      "added": "509",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/benchmark_mvp.py",
+      "added": "161",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/benchmark_owned.py",
+      "added": "302",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/benchmark_physical.py",
+      "added": "427",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/inspect_desktop.py",
+      "added": "80",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/inspect_owned.py",
+      "added": "69",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/inspect_physical.py",
+      "added": "62",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/laptop_diagnostic.py",
+      "added": "276",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/package-laptop.py",
+      "added": "115",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/package-mvp.py",
+      "added": "52",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/package-owned.py",
+      "added": "106",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/package-phase4.py",
+      "added": "84",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/quality_mvp.py",
+      "added": "47",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/tests/test_desktop.py",
+      "added": "297",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/tests/test_owned.py",
+      "added": "184",
+      "deleted": "0",
+      "category": "source/test"
+    },
+    {
+      "path": "scripts/tests/test_physical_benchmark.py",
+      "added": "196",
+      "deleted": "0",
+      "category": "source/test"
+    }
+  ]
+}
