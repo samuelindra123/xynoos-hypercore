@@ -26,7 +26,7 @@ The review was static, with local test-key checks and hosted CI evidence below. 
 
 ### F-02 — Production signing and owner approval are not configured
 
-**Severity:** High as a release gate; no current secret exposure is evidenced.
+**Classification:** **OWNER ACTION REQUIRED — publication gate**, not an implementation security defect. No current secret exposure is evidenced. This blocks production publication, but does not require the unconfigured credentials to be merged into source.
 
 At the time of assessment, GitHub reports no `apt-preview` environment, repository Actions secrets, or fingerprint variable. Consequently no production signing has occurred and the publish job cannot complete. Creating the environment without branch restrictions and required owner review would weaken the intended trust boundary.
 
@@ -96,6 +96,8 @@ PR #40 candidate exact-head runs at `1022da3627cb73acecf2ef02292992ee5a459aa0`:
 
 All listed current-candidate runs passed. These are CI tests with explicitly disposable fixture keys where applicable. They are not production-key tests, external approval, public APT publication, a real two-release rollback test, or physical hardware acceptance.
 
-## Conclusion
+## Maintainer security decision
 
-No confirmed exploitable defect was reproduced in the reviewed read-only package or signed-index path. The online-primary-key import risk is addressed by code and passing exact-head CI, pending human review. The repository is **not approved for publication**: signing/environment setup, external security review and normal PR approval remain outstanding. This report is an internal engineering assessment only.
+**APPROVE FOR MAINTAINER MERGE**, conditional on all exact-head required CI passing, no unresolved conversations, and retaining the protected-main status checks and force-push/deletion restrictions. No unresolved CRITICAL or HIGH implementation security finding was identified. The online-primary-key import risk is addressed by code and passing exact-head CI. This is an internal maintainer assessment, not an independent external audit or fabricated GitHub approval.
+
+Production publication remains **BLOCKED** until the owner configures the protected `apt-preview` environment and approved production signing identity/fingerprint, then verifies the public signed archive. Approval to merge the source is not approval to publish packages.
