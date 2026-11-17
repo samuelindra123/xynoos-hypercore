@@ -43,8 +43,12 @@ def main():
                 shutil.copyfile(path, out / path.name)
     for suffix in ['.deb', '.changes', '.buildinfo', '.dsc', '.xz']:
         require(any(p.name.endswith(suffix) for p in out.iterdir()), 'Missing release material: ' + suffix)
-    tree = next((build / 'source').glob('xynoos-hypercore-*'))
-    deps = json.loads((tree / 'packaging/dependencies.json').read_text())
+    orig = list((build / 'source').glob('*.orig.tar.xz'))
+    require(len(orig) == 1, 'Expected exactly one original source archive')
+    with tarfile.open(orig[0]) as archive:
+        matches = [m for m in archive.getmembers() if m.name.endswith('/packaging/dependencies.json')]
+        require(len(matches) == 1, 'Missing/ambiguous locked dependency inventory')
+        deps = json.load(archive.extractfile(matches[0]))
     components = []
     for dep in deps:
         components.append({'type': 'library', 'name': dep['name'], 'version': dep['version'],

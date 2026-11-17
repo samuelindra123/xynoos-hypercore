@@ -13,6 +13,27 @@ Xynoos HyperCore is a Rust workspace investigating Linux resource telemetry, pol
 
 [Install the preview](#install-the-developer-preview) · [Architecture](docs/ARCHITECTURE.md) · [Safety](#safety-and-limitations) · [Evidence](#experimental-evidence) · [Documentation](docs/README.md)
 
+## Debian distribution and documentation
+
+Native APT publishing and immutable direct `.deb` prereleases are implemented for
+**amd64 / preview / main**. **First public publication is blocked** on the dedicated
+APT signing identity and verification in [#36](https://github.com/samuelindra123/xynoos-hypercore/issues/36).
+The intended APT endpoint is not yet advertised as installable. After verified setup,
+ordinary APT manages package-name installation and upgrades; manual `.deb` handling
+is needed only for the direct-download method.
+
+[Both Debian installation methods and current status](docs/distribution/INSTALLATION.md) ·
+[Release history](https://github.com/samuelindra123/xynoos-hypercore/releases) ·
+[Archive/security operations](docs/distribution/MAINTENANCE.md) ·
+[Owner setup](docs/distribution/OWNER-SETUP.md) ·
+[Maintained developer Wiki sources](docs/wiki/Home.md).
+The [official Wiki location](https://github.com/samuelindra123/xynoos-hypercore/wiki)
+awaits initialization/publication under [#37](https://github.com/samuelindra123/xynoos-hypercore/issues/37).
+Use the source pages until public Wiki publication is verified.
+See [hardware compatibility](docs/debian/HARDWARE.md), [development](docs/wiki/Development-Setup.md),
+[contributing](docs/wiki/Contributing.md), [security](docs/wiki/Security-Policy.md),
+[issue reporting](docs/wiki/Reporting-Issues.md), and the [distribution evidence report](docs/distribution/REPORT.md).
+
 ## Install the developer preview
 
 Debian packaging for review is documented in [the Debian guide](docs/debian/PACKAGING.md).

@@ -1,5 +1,6 @@
 """Exercise the real GPG/APT chain with a disposable TEST identity, never production keys."""
 import getpass
+from datetime import datetime, timedelta, timezone
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 import functools
 import json
@@ -68,6 +69,21 @@ class ArchiveTests(unittest.TestCase):
         archive.publish(self.root, None, None, self.fpr)
         self.assertEqual(archive.verify(self.root, self.fpr), ledger)
 
+    def test_expired_state_requires_verified_metadata_only_renewal(self):
+        class Past(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return datetime.now(timezone.utc) - timedelta(days=31)
+        other = Path(self.directory.name) / 'expired'
+        with patch.object(archive, 'datetime', Past):
+            archive.publish(other, self.debs['amd640.1.0~preview.1-1'], 'a' * 40, self.fpr)
+        with self.assertRaisesRegex(ValueError, 'Expired archive'):
+            archive.verify(other, self.fpr)
+        with self.assertRaisesRegex(ValueError, 'Expired archive'):
+            archive.publish(other, self.debs['amd640.1.0~preview.2-1'], 'b' * 40, self.fpr, renew_expired=True)
+        archive.publish(other, None, None, self.fpr, renew_expired=True)
+        self.assertEqual(set(archive.verify(other, self.fpr)['versions']), {'0.1.0~preview.1-1'})
+
     def test_duplicate_version_and_wrong_architecture_refused(self):
         for version, arch in [('0.1.0~preview.1-1', 'amd64'), ('0.1.0~preview.3-1', 'arm64')]:
             with self.assertRaises(ValueError):
@@ -79,6 +95,16 @@ class ArchiveTests(unittest.TestCase):
         deb.write_bytes(deb.read_bytes() + b'tampered')
         with self.assertRaisesRegex(ValueError, 'Package checksum mismatch'):
             self.add('0.1.0~preview.2-1')
+
+    def test_unexpected_files_and_symlinks_never_reach_pages(self):
+        extra = self.root / 'unexpected-export'
+        extra.write_text('must not be published')
+        with self.assertRaisesRegex(ValueError, 'Unexpected or corrupt'):
+            archive.verify(self.root, self.fpr)
+        extra.unlink()
+        extra.symlink_to('/dev/null')
+        with self.assertRaisesRegex(ValueError, 'symlinks forbidden'):
+            archive.verify(self.root, self.fpr)
 
     def test_modified_metadata_refused(self):
         index = self.root / 'dists/preview/main/binary-amd64/Packages'

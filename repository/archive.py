@@ -49,7 +49,7 @@ def paragraphs(data):
     return [Parser().parsestr(p) for p in data.strip().split('\n\n') if p.strip()]
 
 
-def verify(root, expected):
+def verify(root, expected, allow_expired=False):
     root = Path(root).resolve()
     require(re.fullmatch(r'[A-F0-9]{40}', expected), 'Full uppercase OpenPGP v4 fingerprint required')
     key = root / 'xynoos-archive-keyring.gpg'
@@ -63,7 +63,7 @@ def verify(root, expected):
                          'Acquire-By-Hash': 'yes'}.items():
         require(release[field] == value, 'Invalid Release ' + field)
     from email.utils import parsedate_to_datetime
-    require(parsedate_to_datetime(release['Valid-Until']) > datetime.now(timezone.utc), 'Expired archive')
+    require(allow_expired or parsedate_to_datetime(release['Valid-Until']) > datetime.now(timezone.utc), 'Expired archive')
     indexed = set()
     for line in release['SHA256'].splitlines():
         if not line.strip():
@@ -95,17 +95,29 @@ def verify(root, expected):
     for name in ['Packages', 'Packages.gz']:
         path = packages.parent / name
         require((path.parent / 'by-hash/SHA256' / digest(path)).read_bytes() == path.read_bytes(), 'Missing by-hash index')
+    allowed = {'xynoos-archive-keyring.gpg', 'dists/preview/InRelease', 'dists/preview/Release',
+               'dists/preview/Release.gpg', 'dists/preview/versions.json',
+               'dists/preview/main/binary-amd64/Packages', 'dists/preview/main/binary-amd64/Packages.gz'} | pool
+    for path in root.rglob('*'):
+        require(not path.is_symlink(), 'Archive symlinks forbidden')
+        if path.is_dir():
+            continue
+        relative = str(path.relative_to(root))
+        if relative not in allowed:
+            match = re.fullmatch(r'dists/preview/main/binary-amd64/by-hash/(SHA256|SHA512)/([a-f0-9]+)', relative)
+            require(match and hashlib.new(match[1].lower(), path.read_bytes()).hexdigest() == match[2],
+                    'Unexpected or corrupt retained archive file: ' + relative)
     require(actual, 'Empty archive')
     return ledger
 
 
-def publish(root, deb, commit, expected):
+def publish(root, deb, commit, expected, renew_expired=False):
     root = Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
     require(re.fullmatch(r'[A-F0-9]{40}', expected), 'Full uppercase fingerprint required')
     # Refuse partial, unsigned, tampered or expired historical state. Recovery needs owner review.
     if any(root.iterdir()):
-        ledger = verify(root, expected)
+        ledger = verify(root, expected, allow_expired=renew_expired and deb is None)
     else:
         require(deb is not None, 'Cannot refresh an absent archive')
         ledger = {'suite': SUITE, 'versions': {}}
@@ -177,12 +189,13 @@ def main():
     parser.add_argument('root', type=Path)
     parser.add_argument('--deb', type=Path)
     parser.add_argument('--commit')
+    parser.add_argument('--renew-expired', action='store_true', help='Refresh only: verify signed expired state before re-signing; never accept new packages with expired state')
     parser.add_argument('--fingerprint', default=os.environ.get('XYNOOS_APT_FINGERPRINT', ''))
     args = parser.parse_args()
     if args.operation == 'verify':
         print(json.dumps(verify(args.root, args.fingerprint), indent=2))
     else:
-        publish(args.root, args.deb, args.commit, args.fingerprint)
+        publish(args.root, args.deb, args.commit, args.fingerprint, args.renew_expired)
         print('Signed preview archive verified')
 
 

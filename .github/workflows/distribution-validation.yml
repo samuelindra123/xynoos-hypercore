@@ -1,0 +1,26 @@
+name: Distribution archive validation
+on:
+  pull_request:
+  push:
+    branches: [main, distribution/native-apt-ecosystem]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  archive:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Install Debian index and signature verification utilities
+        run: sudo apt-get update && sudo apt-get install -y apt-utils gnupg
+      - name: Actual signature/APT chain and adversarial archive tests
+        run: python3 -m unittest discover -s repository -p 'test_*.py' -v
+      - name: Source syntax, documentation contracts and whitespace
+        run: |
+          python3 -m compileall -q repository
+          bash -n repository/signing.sh repository/state.sh repository/ci-lifecycle.sh
+          python3 repository/check-docs.py
+          git diff --check HEAD^ HEAD

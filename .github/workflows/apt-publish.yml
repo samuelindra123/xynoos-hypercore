@@ -1,0 +1,128 @@
+name: Publish signed Debian preview
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Exact current main SHA (40 lowercase hex); must equal workflow source'
+        type: string
+        required: true
+      version:
+        description: 'Exact Debian preview version from debian/changelog'
+        type: string
+        required: true
+permissions:
+  contents: read
+concurrency:
+  group: xynoos-apt-publication
+  cancel-in-progress: false
+jobs:
+  gate:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      pull-requests: read
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Verify exact reviewed source, version and main CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+        run: python3 repository/source-gate.py "$SOURCE_SHA" "$VERSION"
+  build:
+    needs: gate
+    uses: ./.github/workflows/debian-package.yml
+    permissions:
+      contents: read
+  attest:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: debian-amd64-unsigned
+          path: dist-debian
+      - name: Verify source inventory and prepare release
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+        run: |
+          (cd dist-debian && sha256sum -c SHA256SUMS)
+          python3 repository/bundle.py dist-debian release --commit "$SOURCE_SHA" --run-id "$GITHUB_RUN_ID"
+      - name: Attest all immutable subjects
+        id: attest
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: release/*
+      - name: Preserve verification bundle
+        env:
+          BUNDLE: ${{ steps.attest.outputs.bundle-path }}
+        run: cp "$BUNDLE" release/provenance.sigstore.json
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: attested-debian-preview
+          path: release/
+          if-no-files-found: error
+          retention-days: 30
+  publish:
+    needs: attest
+    runs-on: ubuntu-24.04
+    environment: apt-preview
+    permissions:
+      contents: write
+      attestations: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: attested-debian-preview
+          path: release
+      - name: Verify attestations before exposing signing material
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+        run: python3 repository/release.py release --commit "$SOURCE_SHA" --version "$VERSION"
+      - name: Sign and validate append-only archive; publish immutable release and history
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          XYNOOS_APT_PRIVATE_KEY: ${{ secrets.XYNOOS_APT_PRIVATE_KEY }}
+          XYNOOS_APT_PASSPHRASE: ${{ secrets.XYNOOS_APT_PASSPHRASE }}
+          XYNOOS_APT_FINGERPRINT: ${{ vars.XYNOOS_APT_FINGERPRINT }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y apt-utils gnupg
+          source repository/signing.sh
+          bash repository/state.sh fetch "$RUNNER_TEMP/history"
+          python3 repository/archive.py publish "$RUNNER_TEMP/history/apt" --deb release/*.deb --commit "$SOURCE_SHA"
+          python3 repository/apt-client.py "$RUNNER_TEMP/history/apt" --fingerprint "$XYNOOS_APT_FINGERPRINT"
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD:/work:ro" -v "$RUNNER_TEMP/history/apt:/apt:ro" \
+            -e XYNOOS_APT_FINGERPRINT \
+            debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 \
+            bash /work/repository/ci-lifecycle.sh published
+          python3 repository/release.py release --commit "$SOURCE_SHA" --version "$VERSION" --publish
+          bash repository/state.sh push "$RUNNER_TEMP/history"
+  pages:
+    needs: publish
+    uses: ./.github/workflows/studio-pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write

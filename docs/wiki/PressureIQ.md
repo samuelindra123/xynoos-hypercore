@@ -1,0 +1,7 @@
+# PressureIQ
+
+**Experimental preview.** Implemented capabilities and test evidence are described separately. Physical N5000 performance gains, complete GPU support and production readiness are **not verified**. Native APT publication is **BLOCKED** on [signing setup](https://github.com/samuelindra123/xynoos-hypercore/issues/36); Wiki publication is tracked in [#37](https://github.com/samuelindra123/xynoos-hypercore/issues/37). These maintained sources do not claim a live Wiki or APT endpoint.
+
+**Implemented:** bounded Linux procfs/sysfs readers, memory/CPU/I/O PSI, checked counter deltas, cgroup-visible telemetry, two-sample memory diagnosis and hardware observations. Sources are read sequentially, so a snapshot is not atomic or universally host-wide.
+
+Missing, denied, malformed, stale or reset evidence must remain explicit. No absent measurement becomes zero. Cloud fixtures cover these cases; host/driver coverage remains incomplete. No reclaim, swap/ZRAM tuning, CPU governor, GPU clock or fan adjustment follows from observation. See [memory intelligence](https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/PHASE5-MEMORY-INTELLIGENCE.md), [reliability](https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/reports/TASK-015A-TELEMETRY-RELIABILITY-https://github.com/samuelindra123/xynoos-hypercoreRT.md) and [[CPU and GPU Hardware Support|CPU-and-GPU-Hardware-Support]].

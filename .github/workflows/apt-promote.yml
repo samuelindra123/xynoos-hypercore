@@ -1,0 +1,66 @@
+name: Promote existing attested Debian preview
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: 'Exact original attested source SHA; must be merged into main'
+        required: true
+        type: string
+      version:
+        description: 'Exact existing Debian prerelease version; no rebuild or asset overwrite'
+        required: true
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: xynoos-apt-publication
+  cancel-in-progress: false
+jobs:
+  promote:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    environment: apt-preview
+    permissions:
+      contents: write
+      attestations: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Select immutable release and verify every attestation
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          python3 repository/promote-gate.py "$SOURCE_SHA" "$VERSION"
+          python3 repository/release.py release --commit "$SOURCE_SHA" --version "$VERSION"
+      - name: Verify signed state and append exact release if absent
+        env:
+          GH_REPO: ${{ github.repository }}
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          VERSION: ${{ inputs.version }}
+          XYNOOS_APT_PRIVATE_KEY: ${{ secrets.XYNOOS_APT_PRIVATE_KEY }}
+          XYNOOS_APT_PASSPHRASE: ${{ secrets.XYNOOS_APT_PASSPHRASE }}
+          XYNOOS_APT_FINGERPRINT: ${{ vars.XYNOOS_APT_FINGERPRINT }}
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y apt-utils gnupg
+          source repository/signing.sh
+          bash repository/state.sh fetch "$RUNNER_TEMP/history"
+          python3 repository/promote.py "$RUNNER_TEMP/history/apt" release --commit "$SOURCE_SHA" --version "$VERSION"
+          python3 repository/apt-client.py "$RUNNER_TEMP/history/apt" --fingerprint "$XYNOOS_APT_FINGERPRINT"
+          docker run --rm --platform linux/amd64 \
+            -v "$PWD:/work:ro" -v "$RUNNER_TEMP/history/apt:/apt:ro" -e XYNOOS_APT_FINGERPRINT \
+            debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 \
+            bash /work/repository/ci-lifecycle.sh published
+          bash repository/state.sh push "$RUNNER_TEMP/history"
+  pages:
+    needs: promote
+    uses: ./.github/workflows/studio-pages.yml
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
