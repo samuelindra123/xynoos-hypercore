@@ -32,6 +32,21 @@ jobs:
           RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --locked
           cargo build --workspace --release --locked
       - name: Fixture and owned-process Python lifecycle tests
-        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+        run: |
+          set -euo pipefail
+          # Hosted root cgroups omit memory.max. A private bounded container gives
+          # real observable ancestry without weakening the production admission gate.
+          docker run --rm --cgroupns private --memory 1g --cpus 2 \
+            -v "$PWD:/work:ro" -w /work \
+            -e TEST_UID="$(id -u)" -e TEST_GID="$(id -g)" \
+            debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 \
+            bash -c '
+              set -euo pipefail
+              apt-get update
+              apt-get install -y --no-install-recommends python3 util-linux
+              setpriv --reuid="$TEST_UID" --regid="$TEST_GID" --clear-groups \
+                python3 -m unittest discover -s scripts/tests -p "test_*.py" -v
+            '
+
       - name: Launcher fixture tests
         run: bash scripts/tests/test-018e-launcher.sh
