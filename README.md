@@ -125,3 +125,5 @@ Future work depends on reproducible evidence, representative workloads and indep
 ## License
 
 Xynoos HyperCore is licensed under [GNU GPL-3.0-only](LICENSE). Project history identifies Samuel Indra Bastian and contributors.
+
+Resource engine integration: see [architecture and completion report](docs/resource-engine/REPORT.md). Read-only commands: `xynoos resources --json` and `xynoos memory --interval-ms 1000`.

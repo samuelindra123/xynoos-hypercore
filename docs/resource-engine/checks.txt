@@ -1,0 +1,6 @@
+Cloud validation 2026-11-17
+Workspace tests: 106 passed; 1 privileged test ignored
+Strict Clippy: passed
+Release workspace build: passed
+Python distribution tests outside sandbox: 41 passed
+Physical hardware: not tested

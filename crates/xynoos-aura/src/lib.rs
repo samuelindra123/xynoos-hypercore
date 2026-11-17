@@ -41,3 +41,5 @@ pub mod physical;
 pub mod selector;
 
 pub mod memory;
+
+pub mod resource;

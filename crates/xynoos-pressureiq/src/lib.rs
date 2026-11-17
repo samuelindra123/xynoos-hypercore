@@ -485,3 +485,5 @@ pub mod cgroup_pressure;
 pub mod workload;
 
 pub mod intelligence;
+
+pub mod hardware;

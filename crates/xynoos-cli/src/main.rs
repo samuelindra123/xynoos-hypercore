@@ -13,6 +13,30 @@ fn main() -> Result<(), Box<dyn Error>> {
     if args.first().map(String::as_str) == Some("memory") {
         return memory_command(&args[1..]);
     }
+    if args.first().map(String::as_str) == Some("resources") {
+        if args.len() != 1 && args[1..] != ["--json"] {
+            return Err("usage: resources [--json]".into());
+        }
+        let start = std::time::Instant::now();
+        let hardware = xynoos_pressureiq::hardware::collect(Path::new("/sys"));
+        let snapshot = xynoos_pressureiq::system::collect_system();
+        let contract = xynoos_pressureiq::system::contract::build(
+            &snapshot,
+            None,
+            None,
+            std::time::Instant::now(),
+            Duration::from_secs(5),
+        );
+        let plan =
+            xynoos_aura::resource::plan(&hardware, &contract, start.elapsed().as_millis() as u64);
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "schema_version": 1, "hardware": hardware, "system": contract, "aura": plan
+            }))?
+        );
+        return Ok(());
+    }
     if product::run(&args)? {
         return Ok(());
     }
