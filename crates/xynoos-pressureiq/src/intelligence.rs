@@ -150,7 +150,12 @@ pub fn diagnose(a: &Observation, b: &Observation, interval: Duration, age: Durat
         interval_seconds: valid_interval.then_some(seconds),
         reliable: true,
     };
-    if !valid_interval || !valid_psi || age > Duration::from_secs(5) || b.collection_ms > 5000 {
+    if !valid_interval
+        || !valid_psi
+        || age > Duration::from_secs(5)
+        || a.collection_ms > 5000
+        || b.collection_ms > 5000
+    {
         d.limitations
             .push("stale observation or invalid sampling interval".into());
         d.reliable = false;
@@ -238,8 +243,10 @@ pub fn diagnose(a: &Observation, b: &Observation, interval: Duration, age: Durat
     let swap = rate("pswpin")
         .zip(rate("pswpout"))
         .is_some_and(|(i, o)| i >= 10.0 && o >= 10.0);
-    let stalled =
-        b.memory_some_10.is_some_and(|v| v >= 1.0) || b.memory_full_10.is_some_and(|v| v >= 0.2);
+    let psi_at_least = |value: Option<f64>, threshold: f64| {
+        value.is_some_and(|v| v.is_finite() && (threshold..=100.0).contains(&v))
+    };
+    let stalled = psi_at_least(b.memory_some_10, 1.0) || psi_at_least(b.memory_full_10, 0.2);
     let reclaim = direct || rate("pgscan_kswapd").is_some_and(|v| v > 0.0);
     if d.available_pct.is_none()
         || b.memory_some_10.is_none()
@@ -280,14 +287,14 @@ pub fn diagnose(a: &Observation, b: &Observation, interval: Duration, age: Durat
         d.evidence
             .push("ZRAM original data is at least 10% of RAM on a device".into());
     }
-    if stalled && reclaim && b.io_some_10.is_some_and(|v| v >= 5.0) {
+    if stalled && reclaim && psi_at_least(b.io_some_10, 5.0) {
         d.classes.push("io_amplified_memory_stalls".into());
         d.evidence.push(
             "memory stalls and reclaim coincide with I/O PSI >= 5%; causality is not established"
                 .into(),
         );
     }
-    if b.memory_some_60.is_some_and(|v| v >= 1.0) && reclaim {
+    if psi_at_least(b.memory_some_60, 1.0) && reclaim {
         d.classes.push("sustained_pressure".into());
         d.evidence
             .push("memory PSI avg60 >= 1% with current reclaim".into());
@@ -372,6 +379,25 @@ mod tests {
         }
         assert_eq!(d.rates_per_second["pswpin"], Some(30.0));
         assert_eq!(d.zram_ratios["zram0"], Some((4.0, 2.5)));
+    }
+    #[test]
+    fn invalid_psi_and_slow_first_collection_cannot_produce_pressure_evidence() {
+        let mut a = sample();
+        let mut b = a.clone();
+        a.collection_ms = 5001;
+        *b.vm.as_mut().unwrap().get_mut("pgscan_direct").unwrap() += 1;
+        b.memory_some_10 = Some(101.0);
+        b.memory_some_60 = Some(101.0);
+        b.io_some_10 = Some(101.0);
+        let d = diagnose(&a, &b, Duration::from_secs(1), Duration::ZERO);
+        assert!(!d.reliable);
+        assert!(!d.classes.contains(&"sustained_pressure".into()));
+        assert!(!d.classes.contains(&"elevated_pressure".into()));
+        assert!(!d.classes.contains(&"io_amplified_memory_stalls".into()));
+        b.memory_some_10 = Some(0.0);
+        b.memory_some_60 = Some(0.0);
+        b.io_some_10 = Some(0.0);
+        assert!(!diagnose(&a, &b, Duration::from_secs(1), Duration::ZERO).reliable);
     }
     #[test]
     fn missing_stale_and_reset_are_not_zero() {
