@@ -2,7 +2,7 @@
 
 **Assessment type:** internal engineering review, performed for merge readiness. This is not an independent external audit, penetration test, maintainer approval, or production authorization.
 
-**Reviewed baseline:** distribution branch commit `9eac60d3a53adb4d90a48b22ec31dcf778993f2f`, based on `main` `be09510d6bc43861514a74224b1bacb54fbc281d`.
+**Reviewed baseline:** current distribution candidate `1022da3627cb73acecf2ef02292992ee5a459aa0`, based on `main` `be09510d6bc43861514a74224b1bacb54fbc281d`.
 
 **Follow-up in this PR:** `repository/check_signing_key.py` now validates the imported secret-key shape before publication/renewal/promotion can use it. This code is not merged or deployed until normal PR review.
 
@@ -16,7 +16,7 @@ The review was static, with local test-key checks and hosted CI evidence below. 
 
 ### F-01 — Primary private key could be loaded into the publication runner
 
-**Severity:** Medium before remediation; **remediated in this PR, pending CI and human review**.
+**Severity:** Medium before remediation; implementation and exact-head CI remediation pass are complete, pending human review.
 
 `repository/signing.sh` imported the configured secret into an ephemeral `GNUPGHOME`, but did not check that the uploaded export contained only the delegated signing subkey. An owner could accidentally configure an export containing the primary private key. The protected publish job would then have access to that key as well as repository write permission.
 
@@ -86,16 +86,16 @@ The publish, promote, and refresh jobs receive `contents:write` because they cre
 
 ## Validation evidence
 
-Baseline PR #40 exact-head runs:
+PR #40 candidate exact-head runs at `1022da3627cb73acecf2ef02292992ee5a459aa0`:
 
-- [Debian build, reproducibility, package lifecycle and signed APT fixture](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44085908974)
-- [Archive signature/integrity/adversarial tests](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44085909060)
-- [Studio and combined Pages validation](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44085908975)
-- [CLI/distribution validation](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44085909040)
-- [Phase 5 workspace validation](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44085909065)
+- [Debian build, Rust 1.82/1.100, reproducibility, package lifecycle and signed APT fixture](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44104262269)
+- [Archive signature/integrity/adversarial and signing-key preflight tests](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44104262160)
+- [Studio and combined Pages validation](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44104262300)
+- [CLI/distribution validation](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44104262078)
+- [Phase 5 workspace validation](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44104262589)
 
-These are CI tests with explicitly disposable fixture keys where applicable. They are not production-key tests, external approval, public APT publication, a real two-release rollback test, or physical hardware acceptance. New signing-key guard tests and lifecycle-script syntax require CI at the follow-up commit.
+All listed current-candidate runs passed. These are CI tests with explicitly disposable fixture keys where applicable. They are not production-key tests, external approval, public APT publication, a real two-release rollback test, or physical hardware acceptance.
 
 ## Conclusion
 
-No confirmed exploitable defect was reproduced in the reviewed read-only package or signed-index path. The online-primary-key import risk is closed in this proposed follow-up, subject to exact-head CI and human review. The repository is **not approved for publication**: signing/environment setup, immutable-ref protections, external security review and normal PR approval remain outstanding. This report is an internal engineering assessment only.
+No confirmed exploitable defect was reproduced in the reviewed read-only package or signed-index path. The online-primary-key import risk is addressed by code and passing exact-head CI, pending human review. The repository is **not approved for publication**: signing/environment setup, external security review and normal PR approval remain outstanding. This report is an internal engineering assessment only.
