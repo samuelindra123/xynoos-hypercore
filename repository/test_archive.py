@@ -14,6 +14,7 @@ import unittest
 from unittest.mock import patch
 
 import archive
+import pages
 
 
 class ArchiveTests(unittest.TestCase):
@@ -95,6 +96,34 @@ class ArchiveTests(unittest.TestCase):
         deb.write_bytes(deb.read_bytes() + b'tampered')
         with self.assertRaisesRegex(ValueError, 'Package checksum mismatch'):
             self.add('0.1.0~preview.2-1')
+
+    def test_combined_pages_preserves_studio_and_all_signed_packages(self):
+        self.add('0.1.0~preview.2-1')
+        seed = Path(self.directory.name) / 'history'
+        seed.mkdir()
+        shutil.copytree(self.root, seed / 'apt')
+        archive.run('git', 'init', '-b', 'distribution/apt-history', str(seed))
+        archive.run('git', '-C', str(seed), 'config', 'user.name', 'Disposable Test')
+        archive.run('git', '-C', str(seed), 'config', 'user.email', 'test@example.invalid')
+        archive.run('git', '-C', str(seed), 'add', 'apt')
+        archive.run('git', '-C', str(seed), 'commit', '-m', 'Signed test history')
+        def local_git(*args):
+            return archive.run(*(str(seed) if a == 'https://github.com/samuelindra123/xynoos-hypercore.git' else a for a in args))
+        output = Path(self.directory.name) / 'combined'
+        with patch.object(pages, 'run', side_effect=local_git), patch.dict(os.environ, XYNOOS_APT_FINGERPRINT=self.fpr), patch('sys.argv', ['pages.py', str(output)]):
+            pages.main()
+        self.assertEqual(len(archive.verify(output / 'apt', self.fpr)['versions']), 2)
+        for path in Path('website').rglob('*'):
+            if path.is_file():
+                self.assertEqual((output / path.relative_to('website')).read_bytes(), path.read_bytes())
+
+    def test_missing_history_cannot_erase_a_live_archive(self):
+        from io import BytesIO
+        output = Path(self.directory.name) / 'unsafe-pages'
+        with patch.object(pages, 'run', return_value=b''), patch.object(pages.urllib.request, 'urlopen', return_value=BytesIO(b'live signed archive')), patch('sys.argv', ['pages.py', str(output)]):
+            with self.assertRaisesRegex(ValueError, 'Public archive exists'):
+                pages.main()
+        self.assertFalse(output.exists())
 
     def test_unexpected_files_and_symlinks_never_reach_pages(self):
         extra = self.root / 'unexpected-export'

@@ -9,7 +9,7 @@ import tempfile
 import time
 import urllib.request
 from urllib.parse import quote
-from archive import require, verify
+from archive import require, verify, fingerprint
 
 BASE = 'https://samuelindra123.github.io/xynoos-hypercore/'
 
@@ -52,7 +52,8 @@ def main():
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_bytes(fetch('apt/' + relative))
             return path
-        save('xynoos-archive-keyring.gpg')
+        key = save('xynoos-archive-keyring.gpg')
+        require(fingerprint(key) == os.environ.get('XYNOOS_APT_FINGERPRINT', ''), 'Public key fingerprint mismatch')
         for name in ['InRelease', 'Release', 'Release.gpg', 'versions.json']:
             save('dists/preview/' + name)
         for name in ['Packages', 'Packages.gz']:
