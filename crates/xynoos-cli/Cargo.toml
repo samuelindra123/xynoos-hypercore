@@ -12,3 +12,6 @@ xynoos-decision = { path = "../xynoos-decision" }
 xynoos-engine = { path = "../xynoos-engine" }
 xynoos-linux-control = { path = "../xynoos-linux-control" }
 libc = "0.2"
+
+xynoos-aura = { path = "../xynoos-aura" }
+serde = { version = "1", features = ["derive"] }

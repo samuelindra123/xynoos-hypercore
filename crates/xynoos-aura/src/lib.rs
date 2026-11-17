@@ -40,3 +40,5 @@ pub mod placement;
 pub mod cooperative;
 pub mod physical;
 pub mod selector;
+
+pub mod memory;

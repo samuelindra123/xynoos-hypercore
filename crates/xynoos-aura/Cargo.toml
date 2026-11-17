@@ -6,6 +6,8 @@ edition = "2021"
 license = "GPL-3.0-only"
 [dependencies]
 xynoos-core = { path = "../xynoos-core" }
+serde = { version = "1", features = ["derive"] }
+xynoos-pressureiq = { path = "../xynoos-pressureiq" }
 
 [[example]]
 name = "completion"
