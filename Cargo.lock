@@ -123,7 +123,9 @@ checksum = "a2c754d6c33795a1c324727428e5a7dedb5b06195f9890bdbcba760d3e246563"
 name = "xynoos-aura"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "xynoos-core",
+ "xynoos-pressureiq",
 ]
 
 [[package]]
@@ -138,7 +140,9 @@ dependencies = [
 name = "xynoos-cli"
 version = "0.1.0-preview.3"
 dependencies = [
+ "serde",
  "serde_json",
+ "xynoos-aura",
  "xynoos-decision",
  "xynoos-hypermemory",
  "xynoos-pressureiq",

@@ -10,6 +10,9 @@ use xynoos_pressureiq::{
 mod product;
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("memory") {
+        return memory_command(&args[1..]);
+    }
     if product::run(&args)? {
         return Ok(());
     }
@@ -336,6 +339,93 @@ fn shadow_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         let target = snapshot.cgroup.as_ref().ok().map(|c| c.path.as_path());
         let decision = engine.evaluate(&snapshot, std::time::Instant::now(), target);
         println!("{}", serde_json::to_string(&decision)?);
+    }
+    Ok(())
+}
+
+fn memory_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    use std::time::Instant;
+    use xynoos_pressureiq::intelligence::{collect, diagnose, Observation};
+    let mut human = false;
+    let mut replay = None;
+    let mut ms = 1000u64;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--human" => human = true,
+            "--interval-ms" => { i += 1; ms = args.get(i).ok_or("missing interval")?.parse()?; },
+            "--replay" => { i += 1; replay = Some(args.get(i).ok_or("missing replay file")?); },
+            _ => return Err("usage: memory [--interval-ms 100..60000] [--human] | memory --replay FILE [--human]".into()),
+        }
+        i += 1;
+    }
+    xynoos_pressureiq::validate_sampling(2, Duration::from_millis(ms))?;
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Evidence {
+        first: Observation,
+        second: Observation,
+        interval_ms: u64,
+        age_ms: u64,
+    }
+    let evidence = if let Some(path) = replay {
+        use std::io::Read;
+        let mut text = String::new();
+        std::fs::File::open(path)?
+            .take(1_048_577)
+            .read_to_string(&mut text)?;
+        if text.len() > 1_048_576 {
+            return Err("evidence exceeds 1 MiB".into());
+        }
+        serde_json::from_str::<Evidence>(&text)?
+    } else {
+        let start = Instant::now();
+        let first = collect();
+        std::thread::sleep(Duration::from_millis(ms));
+        let second_start = Instant::now();
+        let second = collect();
+        Evidence {
+            first,
+            second,
+            interval_ms: second_start.duration_since(start).as_millis() as u64,
+            age_ms: second_start.elapsed().as_millis() as u64,
+        }
+    };
+    let diagnosis = diagnose(
+        &evidence.first,
+        &evidence.second,
+        Duration::from_millis(evidence.interval_ms),
+        Duration::from_millis(evidence.age_ms),
+    );
+    let decision = xynoos_aura::memory::decide(&diagnosis);
+    if human {
+        println!(
+            "Memory intelligence: {} (confidence: {})",
+            diagnosis.classes.join(", "),
+            decision.confidence
+        );
+        for reason in &diagnosis.evidence {
+            println!("  Evidence: {reason}");
+        }
+        for reason in &diagnosis.limitations {
+            println!("  Limitation: {reason}");
+        }
+        println!(
+            "  Available: {:?}% | rates (pages/s, allocstall events/s): {:?}",
+            diagnosis.available_pct, diagnosis.rates_per_second
+        );
+        println!(
+            "  AURA: {:?} — {}",
+            decision.action,
+            decision.recommendations.join(" ")
+        );
+        println!("  Read-only; no kernel or workload changes.");
+    } else {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(
+                &serde_json::json!({"schema_version":1,"evidence":evidence,"diagnosis":diagnosis,"aura":decision})
+            )?
+        );
     }
     Ok(())
 }

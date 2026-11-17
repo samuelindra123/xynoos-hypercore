@@ -39,3 +39,5 @@ pub mod placement;
 
 pub mod physical;
 pub mod selector;
+
+pub mod memory;
