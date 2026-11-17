@@ -72,7 +72,8 @@ def main():
                     continue
                 path = member.name.removeprefix("./")
                 require(path == "usr/bin/xynoos" or path.startswith("usr/share/doc/" + PKG + "/")
-                        or path == "usr/share/man/man1/xynoos.1.gz", "Unexpected installed path: " + path)
+                        or path == "usr/share/man/man1/xynoos.1.gz"
+                        or path == "usr/share/lintian/overrides/xynoos-hypercore", "Unexpected installed path: " + path)
                 require(member.mode == (0o755 if path == "usr/bin/xynoos" else 0o644), "Wrong mode")
                 files.append(path)
         with tempfile.TemporaryDirectory(prefix="xynoos-lifecycle-") as directory:

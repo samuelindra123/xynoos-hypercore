@@ -87,7 +87,7 @@ The CI container runs these commands through the checked-in script:
 sbuild --chroot-mode=unshare --chroot=/srv/trixie-amd64.tar \
   --dist=trixie --arch=amd64 --no-enable-network --no-run-lintian \
   --build-dir=/out/first --build-path=/build/first /out/source/*.dsc
-lintian --fail-on error,warning /out/first/*.deb /out/source/*.dsc
+lintian --fail-on error,warning --show-overrides /out/first/*.deb /out/source/*.dsc
 ```
 
 An operator can rebuild the downloaded `.dsc` using the same snapshot and tools.
@@ -114,4 +114,7 @@ builder; do not mix suites on the desktop. Namespace failure: use a disposable
 runner supporting user namespaces, never weaken desktop kernel settings. Snapshot
 failure: retry or deliberately update the pinned snapshot and repeat validation;
 never silently fall back to live repositories. Inspect full logs for lintian or
-build failures. Do not add overrides just to pass.
+build failures. The sole scoped override is `initial-upload-closes-no-bugs`:
+this upstream package is not a Debian archive upload, and no Debian ITP exists.
+Inventing a bug number would be incorrect. CI displays the override; no errors
+or applicable warnings are suppressed. Do not add overrides just to pass.

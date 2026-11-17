@@ -40,5 +40,5 @@ for pass in first second; do
     /out/source/*.dsc
 done
 cd /out
-lintian --fail-on error,warning first/*.deb source/*.dsc | tee lintian.txt
+lintian --fail-on error,warning --show-overrides first/*.deb source/*.dsc | tee lintian.txt
 python3 /work/packaging/artifacts.py /out
