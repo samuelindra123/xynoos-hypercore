@@ -1,6 +1,6 @@
 # Historical pull request resolution — 2026-11-17
 
-Audited current main: `630ca19ae847525e401ddf8e0733bac21105cd1f`.
+Audited current main: `be09510d6bc43861514a74224b1bacb54fbc281d`.
 All original branches, commits, benchmark outputs and historical package provenance are retained.
 No history rewrite or branch deletion is authorized or performed.
 
@@ -8,8 +8,8 @@ No history rewrite or branch deletion is authorized or performed.
 
 | PR | Audited head → review head | Decision | Tracking |
 | --- | --- | --- | --- |
-| #15 | `3c3402efad45d23eb9f047d085e21cf05d468a7e` → `97601a72cb5e05bcf0830b9b5f564020b650ede4` | Open, Ready for Review; physical acceptance and current-main integration remain blocked | #17, #18, #19, #20, #38 |
-| #14 | `ef39a4ddfd35dbda390dcb7457af2b2e45322bbe` → `88b4bbcd2fce72a247a4dd16083f8a6aa96cfcbf` | Open, Ready for Review; retargeted to main, merge conflicts/dependency block acceptance | #15, #21, #22, #38 |
+| #15 | `3c3402efad45d23eb9f047d085e21cf05d468a7e` → `f481c6f7fbe4faae07f0894222641ea6c7f9f438` | Open, Ready for Review; merged current main into feature branch; all current CI passes; physical acceptance remains blocked | #17, #18, #19, #20, #38 |
+| #14 | `ef39a4ddfd35dbda390dcb7457af2b2e45322bbe` → `582de23590b4746a20c1db2aa4de90a37f283b37` | Open, Ready for Review; historical tests pass; current-main CLI conflicts remain | #15, #21, #22, #38 |
 | #16 | `283ef0573f92671917bc52a6738a887d4893a1fb` | Superseded by #24 and newer main documentation; close with explanation | #17–#23 retain backlog |
 | #32 | `18b35416724bd7787363078ab0d8e43f90842c60` | Superseded by #34 merge `8b5499b7058723e310f5cec56a8e7f7978583cf5`; close with content evidence | #20, #21 retain host/physical limits |
 
@@ -27,16 +27,23 @@ A concrete boundedness issue was fixed: repeated adapter observations previously
 
 ## PR14 inventory and implementation review
 
-The historical comparison against #15's original head contains **169 paths and 119,020 added lines**. [Machine-readable inventory](pr14-file-inventory.json) separates:
-
-- 109,862 historical output lines under artifacts/;
-- 5,598 source/test lines under crates/, scripts/, benchmarks/ and fixtures/;
-- 3,438 documentation lines;
-- 122 workspace/configuration lines.
+The exact current #14 head `582de23590b4746a20c1db2aa4de90a37f283b37` compared with current main `be09510d6bc43861514a74224b1bacb54fbc281d` changes **208 paths: 129,129 added and 69 removed text lines**. [Machine-readable inventory](pr14-file-inventory.json) separates 109,862 historical artifact lines, 14,218 source/test lines, 4,769 documentation/evidence lines and 280 workflow/workspace/configuration lines. This exact-head inventory replaces the earlier 169-path snapshot.
 
 The 169-path comparison contains no new binary archives. The old backup branch used by #32 contains additional historical archive paths; it must not be merged wholesale. Existing artifacts on #14 retain exact source-specific names and manifests; generated output is evidence, not product implementation or a current release.
 
-Reviewed Engine::evaluate refusal/authorization/freshness/reset logic; typed cooperative policy; private fixed corpus compression and reversal; simulation trace bounds and simulation-only journal; CLI modes; owned/desktop/physical-named read-only harnesses, process lifecycle and independent oracles; corresponding fixtures and results. Compression operates on private participating buffers, verifies candidate bytes before committing, and reverses/compares owned data. It cannot reclaim arbitrary application pages. CRC32 is accidental-damage detection, not provenance authentication. CPU/AS/output/request/watchdog bounds do not establish hard real-time behavior. Simulation journal recovery never authorizes physical writes. Reports acknowledge CPU/latency costs and the laptop study's failure to establish a repeatable acceptable benefit. No desktop-wide or N5000 gain is claimed.
+Reviewed Engine::evaluate refusal/authorization/freshness/reset logic; typed cooperative policy; private fixed-corpus compression and reversal; simulation trace bounds and simulation-only journal; CLI modes; owned/desktop/physical-named read-only harnesses, process lifecycle and independent oracles; corresponding fixtures and results. Compression operates on private participating buffers, verifies candidate bytes before committing, and reverses/compares owned data. It cannot reclaim arbitrary application pages. CRC32 is accidental-damage detection, not provenance authentication. CPU/AS/output/request/watchdog bounds do not establish hard real-time behavior. Simulation journal recovery never authorizes physical writes. Reports acknowledge CPU/latency costs and the laptop study's failure to establish a repeatable acceptable benefit. No desktop-wide or N5000 gain is claimed.
+
+### Recovery disposition
+
+| Historical implementation | Value | Current-main decision |
+|---|---|---|
+| Cooperative policy enum and private owned-buffer compression/round-trip verification | Useful only for explicit participating-process experiments; it does not control unrelated process pages or demonstrate system-wide gains. | Retain as historical research evidence. No distro/runtime integration: its new `xynoos-engine` API duplicates current CLI/product boundaries and depends on an unreviewed orchestration layer. Re-evaluate under a separately scoped feature proposal with workload evidence. |
+| `Engine::evaluate`, simulation journal and telemetry-gated proposal flow | Makes refusal/authorization/freshness/reset behavior inspectable; journal is process-local simulation only. | No physical-control recovery. Keep simulation separate from kernel mutation and preserve current read-only product contract. |
+| `xynoos-mvp` binary, old CLI dispatch, benchmark commands and docs | Demonstrates experimental commands and source-specific studies. | Do not replace current CLI, Debian feature or README. Current main already contains maintained commands, packaging and the signed standalone installer. Preserve old reports under their exact commit only. |
+| cgroup/systemd controllers and transaction helpers | Rich identity/cleanup fixtures, but writes and systemd transient service operations require explicit authorization and remain physically disabled or externally mutating. | No kernel mutation, privileged service setup or controller integration. Keep PR #15 isolated pending #17–#20 and exact current-main acceptance. |
+| New external dependencies in #14 | The compared lockfile adds `nix 0.29.0`, `bitflags`, and `cfg_aliases` for the new engine path; existing dependencies also gain new internal edges. | Do not reintroduce without a narrowly reviewed use case, API review, locked-source provenance and CI on the supported MSRV. |
+
+No PR #14 product code was copied into current main during this recovery. Its only safety-related bounded-evidence idea was already backported to PR #15 with a 128-record limit and refusal-preserves-history regression; #15 remains unmerged, so this is not current-main behavior.
 
 After retargeting #14 to main, a real git merge-tree reports conflicts in **Cargo.lock, README.md, crates/xynoos-cli/Cargo.toml, crates/xynoos-cli/src/main.rs**. Its original #15 dependency is still unmerged. Exact-head hosted validation can run; a final integrated merge candidate cannot be claimed validated while these conflicts remain. #38 records the additive reconciliation/extraction criteria, including preservation of current installer/packaging/site tests. The safe bounded-evidence subset was backported into #15; wider engine extraction requires dependency-aware review and is not falsely called complete.
 
@@ -84,4 +91,4 @@ No unique valuable PR32 change remains to port. Close as superseded by #34; neve
 
 PASS: 16-path content comparison; memory CLI whitespace-normalized equality; 4 SVG byte/XML checks; full 169-path inventory; merge-tree conflict detection; review-thread/review inspection; normal pushes of safety fix and fresh CI workflows.
 
-Fresh exact-head CI: #15 [44080151723](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44080151723) **PASS** for all hosted safety checks. Main product/packaging/Phase5 integration checks **FAIL** against its historical source. #14 [44080147365](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44080147365) passes all Rust stages but **FAILS 8 of 68 Python tests** because hosted effective-cgroup telemetry is unavailable and desktop admission correctly refuses before the expected fixture paths. #38/#20 track deterministic fixture isolation and observable disposable lifecycle coverage; no production rule is weakened or test skipped. Launcher step was skipped after Python failure. The PR descriptions retain exact run evidence. Merge is blocked independently of unit-test outcomes by acceptance/integration requirements. Main-based audit documentation is submitted in a separate Ready-for-Review PR. No failing/unfinished historical PR is merged to reduce the open count.
+Fresh #14 exact-head historical validation [44081420250](https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44081420250) **PASS**: all Rust stages, 68 Python tests and launcher fixtures. Historical code was adjusted to use deterministic PSI fixtures in two happy-path protocol tests; dedicated refusal paths remain intact. #14 still has unresolved current-main merge-tree conflicts in Cargo.lock, README and CLI files. #15's previous source-integration checks failed because its historical base omitted current Debian/product work and used `u64::is_multiple_of`, unavailable to Rust 1.82. PR #15 has now merged current main into its feature branch and replaced those calls with MSRV-compatible remainder checks; exact-head package, CLI and safety CI is pending. This merge candidate preserves unconditional physical refusal. It does not satisfy #17–#20 physical safety acceptance or constitute an independent safety review.

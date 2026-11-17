@@ -10,3 +10,4 @@ chmod 700 "$GNUPGHOME"
 trap 'gpgconf --kill gpg-agent || true; rm -rf -- "$GNUPGHOME"' EXIT
 printf '%s\n' "$XYNOOS_APT_PRIVATE_KEY" | gpg --batch --quiet --import
 unset XYNOOS_APT_PRIVATE_KEY
+python3 repository/check_signing_key.py --fingerprint "$XYNOOS_APT_FINGERPRINT"

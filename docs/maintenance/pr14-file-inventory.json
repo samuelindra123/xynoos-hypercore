@@ -1,12 +1,31 @@
 {
-  "base": "3c3402efad45d23eb9f047d085e21cf05d468a7e",
-  "head": "ef39a4ddfd35dbda390dcb7457af2b2e45322bbe",
+  "base": "be09510d6bc43861514a74224b1bacb54fbc281d",
+  "head": "582de23590b4746a20c1db2aa4de90a37f283b37",
+  "review_basis": "Exact PR #14 head compared with current main on 2026-11-17.",
+  "summary": {
+    "files": 208,
+    "added_lines": 129129,
+    "deleted_lines": 69,
+    "added_lines_by_category": {
+      "workspace/configuration": 228,
+      "workflow/configuration": 52,
+      "historical output": 109862,
+      "source/tests": 14218,
+      "documentation/evidence": 4769
+    }
+  },
   "files": [
     {
       "path": ".gitattributes",
       "added": "2",
       "deleted": "0",
       "category": "workspace/configuration"
+    },
+    {
+      "path": ".github/workflows/historical-review.yml",
+      "added": "52",
+      "deleted": "0",
+      "category": "workflow/configuration"
     },
     {
       "path": ".gitignore",
@@ -16,7 +35,7 @@
     },
     {
       "path": "Cargo.lock",
-      "added": "47",
+      "added": "48",
       "deleted": "0",
       "category": "workspace/configuration"
     },
@@ -660,361 +679,589 @@
       "path": "benchmarks/desktop-probe.html",
       "added": "84",
       "deleted": "0",
-      "category": "source/test"
+      "category": "workspace/configuration"
+    },
+    {
+      "path": "crates/xynoos-aura/Cargo.toml",
+      "added": "41",
+      "deleted": "0",
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-aura/src/cooperative.rs",
       "added": "32",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-aura/src/lib.rs",
       "added": "1",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-bench/Cargo.toml",
       "added": "2",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-bench/src/main.rs",
       "added": "21",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-cli/Cargo.toml",
       "added": "4",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-cli/src/bin/xynoos-mvp.rs",
       "added": "19",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-cli/src/main.rs",
       "added": "4",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-cli/src/mvp.rs",
       "added": "159",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-cli/tests/mvp.rs",
       "added": "110",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-decision/Cargo.toml",
+      "added": "18",
+      "deleted": "0",
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-decision/examples/optimization_experiment.rs",
+      "added": "725",
+      "deleted": "0",
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-decision/src/lib.rs",
       "added": "4",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-engine/Cargo.toml",
       "added": "19",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-engine/src/bin/xynoos-desktop.rs",
       "added": "153",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-engine/src/bin/xynoos-owned.rs",
       "added": "112",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-engine/src/bin/xynoos-perf.rs",
       "added": "154",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-engine/src/lib.rs",
       "added": "196",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-engine/src/observation.rs",
       "added": "74",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-engine/src/owned.rs",
       "added": "453",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-engine/src/recovery.rs",
       "added": "277",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-engine/src/replay.rs",
       "added": "360",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-engine/tests/integrated.rs",
       "added": "332",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-linux-control/examples/transaction_bench.rs",
+      "added": "3",
+      "deleted": "0",
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-linux-control/src/bound_child.rs",
+      "added": "419",
+      "deleted": "0",
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-linux-control/src/child_memory.rs",
+      "added": "352",
+      "deleted": "0",
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-linux-control/src/controller.rs",
+      "added": "2114",
+      "deleted": "0",
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-linux-control/src/controller/session_adapter.rs",
-      "added": "21",
+      "added": "384",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-linux-control/src/controller/session_io.rs",
+      "added": "137",
+      "deleted": "0",
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-linux-control/src/controller/session_io_tests.rs",
-      "added": "13",
+      "added": "1461",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-linux-control/src/empty_child_coordinator.rs",
+      "added": "1089",
+      "deleted": "0",
+      "category": "source/tests"
     },
     {
       "path": "crates/xynoos-linux-control/src/lib.rs",
-      "added": "6",
+      "added": "13",
+      "deleted": "1",
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-linux-control/src/safety.rs",
+      "added": "541",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-linux-control/src/systemd_identity.rs",
+      "added": "555",
+      "deleted": "0",
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-linux-control/src/transaction.rs",
+      "added": "219",
+      "deleted": "9",
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-linux-control/tests/kernel_transaction.rs",
+      "added": "11",
+      "deleted": "54",
+      "category": "source/tests"
+    },
+    {
+      "path": "crates/xynoos-linux-control/tests/transactions.rs",
+      "added": "91",
+      "deleted": "5",
+      "category": "source/tests"
+    },
+    {
+      "path": "docs/018e-1c-handoff.md",
+      "added": "15",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/018e-2a-preparation.md",
+      "added": "71",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/018e-2c-1-coordinator.md",
+      "added": "53",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/018e-2c-2b2b-session-io.md",
+      "added": "148",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/018e-2c-2b3-safety-telemetry.md",
+      "added": "119",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/018e-2c-integrated-adapter.md",
+      "added": "141",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/018e-2c-integration-status.md",
+      "added": "41",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/018e-2d-quality-gates.txt",
+      "added": "44",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/018e-2d-safety-hardening.md",
+      "added": "160",
+      "deleted": "0",
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/ARCHITECTURE.md",
       "added": "4",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/HISTORICAL-REVIEW-2026-11-17.md",
+      "added": "20",
+      "deleted": "0",
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/MVP-ARCHITECTURE.md",
       "added": "71",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/MVP-BENCHMARK.md",
       "added": "73",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/MVP-N5000-VALIDATION.md",
       "added": "70",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/MVP-QUICKSTART.md",
       "added": "69",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/MVP-SAFETY-RECOVERY.md",
       "added": "89",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/PHASE4-LAPTOP-N5000.md",
       "added": "192",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/PHASE4-LAPTOP-RESEARCH.md",
       "added": "47",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/PHASE4-LAPTOP-SAFETY.md",
       "added": "119",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/PHASE4-N5000.md",
       "added": "128",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/PHASE4-OWNED-N5000.md",
       "added": "131",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/reports/MVP-QUALITY-GATES.txt",
       "added": "466",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/reports/MVP-RESULTS.md",
       "added": "147",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/reports/PHASE4-LAPTOP-RESULTS.md",
       "added": "148",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/reports/PHASE4-OWNED-PERFORMANCE.md",
       "added": "218",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/reports/PHASE4-OWNED-QUALITY-GATES.txt",
       "added": "696",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/reports/PHASE4-OWNED-SAFETY-REVIEW.md",
       "added": "34",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/reports/PHASE4-PERFORMANCE.md",
       "added": "180",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
     },
     {
       "path": "docs/reports/PHASE4-QUALITY-GATES.txt",
       "added": "556",
       "deleted": "0",
-      "category": "documentation"
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/reports/TASK-018-REAL-OPTIMIZATION-VALIDATION-REPORT.md",
+      "added": "144",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/reports/TASK-018E-1A-MX-HANDOFF.md",
+      "added": "33",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/reports/TASK-018E-CLEANUP-GATES.txt",
+      "added": "19",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/reports/TASK-018E-CLEANUP-MX-README.md",
+      "added": "59",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/reports/TASK-018E-CLEANUP.md",
+      "added": "154",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/reports/TASK-018E-MUTATION-SINK-AUDIT.md",
+      "added": "54",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/reports/task-018/dry-run.jsonl",
+      "added": "25",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/reports/task-018/memory-repeatability.jsonl",
+      "added": "6",
+      "deleted": "0",
+      "category": "documentation/evidence"
+    },
+    {
+      "path": "docs/reports/task-018/observe.jsonl",
+      "added": "25",
+      "deleted": "0",
+      "category": "documentation/evidence"
     },
     {
       "path": "fixtures/mvp-trace.json",
       "added": "21",
       "deleted": "0",
-      "category": "source/test"
+      "category": "workspace/configuration"
     },
     {
       "path": "scripts/benchmark_desktop.py",
       "added": "509",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/benchmark_mvp.py",
       "added": "161",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/benchmark_owned.py",
       "added": "302",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/benchmark_physical.py",
       "added": "427",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/inspect_desktop.py",
       "added": "80",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/inspect_owned.py",
       "added": "69",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/inspect_physical.py",
       "added": "62",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/laptop_diagnostic.py",
       "added": "276",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
+    },
+    {
+      "path": "scripts/package-018e-diagnostic.py",
+      "added": "46",
+      "deleted": "0",
+      "category": "source/tests"
     },
     {
       "path": "scripts/package-laptop.py",
       "added": "115",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/package-mvp.py",
       "added": "52",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/package-owned.py",
       "added": "106",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/package-phase4.py",
       "added": "84",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/quality_mvp.py",
       "added": "47",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
+    },
+    {
+      "path": "scripts/tests/test-018e-launcher.sh",
+      "added": "6",
+      "deleted": "0",
+      "category": "source/tests"
     },
     {
       "path": "scripts/tests/test_desktop.py",
-      "added": "297",
+      "added": "320",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/tests/test_owned.py",
       "added": "184",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
     },
     {
       "path": "scripts/tests/test_physical_benchmark.py",
       "added": "196",
       "deleted": "0",
-      "category": "source/test"
+      "category": "source/tests"
+    },
+    {
+      "path": "scripts/tests/test_unit_cleanup.py",
+      "added": "204",
+      "deleted": "0",
+      "category": "source/tests"
+    },
+    {
+      "path": "scripts/xynoos-018d-launcher.sh",
+      "added": "18",
+      "deleted": "0",
+      "category": "source/tests"
+    },
+    {
+      "path": "scripts/xynoos-unit-preflight.py",
+      "added": "295",
+      "deleted": "0",
+      "category": "source/tests"
     }
   ]
 }

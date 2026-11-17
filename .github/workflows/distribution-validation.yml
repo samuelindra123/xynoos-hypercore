@@ -22,6 +22,6 @@ jobs:
       - name: Source syntax, documentation contracts and whitespace
         run: |
           python3 -m compileall -q repository
-          bash -n repository/signing.sh repository/state.sh repository/ci-lifecycle.sh
+          bash -n repository/signing.sh repository/state.sh repository/ci-lifecycle.sh repository/real-two-version-lifecycle.sh
           python3 repository/check-docs.py
           git diff --check HEAD^ HEAD

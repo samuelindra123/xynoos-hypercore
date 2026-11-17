@@ -26,6 +26,7 @@ is needed only for the direct-download method.
 [Release history](https://github.com/samuelindra123/xynoos-hypercore/releases) ·
 [Archive/security operations](docs/distribution/MAINTENANCE.md) ·
 [Owner setup](docs/distribution/OWNER-SETUP.md) ·
+[Internal PR #40 security assessment (not an external audit)](docs/distribution/SECURITY-ASSESSMENT.md) ·
 [Maintained developer Wiki sources](docs/wiki/Home.md).
 The [official Wiki location](https://github.com/samuelindra123/xynoos-hypercore/wiki)
 awaits initialization/publication under [#37](https://github.com/samuelindra123/xynoos-hypercore/issues/37).
