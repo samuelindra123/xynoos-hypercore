@@ -96,7 +96,7 @@ fn change_inner<A: Access>(
         || !authorized
         || !io.write_enabled()
         || value > MAX_LOW_BYTES
-        || !value.is_multiple_of(4096)
+        || value % 4096 != 0
     {
         return Err(MemoryLowError::new(
             ErrorKind::RefusedBeforeWrite,

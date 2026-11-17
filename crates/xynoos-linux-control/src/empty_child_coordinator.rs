@@ -229,10 +229,7 @@ fn forward<B: Backend>(
     }
     step!(
         Stage::Authorization,
-        if authorized
-            && requested > 0
-            && requested <= crate::MAX_LOW_BYTES
-            && requested.is_multiple_of(4096)
+        if authorized && requested > 0 && requested <= crate::MAX_LOW_BYTES && requested % 4096 == 0
         {
             Ok(())
         } else {
