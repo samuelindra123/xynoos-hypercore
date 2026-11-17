@@ -1,0 +1,5 @@
+Memory intelligence: incomplete_or_unreliable (confidence: low)
+  Limitation: core memory, PSI or counter evidence incomplete
+  Available: Some(91.91612425397845)% | rates (pages/s, allocstall events/s): {"allocstall": Some(0.0), "pgscan_direct": Some(0.0), "pgscan_kswapd": Some(0.0), "pgsteal_direct": Some(0.0), "pgsteal_kswapd": Some(0.0), "pswpin": Some(0.0), "pswpout": Some(0.0)}
+  AURA: GatherEvidence — Repeat a fresh bounded observation and inspect unavailable sources.
+  Read-only; no kernel or workload changes.

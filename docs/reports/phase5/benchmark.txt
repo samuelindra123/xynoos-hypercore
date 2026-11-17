@@ -1,0 +1,32 @@
+{
+  "host": "workspace Linux container; not N5000",
+  "command": "target/release/xynoos-cli memory --interval-ms 100",
+  "runs": [
+    {
+      "wall_ms": 102.07,
+      "cpu_ms": 1.67,
+      "child_max_rss_kib_high_water": 8576
+    },
+    {
+      "wall_ms": 102.32,
+      "cpu_ms": 1.74,
+      "child_max_rss_kib_high_water": 8704
+    },
+    {
+      "wall_ms": 102.0,
+      "cpu_ms": 1.68,
+      "child_max_rss_kib_high_water": 8704
+    },
+    {
+      "wall_ms": 101.84,
+      "cpu_ms": 1.5,
+      "child_max_rss_kib_high_water": 8704
+    },
+    {
+      "wall_ms": 101.85,
+      "cpu_ms": 1.5,
+      "child_max_rss_kib_high_water": 8704
+    }
+  ],
+  "notes": "Includes requested 100 ms sleep and process startup. max RSS is cumulative child high-water, not per-run."
+}
