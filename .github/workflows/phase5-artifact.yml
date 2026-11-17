@@ -1,0 +1,78 @@
+name: Phase 5 artifact build
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Branch, tag, or commit to build
+        required: true
+        default: phase5/hypercore-memory-intelligence
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    env:
+      CARGO_BUILD_TARGET: x86_64-unknown-linux-gnu
+    steps:
+      - name: Check out selected source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_ref }}
+          persist-credentials: false
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
+      - name: Cache dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release -p xynoos-cli --locked
+      - name: Inspect and package
+        shell: bash
+        run: |
+          set -euo pipefail
+          binary=target/x86_64-unknown-linux-gnu/release/xynoos-cli
+          test -f "$binary"
+          file "$binary" | tee /tmp/xynoos-file.txt
+          readelf -h "$binary" | tee /tmp/xynoos-elf.txt
+          grep -Eq 'Machine:[[:space:]]+Advanced Micro Devices X86-64' /tmp/xynoos-elf.txt
+          ldd "$binary" | tee /tmp/xynoos-ldd.txt
+          ! grep -q 'not found' /tmp/xynoos-ldd.txt
+          readelf --version-info "$binary" | tee /tmp/xynoos-versions.txt
+          # Phase 5 has no top-level --version or --help.
+          "$binary"
+          mkdir -p artifact
+          cp "$binary" artifact/xynoos-cli
+          (cd artifact && sha256sum xynoos-cli > SHA256SUMS && sha256sum -c SHA256SUMS)
+          python3 - <<'PY'
+          import datetime, json, os, pathlib, subprocess
+          def command(*args):
+              return subprocess.check_output(args, text=True).strip()
+          def read(path):
+              return pathlib.Path(path).read_text()
+          info = {
+              'source_commit': command('git', 'rev-parse', 'HEAD'),
+              'rust_version': command('rustc', '--version', '--verbose'),
+              'target': 'x86_64-unknown-linux-gnu',
+              'runner_os': command('uname', '-a'),
+              'timestamp_utc': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+              'file': read('/tmp/xynoos-file.txt').strip(),
+              'elf_header': read('/tmp/xynoos-elf.txt'),
+              'dynamic_dependencies': read('/tmp/xynoos-ldd.txt'),
+              'version_requirements': read('/tmp/xynoos-versions.txt'),
+          }
+          pathlib.Path('artifact/build-info.json').write_text(json.dumps(info, indent=2) + '\n')
+          PY
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: xynoos-cli-linux-x86_64
+          path: |
+            artifact/xynoos-cli
+            artifact/SHA256SUMS
+            artifact/build-info.json
+          if-no-files-found: error
