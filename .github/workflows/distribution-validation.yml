@@ -16,7 +16,7 @@ jobs:
           persist-credentials: false
           fetch-depth: 2
       - name: Install Debian index and signature verification utilities
-        run: sudo apt-get update && sudo apt-get install -y apt-utils gnupg
+        run: sudo apt-get update && sudo apt-get install -y apt-utils gnupg gpgv
       - name: Actual signature/APT chain and adversarial archive tests
         run: python3 -m unittest discover -s repository -p 'test_*.py' -v
       - name: Source syntax, documentation contracts and whitespace

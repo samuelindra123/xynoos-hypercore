@@ -47,7 +47,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y apt-utils gnupg
+          sudo apt-get install -y apt-utils gnupg gpgv
           source repository/signing.sh
           bash repository/state.sh fetch "$RUNNER_TEMP/history"
           python3 repository/promote.py "$RUNNER_TEMP/history/apt" release --commit "$SOURCE_SHA" --version "$VERSION"

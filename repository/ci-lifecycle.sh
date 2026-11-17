@@ -5,7 +5,7 @@ test -f /.dockerenv
 test "$(dpkg --print-architecture)" = amd64
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends python3 gnupg apt-utils ca-certificates curl util-linux
+apt-get install -y --no-install-recommends python3 gnupg gpgv apt-utils ca-certificates curl util-linux
 rm -f /etc/dpkg/dpkg.cfg.d/docker
 work=$(mktemp -d)
 chmod 755 "$work"

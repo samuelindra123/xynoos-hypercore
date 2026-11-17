@@ -107,7 +107,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y apt-utils gnupg
+          sudo apt-get install -y apt-utils gnupg gpgv
           source repository/signing.sh
           bash repository/state.sh fetch "$RUNNER_TEMP/history"
           python3 repository/archive.py publish "$RUNNER_TEMP/history/apt" --deb release/*.deb --commit "$SOURCE_SHA"
