@@ -35,6 +35,12 @@ def main():
     for original in Path('website').rglob('*'):
         if original.is_file():
             relative = str(original.relative_to('website'))
+            # GitHub Pages consumes this hidden sentinel during Jekyll processing,
+            # but does not expose it as a public HTTP asset. Verify the rendered
+            # Studio files below without treating the control file as a page.
+            if relative == '.nojekyll':
+                require(original.read_bytes() == b'', 'Unexpected .nojekyll contents')
+                continue
             public = fetch('' if relative == 'index.html' else relative)
             require(public == original.read_bytes(), 'Public Studio asset differs: ' + relative)
     # Discovery of history must succeed; do not silently skip a previously published archive.
