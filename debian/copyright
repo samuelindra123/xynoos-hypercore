@@ -1,0 +1,20 @@
+Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
+Upstream-Name: Xynoos HyperCore
+Source: https://github.com/samuelindra123/xynoos-hypercore
+Comment: packaging/prepare.py appends complete per-crate notices to exported
+ Debian source packages. The Git checkout contains no vendored sources.
+
+Files: *
+Copyright: 2026 Samuel Indra Bastian and Xynoos HyperCore contributors
+License: GPL-3.0-only
+
+License: GPL-3.0-only
+ This program is free software: you can redistribute it and/or modify
+ it under the terms of the GNU General Public License version 3 only.
+ .
+ This program is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+ .
+ On Debian systems the complete license is in
+ /usr/share/common-licenses/GPL-3. The upstream LICENSE is also installed.

@@ -1,0 +1,21 @@
+{
+  "run": "https://github.com/samuelindra123/xynoos-hypercore/actions/runs/44059808958",
+  "source_commit": "e662052b3aa722bd3ea23a4a8734a48b494ca87c",
+  "package": "xynoos-hypercore_0.1.0~preview.3-1_amd64.deb",
+  "sha256": "d380eab92ba1ed01fc3bc8057068b5475f8a8f0ee6f319a9219beaa90a841183",
+  "bytes": 492520,
+  "reproducibility": "PASS",
+  "architecture": "amd64",
+  "lintian": "PASS with one documented non-applicable Debian ITP warning override",
+  "workspace_tests": {
+    "passed": 106,
+    "failed": 0,
+    "ignored": 1
+  },
+  "rust_tested": [
+    "1.82.0",
+    "1.100.0"
+  ],
+  "rust_package": "1.85.1+dfsg1-1+deb13u1",
+  "signed": false
+}

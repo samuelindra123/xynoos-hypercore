@@ -1,0 +1,8 @@
+xynoos-hypercore (0.1.0~preview.3-1) unstable; urgency=medium
+
+  * Initial upstream Debian package for amd64, derived from Cargo version
+    0.1.0-preview.3. Keep the signed user installer independent.
+  * Build locked vendored sources offline and generate ELF dependencies.
+  * Add disposable lifecycle validation and reproducibility comparison.
+
+ -- Samuel Indra Bastian <comdonate9@gmail.com>  Tue, 17 Nov 2026 08:00:00 +0000

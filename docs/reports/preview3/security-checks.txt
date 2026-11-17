@@ -1,0 +1,7 @@
+Static ELF: no PT_INTERP or DT_NEEDED.
+Local precommit build identity (release pipeline rebuilds with merged source SHA):
+--version --json: PASS, no control syscalls or writable opens of /proc, /sys, /etc, /dev (except /dev/null).
+{"channel": "preview", "intervention_active": false, "physical_kernel_mutation": false, "product": "Xynoos HyperCore", "schema_version": 1, "source_commit": "32a55d8309f33284fe9a7e8a44dafd4f4c9228ca", "version": "0.1.0-preview.3"}
+doctor --json: PASS, no control syscalls or writable opens of /proc, /sys, /etc, /dev (except /dev/null).
+status --json: PASS, no control syscalls or writable opens of /proc, /sys, /etc, /dev (except /dev/null).
+diagnose --count 2 --interval-ms 100 --json: PASS, no control syscalls or writable opens of /proc, /sys, /etc, /dev (except /dev/null).
