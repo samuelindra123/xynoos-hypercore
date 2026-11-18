@@ -5,8 +5,10 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import sys
 import tempfile
 import time
+import urllib.error
 import urllib.request
 from urllib.parse import quote
 from archive import require, verify, fingerprint
@@ -14,18 +16,32 @@ from archive import require, verify, fingerprint
 BASE = 'https://samuelindra123.github.io/xynoos-hypercore/'
 
 
-def fetch(relative):
+def fetch(relative, expected):
     url = BASE + quote(relative, safe='/')
     last = None
-    for attempt in range(6):
+    attempts = 6
+    for attempt in range(1, attempts + 1):
         try:
             with urllib.request.urlopen(url, timeout=30) as response:
-                require(response.status == 200, 'HTTP 200 required: ' + url)
+                if response.status != 200:
+                    raise urllib.error.HTTPError(url, response.status, 'Unexpected HTTP status', response.headers, None)
                 return response.read(100 * 1024 * 1024 + 1)
         except Exception as error:
             last = error
-            time.sleep(5)
-    raise last
+            status = getattr(error, 'code', None)
+            reason = getattr(error, 'reason', None) or str(error)
+            detail = f'HTTP {status}: {reason}' if status is not None else f'{type(error).__name__}: {reason}'
+            print(f'Public read-back attempt {attempt}/{attempts} failed; expected {expected}; URL {url}; {detail}',
+                  file=sys.stderr)
+            if attempt < attempts:
+                time.sleep(5)
+    status = getattr(last, 'code', None)
+    reason = getattr(last, 'reason', None) or str(last)
+    detail = f'HTTP {status}: {reason}' if status is not None else f'{type(last).__name__}: {reason}'
+    raise RuntimeError(
+        f'Public read-back failed after {attempts} attempts; expected resource: {expected}; '
+        f'exact URL: {url}; last response/error: {detail}'
+    ) from last
 
 
 def main():
@@ -41,7 +57,8 @@ def main():
             if relative == '.nojekyll':
                 require(original.read_bytes() == b'', 'Unexpected .nojekyll contents')
                 continue
-            public = fetch('' if relative == 'index.html' else relative)
+            public = fetch('' if relative == 'index.html' else relative,
+                           'Studio homepage' if relative == 'index.html' else f'Studio asset {relative}')
             require(public == original.read_bytes(), 'Public Studio asset differs: ' + relative)
     # Discovery of history must succeed; do not silently skip a previously published archive.
     import subprocess
@@ -56,7 +73,7 @@ def main():
         def save(relative):
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_bytes(fetch('apt/' + relative))
+            path.write_bytes(fetch('apt/' + relative, f'APT archive resource {relative}'))
             return path
         key = save('xynoos-archive-keyring.gpg')
         require(fingerprint(key) == os.environ.get('XYNOOS_APT_FINGERPRINT', ''), 'Public key fingerprint mismatch')
