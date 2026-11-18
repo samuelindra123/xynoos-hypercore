@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import subprocess
 import tempfile
+from urllib.parse import quote
 from archive import require, run
 
 REPO = 'samuelindra123/xynoos-hypercore'
@@ -48,9 +49,14 @@ def publish_release(directory, commit, version, provenance):
     tag = 'debian/' + version.replace('~', '-')
     require(os.environ.get('XYNOOS_APT_IMMUTABLE_RELEASES') == 'enabled',
             'Owner must verify GitHub immutable releases and set XYNOOS_APT_IMMUTABLE_RELEASES=enabled')
-    refs = json.loads(run('gh', 'api', f'repos/{REPO}/git/matching-refs/tags/{tag}'))
-    require(not any(r['ref'] == 'refs/tags/' + tag for r in refs),
-            'Immutable tag exists; use promotion recovery, never overwrite')
+    encoded_tag = quote(tag, safe='')
+    refs = json.loads(run('gh', 'api', f'repos/{REPO}/git/matching-refs/tags/{encoded_tag}'))
+    exact_refs = [r for r in refs if r['ref'] == 'refs/tags/' + tag]
+    require(len(exact_refs) <= 1, 'Multiple exact tag refs returned')
+    if exact_refs:
+        ref = json.loads(run('gh', 'api', f'repos/{REPO}/git/ref/tags/{encoded_tag}'))
+        require(ref['object']['type'] == 'commit' and ref['object']['sha'] == commit,
+                'Immutable tag exists at a different target; never overwrite')
     notes = f'''Experimental Debian preview — {version}
 
 amd64 package: xynoos-hypercore. Read-only on-demand diagnostics; no service activation or global kernel/swap/ZRAM/CPU/GPU tuning. No physical N5000 or desktop performance benefit is proven. Not production-ready.
@@ -65,14 +71,34 @@ The dedicated APT OpenPGP key signs repository metadata, separately from GitHub'
     with tempfile.NamedTemporaryFile('w', suffix='.md') as stream:
         stream.write(notes)
         stream.flush()
-        subprocess.run(['gh', 'release', 'create', tag, '--repo', REPO, '--target', commit,
-                        '--draft', '--prerelease', '--title', 'Xynoos Debian ' + version + ' — Experimental Preview',
-                        '--notes-file', stream.name, *map(str, sorted(directory.iterdir()))], check=True)
+        releases = json.loads(run('gh', 'api', f'repos/{REPO}/releases?per_page=100'))
+        matching = [item for item in releases if item.get('tag_name') == tag]
+        require(len(matching) <= 1, 'Multiple releases match the exact Debian tag')
+        if matching:
+            release = matching[0]
+            require(release['draft'] and release['prerelease'],
+                    'Existing release is not a recoverable draft prerelease')
+            require(release.get('target_commitish') == commit,
+                    'Existing draft release targets a different source commit')
+        else:
+            subprocess.run(['gh', 'release', 'create', tag, '--repo', REPO, '--target', commit,
+                            '--draft', '--prerelease', '--title', 'Xynoos Debian ' + version + ' — Experimental Preview',
+                            '--notes-file', stream.name, *map(str, sorted(directory.iterdir()))], check=True)
+            releases = json.loads(run('gh', 'api', f'repos/{REPO}/releases?per_page=100'))
+            matching = [item for item in releases if item.get('tag_name') == tag]
+            require(len(matching) == 1, 'Created draft release could not be read back by exact tag')
+            release = matching[0]
 
-    release = json.loads(run('gh', 'api', f'repos/{REPO}/releases/tags/{tag}'))
     require(release['draft'] and release['prerelease'] and release['tag_name'] == tag,
             'Expected the exact prerelease in draft state before immutable publication')
-    ref = json.loads(run('gh', 'api', f'repos/{REPO}/git/ref/tags/{tag}'))
+    if not exact_refs:
+        try:
+            run('gh', 'api', '-X', 'POST', f'repos/{REPO}/git/refs',
+                '-f', 'ref=refs/tags/' + tag, '-f', 'sha=' + commit)
+        except subprocess.CalledProcessError:
+            # A concurrent publisher may have created it; accept only exact target read-back.
+            pass
+    ref = json.loads(run('gh', 'api', f'repos/{REPO}/git/ref/tags/{encoded_tag}'))
     require(ref['object']['type'] == 'commit' and ref['object']['sha'] == commit,
             'Release tag does not point to the exact source commit')
     download_and_verify(tag, directory, release)
