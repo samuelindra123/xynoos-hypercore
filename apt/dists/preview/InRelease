@@ -1,0 +1,45 @@
+-----BEGIN PGP SIGNED MESSAGE-----
+Hash: SHA256
+
+Valid-Until: Fri, 18 Dec 2026 09:32:35 GMT
+Acquire-By-Hash: yes
+Architectures: amd64
+Codename: preview
+Components: main
+Date: Wed, 18 Nov 2026 09:32:35 +0000
+Description: Experimental Xynoos HyperCore; not a stable channel
+Label: Xynoos Experimental Preview
+Origin: Xynoos
+Suite: preview
+MD5Sum:
+ a923d485c23ab9ffb524baecde2f6e62             1086 main/binary-amd64/Packages
+ e0017738e3256ed242d55f8bbb643542              726 main/binary-amd64/Packages.gz
+ 642443e21e80a58a09c0bda89d68325f              324 versions.json
+SHA1:
+ 4ad814df444f5dae3ad483cba3734e29595f6d75             1086 main/binary-amd64/Packages
+ 4109c7262a571462d9d9368b39f4e22c1827f645              726 main/binary-amd64/Packages.gz
+ 16aedffbb9311ab456b3d6ed640d35a32dc926a3              324 versions.json
+SHA256:
+ 295bd9be0aba52306be85ecb0d200a3dce5d0970a48cc1eebf122c514662d0b1             1086 main/binary-amd64/Packages
+ 852657866aa871035b4cbc9fc9be10245310895b7d76e702c66f8b6799f4727f              726 main/binary-amd64/Packages.gz
+ 2f25693e35f3f051eda6fd47f4791f313de569d7067103b3e4e86f9284cd7383              324 versions.json
+SHA512:
+ 09c76be78ec16d61334e5af21338e548616803c1007b496d70bfa83292167f121561e35015f77073c9932f69e3f77428a588d57ba9e15ea0a7238fccd1b7a8cb             1086 main/binary-amd64/Packages
+ 8f4afb9871683c7059722c63fc382e7a8fcb5e29da9d1ea2a11081fc207732496c071120c26761cf68a304bc3b67f9784b2941cc471d947d85271e8e3afe4d18              726 main/binary-amd64/Packages.gz
+ 1cfb84e556947a8639176b2db86daa1329c0b55a6f1c03244a19c127ec7ee826f471099fd721edc47f445821f010e85442075180a0a40ebaf95e2984d5cd950f              324 versions.json
+-----BEGIN PGP SIGNATURE-----
+
+iQIzBAEBCAAdFiEEmaX+ZImVaDW/pTzcY1SKpzMEZbAFAmr9cLMACgkQY1SKpzME
+ZbAgJg//ffFu9Q50gyJlWFVuhouxCi4zhhvxm/O+Pfleg7BRkOb1s4EE0/XHoxIw
+e9MMn+KdA9+PvfC2o9cWc/mlFVEnCQ+42/VItlsda8HSihRDwAS5Ok6oPpVXuqfL
+16EZaD2qX9xdE1kdYuL9NdF0WS8wy/hAziZ9iwr6cWLeqwjo6wDp3FBfrsKIh2cq
+W1J2yJMJZBDUEbZgt9NvqNuiO/9D7/WQDQxmO+qnFehZqlIoBqXwNgRgy1jQKCyj
+er/mXb77wYYFfBm8mxqTzFrn4seNa3YMeqm9xZChsept8vH71XW+OW8Gi9JGolVK
+N4qaaiy4wd1HF1lxbaEu8WVFjvpx0BaZL5eKAxGUJDD2j4JHcJ/q7QpjoDghTr8+
+zC68NwYG0zoBMmHEjFYSUn4iLicNJdgpArYv9fq+WOw/X/JCV8P30uG+A3TyMnAY
+klLFclt9FeUjZieKrLVPZSm89pfLKrsMFXts+abYxpErcm5H0FIoDo9zbIlqd2nW
+gi3E9IiARemfC8ixGcf/gbXcUhtHz3Pox23ManCfLLpIERwFZd/U6+JEkF+K+Xwt
+pyyv8cW1+e2J2oAwZP134aD1KBvglD0e5Qi6TezvRTp4GLA8tFkTLlCKQUeoladO
+91P9HS0nv9fdhHYl7TQsb4ZHx93rtMGIoLhJiEzhsDIEs7IsmHg=
+=CmKQ
+-----END PGP SIGNATURE-----

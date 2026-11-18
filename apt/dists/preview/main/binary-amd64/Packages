@@ -1,0 +1,23 @@
+Package: xynoos-hypercore
+Architecture: amd64
+Version: 0.1.0~preview.3-1
+Built-Using: rustc (= 1.85.1+dfsg1-1+deb13u1)
+Priority: optional
+Section: utils
+Maintainer: Samuel Indra Bastian <comdonate9@gmail.com>
+Installed-Size: 1326
+Depends: libc6 (>= 2.34), libgcc-s1 (>= 4.2)
+Filename: pool/main/x/xynoos-hypercore/xynoos-hypercore_0.1.0~preview.3-1_amd64.deb
+Size: 494480
+MD5sum: c42cdd65d0adfc11875a87c8edfaf0c4
+SHA1: 3bd800c66f3916563d3fac698c06be80e5403894
+SHA256: a309ef6a1cbdae28adf6d6022a98279bf958e39dc77ba3c9f1f08d2c48b0b06f
+SHA512: fb163b74a317d1903e6ab1a222bdb89ce061f21c6adcb8ca7c4e421d8afa8c28995e946c90d86019ddfd09ba08ff364ebc55260ed3f834a172e12b6bba65a0c3
+Homepage: https://github.com/samuelindra123/xynoos-hypercore
+Description: experimental read-only Linux resource intelligence
+ Xynoos HyperCore observes bounded Linux resource telemetry and produces
+ experimental resource plans. It runs on demand without a daemon, kernel
+ tuning, privileged optimization, desktop startup or shell changes.
+ .
+ This developer preview does not establish desktop performance benefits.
+

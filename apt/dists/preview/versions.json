@@ -1,0 +1,10 @@
+{
+  "suite": "preview",
+  "versions": {
+    "0.1.0~preview.3-1": {
+      "filename": "pool/main/x/xynoos-hypercore/xynoos-hypercore_0.1.0~preview.3-1_amd64.deb",
+      "sha256": "a309ef6a1cbdae28adf6d6022a98279bf958e39dc77ba3c9f1f08d2c48b0b06f",
+      "source_commit": "aea70f462e813a3b334a8c040cb0f395a10e9871"
+    }
+  }
+}
