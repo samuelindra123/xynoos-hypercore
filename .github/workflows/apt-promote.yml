@@ -27,14 +27,13 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
-      - name: Select immutable release and verify every attestation
+      - name: Verify attestations and recover the original immutable release
         env:
           GH_TOKEN: ${{ github.token }}
           SOURCE_SHA: ${{ inputs.source_sha }}
           VERSION: ${{ inputs.version }}
-        run: |
-          python3 repository/promote-gate.py "$SOURCE_SHA" "$VERSION"
-          python3 repository/release.py release --commit "$SOURCE_SHA" --version "$VERSION"
+          XYNOOS_APT_IMMUTABLE_RELEASES: ${{ vars.XYNOOS_APT_IMMUTABLE_RELEASES }}
+        run: python3 repository/promote-gate.py "$SOURCE_SHA" "$VERSION"
       - name: Verify signed state and append exact release if absent
         env:
           GH_REPO: ${{ github.repository }}
@@ -64,3 +63,21 @@ jobs:
       contents: read
       pages: write
       id-token: write
+  public-install:
+    needs: pages
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - name: Verify public archive and install in clean Debian 13 amd64
+        env:
+          XYNOOS_APT_FINGERPRINT: ${{ vars.XYNOOS_APT_FINGERPRINT }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          set -euo pipefail
+          python3 repository/public-check.py --require-apt
+          docker run --rm --platform linux/amd64 \
+            -e XYNOOS_APT_FINGERPRINT -e VERSION -v "$PWD:/work:ro" \
+            debian:trixie-slim@sha256:a72b4433de1cf7d6bae0c4cee74d0547f58601a643b3375f070c51600d63b6b2 \
+            bash /work/repository/public-install.sh
