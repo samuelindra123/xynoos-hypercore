@@ -33,30 +33,106 @@ def validate(directory, commit, version):
     return provenance
 
 
-def download_and_verify(tag, directory, release):
-    expected = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-                for path in directory.iterdir() if path.is_file()}
-    require({asset['name'] for asset in release['assets']} == set(expected),
-            'Release asset names differ from verified payload')
+def release_tag(version):
+    return 'debian/' + version.replace('~', '-')
+
+
+def find_release(tag):
+    ids = run('gh', 'api', '--paginate', f'repos/{REPO}/releases?per_page=100',
+              '--jq', '.[] | select(.tag_name == ' + json.dumps(tag) + ') | .id').split()
+    require(len(ids) <= 1, 'Multiple releases match the exact Debian tag')
+    if ids:
+        return json.loads(run('gh', 'api', f'repos/{REPO}/releases/{int(ids[0])}'))
+
+
+def download_assets(release, directory):
+    directory.mkdir(exist_ok=True)
+    for asset in release['assets']:
+        name = asset['name']
+        require(Path(name).name == name and name not in ('', '.', '..'), 'Invalid release asset name')
+        with (directory / name).open('xb') as output:
+            subprocess.run(['gh', 'api', '-H', 'Accept: application/octet-stream',
+                            f'repos/{REPO}/releases/assets/{asset["id"]}'], stdout=output, check=True)
+        data = (directory / name).read_bytes()
+        require(len(data) == asset['size'] and
+                'sha256:' + hashlib.sha256(data).hexdigest() == asset.get('digest'),
+                'GitHub release asset size or digest mismatch: ' + name)
+
+
+def restore_subject_names(directory):
+    # GitHub replaces tildes in uploaded asset names with dots. The checksum
+    # manifest supplies the original names, which validate() then authenticates.
+    seen = set()
+    for line in (directory / 'SHA256SUMS').read_text().splitlines():
+        _, name = line.split('  ')
+        require(Path(name).name == name and name not in ('', '.', '..'), 'Invalid checksum subject')
+        normalized = name.replace('~', '.')
+        require(normalized not in seen, 'Ambiguous normalized release asset name')
+        seen.add(normalized)
+        original = directory / name
+        if original != directory / normalized:
+            require(not (original.exists() and (directory / normalized).exists()),
+                    'Duplicate release asset under normalized name')
+            if not original.exists():
+                (directory / normalized).rename(original)
+
+
+def download_and_verify(directory, release):
+    expected = {p.name: hashlib.sha256(p.read_bytes()).hexdigest()
+                for p in directory.iterdir() if p.is_file()}
     with tempfile.TemporaryDirectory() as temporary:
-        run('gh', 'release', 'download', tag, '--repo', REPO, '--dir', temporary)
-        downloaded = {path.name: hashlib.sha256(path.read_bytes()).hexdigest()
-                      for path in Path(temporary).iterdir() if path.is_file()}
-    require(downloaded == expected, 'GitHub release asset bytes differ from verified payload')
+        target = Path(temporary)
+        download_assets(release, target)
+        restore_subject_names(target)
+        downloaded = {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in target.iterdir()}
+        require(downloaded == expected, 'GitHub release asset bytes differ from verified payload')
+
+
+def tag_ref(tag, commit):
+    encoded = quote(tag, safe='')
+    refs = json.loads(run('gh', 'api', f'repos/{REPO}/git/matching-refs/tags/{encoded}'))
+    matches = [ref for ref in refs if ref['ref'] == 'refs/tags/' + tag]
+    if matches:
+        require(len(matches) == 1 and matches[0]['object']['type'] == 'commit' and
+                matches[0]['object']['sha'] == commit,
+            'Debian tag points to a different source; never overwrite')
+    return bool(matches)
+
+
+def require_immutable_configuration():
+    require(os.environ.get('XYNOOS_APT_IMMUTABLE_RELEASES') == 'enabled',
+            'Owner must verify GitHub immutable releases and set XYNOOS_APT_IMMUTABLE_RELEASES=enabled')
+
+
+def finish_release(directory, commit, tag, release):
+    require(release['tag_name'] == tag and release['prerelease'],
+            'Expected exact Debian prerelease')
+    require(release['target_commitish'] == commit, 'Release targets a different source commit')
+    download_and_verify(directory, release)
+    if release['draft']:
+        require_immutable_configuration()
+        if not tag_ref(tag, commit):
+            run('gh', 'api', '-X', 'POST', f'repos/{REPO}/git/refs',
+                '-f', 'ref=refs/tags/' + tag, '-f', 'sha=' + commit)
+        require(tag_ref(tag, commit), 'Created Debian tag could not be read back')
+        run('gh', 'api', '-X', 'PATCH', f'repos/{REPO}/releases/{release["id"]}', '-F', 'draft=false')
+
+    final = json.loads(run('gh', 'api', f'repos/{REPO}/releases/{release["id"]}'))
+    require(final['tag_name'] == tag and final['target_commitish'] == commit and
+            not final['draft'] and final['prerelease'] and final.get('immutable') is True,
+            'Public release read-back is not the exact immutable prerelease')
+    require(tag_ref(tag, commit), 'Missing immutable release tag')
+    download_and_verify(directory, final)
+    return final['html_url']
 
 
 def publish_release(directory, commit, version, provenance):
-    tag = 'debian/' + version.replace('~', '-')
-    require(os.environ.get('XYNOOS_APT_IMMUTABLE_RELEASES') == 'enabled',
-            'Owner must verify GitHub immutable releases and set XYNOOS_APT_IMMUTABLE_RELEASES=enabled')
-    encoded_tag = quote(tag, safe='')
-    refs = json.loads(run('gh', 'api', f'repos/{REPO}/git/matching-refs/tags/{encoded_tag}'))
-    exact_refs = [r for r in refs if r['ref'] == 'refs/tags/' + tag]
-    require(len(exact_refs) <= 1, 'Multiple exact tag refs returned')
-    if exact_refs:
-        ref = json.loads(run('gh', 'api', f'repos/{REPO}/git/ref/tags/{encoded_tag}'))
-        require(ref['object']['type'] == 'commit' and ref['object']['sha'] == commit,
-                'Immutable tag exists at a different target; never overwrite')
+    tag = release_tag(version)
+    require_immutable_configuration()
+    release = find_release(tag)
+    if release:
+        return finish_release(directory, commit, tag, release)
+    require(not tag_ref(tag, commit), 'Existing Debian tag has no release; refusing to recreate')
     notes = f'''Experimental Debian preview — {version}
 
 amd64 package: xynoos-hypercore. Read-only on-demand diagnostics; no service activation or global kernel/swap/ZRAM/CPU/GPU tuning. No physical N5000 or desktop performance benefit is proven. Not production-ready.
@@ -71,48 +147,12 @@ The dedicated APT OpenPGP key signs repository metadata, separately from GitHub'
     with tempfile.NamedTemporaryFile('w', suffix='.md') as stream:
         stream.write(notes)
         stream.flush()
-        releases = json.loads(run('gh', 'api', f'repos/{REPO}/releases?per_page=100'))
-        matching = [item for item in releases if item.get('tag_name') == tag]
-        require(len(matching) <= 1, 'Multiple releases match the exact Debian tag')
-        if matching:
-            release = matching[0]
-            require(release['draft'] and release['prerelease'],
-                    'Existing release is not a recoverable draft prerelease')
-            require(release.get('target_commitish') == commit,
-                    'Existing draft release targets a different source commit')
-        else:
-            subprocess.run(['gh', 'release', 'create', tag, '--repo', REPO, '--target', commit,
-                            '--draft', '--prerelease', '--title', 'Xynoos Debian ' + version + ' — Experimental Preview',
-                            '--notes-file', stream.name, *map(str, sorted(directory.iterdir()))], check=True)
-            releases = json.loads(run('gh', 'api', f'repos/{REPO}/releases?per_page=100'))
-            matching = [item for item in releases if item.get('tag_name') == tag]
-            require(len(matching) == 1, 'Created draft release could not be read back by exact tag')
-            release = matching[0]
-
-    require(release['draft'] and release['prerelease'] and release['tag_name'] == tag,
-            'Expected the exact prerelease in draft state before immutable publication')
-    if not exact_refs:
-        try:
-            run('gh', 'api', '-X', 'POST', f'repos/{REPO}/git/refs',
-                '-f', 'ref=refs/tags/' + tag, '-f', 'sha=' + commit)
-        except subprocess.CalledProcessError:
-            # A concurrent publisher may have created it; accept only exact target read-back.
-            pass
-    ref = json.loads(run('gh', 'api', f'repos/{REPO}/git/ref/tags/{encoded_tag}'))
-    require(ref['object']['type'] == 'commit' and ref['object']['sha'] == commit,
-            'Release tag does not point to the exact source commit')
-    download_and_verify(tag, directory, release)
-
-    # Publishing is the irreversible boundary when immutable releases are enabled.
-    published = json.loads(run('gh', 'api', '-X', 'PATCH',
-                               f'repos/{REPO}/releases/{release["id"]}', '-F', 'draft=false'))
-    require(not published['draft'] and published['prerelease'] and published.get('immutable') is True,
-            'Published release must be an immutable prerelease')
-    final = json.loads(run('gh', 'api', f'repos/{REPO}/releases/{release["id"]}'))
-    require(not final['draft'] and final['prerelease'] and final.get('immutable') is True,
-            'Public release read-back is not an immutable prerelease')
-    download_and_verify(tag, directory, final)
-    return final['html_url']
+        subprocess.run(['gh', 'release', 'create', tag, '--repo', REPO, '--target', commit,
+                        '--draft', '--prerelease', '--title', 'Xynoos Debian ' + version + ' — Experimental Preview',
+                        '--notes-file', stream.name, *map(str, sorted(directory.iterdir()))], check=True)
+    release = find_release(tag)
+    require(release is not None, 'Created draft could not be read back by exact tag')
+    return finish_release(directory, commit, tag, release)
 
 
 def main():
