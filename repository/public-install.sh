@@ -3,8 +3,7 @@
 set -euo pipefail
 test -f /.dockerenv
 test "$(dpkg --print-architecture)" = amd64
-. /etc/os-release
-test "$ID:$VERSION_ID" = debian:13
+( . /etc/os-release; test "$ID:$VERSION_ID" = debian:13 )
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
 apt-get install -y --no-install-recommends ca-certificates curl gnupg
@@ -18,7 +17,9 @@ printf 'deb [arch=amd64 signed-by=%s] %s preview main\n' "$key" "$base" >/etc/ap
 apt-get -o APT::Update::Error-Mode=any update
 apt-cache policy xynoos-hypercore
 apt-get install -y xynoos-hypercore
-test "$(dpkg-query -W -f='${Version} ${Architecture}' xynoos-hypercore)" = "${VERSION:?} amd64"
+installed=$(dpkg-query -W -f='${Version} ${Architecture}' xynoos-hypercore)
+printf 'Installed package: %s\n' "$installed"
+test "$installed" = "${VERSION:?} amd64"
 cli=$(/usr/bin/xynoos doctor --json)
 printf '%s\n' "$cli"
 grep -Fq '"intervention_active":false' <<<"$cli"
