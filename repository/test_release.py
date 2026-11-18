@@ -3,6 +3,7 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -21,6 +22,7 @@ class ReleasePublicationTests(unittest.TestCase):
         self.draft = {
             'id': 123,
             'tag_name': self.tag,
+            'target_commitish': self.commit,
             'draft': True,
             'prerelease': True,
             'assets': [{'name': name} for name in names],
@@ -52,10 +54,12 @@ class ReleasePublicationTests(unittest.TestCase):
                 return b'{"enabled":true}'
             if args[:2] == ('gh', 'api') and '/matching-refs/tags/' in args[2]:
                 return b'[]'
-            if args[:2] == ('gh', 'api') and args[2].endswith('/releases/tags/' + self.tag):
-                return json.dumps(self.draft).encode()
-            if args[:2] == ('gh', 'api') and args[2].endswith('/git/ref/tags/' + self.tag):
+            if args[:2] == ('gh', 'api') and '/releases?per_page=100' in args[2]:
+                return json.dumps([self.draft]).encode()
+            if args[:2] == ('gh', 'api') and '/git/ref/tags/' in args[2]:
                 return json.dumps({'object': {'type': 'commit', 'sha': self.commit}}).encode()
+            if args[:3] == ('gh', 'api', '-X') and args[3] == 'POST':
+                return b'{"ref":"refs/tags/' + self.tag.encode() + b'"}'
             if args[:3] == ('gh', 'api', '-X'):
                 return json.dumps(self.published).encode()
             if args[:2] == ('gh', 'api') and args[2].endswith('/releases/123'):
@@ -74,12 +78,19 @@ class ReleasePublicationTests(unittest.TestCase):
                                              {'run_url': 'https://github.com/run'})
 
         self.assertEqual(result, self.published['html_url'])
-        create_args = create.call_args.args[0]
-        self.assertIn('--draft', create_args)
-        self.assertIn('--prerelease', create_args)
+        create.assert_not_called()
         self.assertEqual(sum(args[:3] == ('gh', 'release', 'download') for args in calls), 2)
         self.assertTrue(any(args[:3] == ('gh', 'api', '-X') and 'draft=false' in args
                             for args in calls))
+        self.assertTrue(any(args[:3] == ('gh', 'api', '-X') and args[3] == 'POST'
+                            and args[4].endswith('/git/refs') for args in calls))
+
+    def test_slash_tag_is_escaped_and_existing_draft_is_reused(self):
+        from urllib.parse import quote
+        tag = 'debian/0.1.0-preview.4-1'
+        self.assertEqual(quote(tag, safe=''), 'debian%2F0.1.0-preview.4-1')
+        self.assertEqual(self.draft['tag_name'], tag)
+        self.assertTrue(self.draft['draft'])
 
 
 if __name__ == '__main__':
