@@ -1,5 +1,5 @@
 const http=require('node:http'),fs=require('node:fs'),path=require('node:path');
-const root=path.resolve(__dirname,'../../website/dist'),base='/xynoos-hypercore/';
+const root=path.resolve(__dirname,'../../website/dist'),base='/';
 function preview(){return http.createServer((req,res)=>{
  const pathname=decodeURIComponent(new URL(req.url,'http://localhost').pathname);
  if(!pathname.startsWith(base)){res.writeHead(404).end('Project-site prefix required');return}

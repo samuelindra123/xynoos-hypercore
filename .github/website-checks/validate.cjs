@@ -24,7 +24,7 @@ async function main() {
   assert.deepEqual(routes.map((route) => localFile(route.href)).sort(),
     expected.map((slug) => (slug ? slug + "/" : "") + "index.html").sort());
   const validator = new HtmlValidate(require("./htmlvalidate.json"));
-  const assets = new Set(["robots.txt", "sitemap.xml"]);
+  const assets = new Set(["robots.txt", "sitemap.xml", "404.html"]);
   const documents = new Map();
   for (const route of routes) {
     const file = localFile(route.href);
@@ -159,7 +159,7 @@ async function main() {
         asset,
       );
     }
-    assert.equal((await fetch(origin + "/")).status, 404);
+    assert.equal((await fetch(origin + "/missing-page/")).status, 404);
     console.log(
       "PASS HTML, CSS, JS, SEO, fragments, media signatures and " +
         assets.size +

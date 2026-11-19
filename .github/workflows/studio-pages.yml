@@ -41,6 +41,11 @@ jobs:
       - run: npm test --prefix .github/website-checks
       - name: Check whitespace
         run: git diff --check HEAD^ HEAD
+      - name: Build Studio for GitHub Pages
+        if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+        run: npm run build --prefix website
+        env:
+          XYNOOS_PAGES: "1"
       - name: Assemble Studio and retained signed APT archive
         if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
         env:
@@ -78,6 +83,8 @@ jobs:
           cache-dependency-path: website/package-lock.json
       - run: npm ci --prefix website
       - run: npm run build --prefix website
+        env:
+          XYNOOS_PAGES: "1"
       - name: Verify public Studio, assets and signed historical archive
         env:
           XYNOOS_APT_FINGERPRINT: ${{ vars.XYNOOS_APT_FINGERPRINT }}

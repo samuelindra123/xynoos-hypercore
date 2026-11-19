@@ -4,7 +4,7 @@ const assert = require('node:assert/strict');
 const { JSDOM } = require('jsdom');
 const { base, root } = require('./preview.cjs');
 
-const project = new URL(base, 'https://samuelindra123.github.io');
+const project = new URL(base, 'https://website-xybc.vercel.app');
 const read = (file) => fs.readFileSync(path.join(root, file), 'utf8');
 
 function localFile(reference, from = project) {
