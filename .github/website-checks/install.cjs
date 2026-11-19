@@ -1,12 +1,12 @@
-const {JSDOM}=require('jsdom'),fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
-const root=path.resolve(__dirname,'../../website');
+const assert=require('node:assert/strict');
+const {openStudio,runStudio}=require('./built.cjs');
 (async()=>{
  for(const available of [true,false]){
-  const dom=new JSDOM(fs.readFileSync(path.join(root,'index.html'),'utf8'),{runScripts:'outside-only',url:'https://example.test/xynoos-hypercore/'});
+  const dom=openStudio({runScripts:'outside-only'});
   const w=dom.window,d=w.document;w.matchMedia=()=>({matches:true,addEventListener(){}});
   const observers=[];const Observer=w.MutationObserver;w.MutationObserver=class extends Observer{constructor(...args){super(...args);observers.push(this)}};
   let copied=null;Object.defineProperty(w.navigator,'clipboard',{value:available?{writeText:async value=>{copied=value}}:undefined});
-  w.eval(fs.readFileSync(path.join(root,'script.js'),'utf8'));
+  runStudio(w);
   const command=d.querySelector('#install-command').textContent;
   assert.equal(command,'curl -fsSL https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/main/install.sh | sh && export PATH="$HOME/.local/bin:$PATH"');
   d.querySelector('#copy-install').click();await new Promise(resolve=>setImmediate(resolve));

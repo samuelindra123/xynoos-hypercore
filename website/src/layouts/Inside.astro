@@ -1,0 +1,41 @@
+---
+import "../styles/fonts.css";
+import "../styles/inside.css";
+import SiteFooter from "../components/SiteFooter.astro";
+import SiteHeader from "../components/SiteHeader.astro";
+import { sections, sitePath, publicSite } from "../lib/site";
+
+interface Props {
+  section: (typeof sections)[number]["slug"];
+  description: string;
+}
+const { section, description } = Astro.props;
+const name = sections.find(({ slug }) => slug === section)?.name;
+const title = `${name} | Xynoos`;
+const canonical = new URL(section + "/", publicSite);
+---
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#101719" />
+    <title>{title}</title>
+    <link rel="canonical" href={canonical} />
+    <link rel="icon" href={sitePath() + "branding/mark.svg"} type="image/svg+xml" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+  </head>
+  <body class:list={["inside", section]}>
+    <SiteHeader section={section} />
+    <main id="main" class="shell">
+      <nav class="breadcrumb" aria-label="Breadcrumb">
+        <a href={sitePath()}>Studio</a><span aria-hidden="true">/</span><span aria-current="page">{name}</span>
+      </nav>
+      <slot />
+    </main>
+    <SiteFooter section={section} />
+  </body>
+</html>

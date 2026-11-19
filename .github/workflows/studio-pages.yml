@@ -29,9 +29,14 @@ jobs:
         run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
-          node-version: '24'
+          node-version: '24.11.1'
           cache: npm
-          cache-dependency-path: .github/website-checks/package-lock.json
+          cache-dependency-path: |
+            .github/website-checks/package-lock.json
+            website/package-lock.json
+      - run: npm ci --prefix website
+      - run: npm run check --prefix website
+      - run: npm run build --prefix website
       - run: npm ci --prefix .github/website-checks
       - run: npm test --prefix .github/website-checks
       - name: Check whitespace
@@ -66,6 +71,13 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ needs.validate.outputs.site_sha }}
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24.11.1'
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci --prefix website
+      - run: npm run build --prefix website
       - name: Verify public Studio, assets and signed historical archive
         env:
           XYNOOS_APT_FINGERPRINT: ${{ vars.XYNOOS_APT_FINGERPRINT }}

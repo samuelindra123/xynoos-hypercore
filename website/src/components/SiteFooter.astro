@@ -1,0 +1,38 @@
+---
+import BrandMark from "./BrandMark.astro";
+import { sections, sitePath } from "../lib/site";
+interface Props {
+  section?: (typeof sections)[number]["slug"];
+}
+const { section } = Astro.props;
+---
+
+{section ? (
+    <footer class="inside-footer shell">
+      <div><a class="wordmark" href={sitePath()} aria-label="Xynoos Studio home"><BrandMark />XYNOOS</a><p>Experimental Linux research software · GPL-3.0-only</p></div>
+      <nav aria-label="Footer">
+        {sections.map(({ slug, name }) => <a href={sitePath(slug)} aria-current={section === slug ? "page" : undefined}>{name}</a>)}
+      </nav>
+    </footer>
+) : (
+<footer class="wrap foot">
+  <a href="https://github.com/samuelindra123/xynoos-hypercore" class="brand"
+    ><BrandMark />XYNOOS</a
+  ><span
+    >XYNOOS / STUDIO · Night edition<br />Research software · GPL-3.0-only</span
+  ><div>
+    <a
+      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/README.md"
+      >Documentation ↗</a
+    ><a
+      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/README.md#direction-and-contributing"
+      >Contributing ↗</a
+    ><a href="https://github.com/samuelindra123/xynoos-hypercore/issues"
+      >Issues ↗</a
+    ><a
+      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/README.md#direction-and-contributing"
+      >Roadmap ↗</a
+    ><a href="https://github.com/samuelindra123/xynoos-hypercore">GitHub ↗</a>
+  </div>
+</footer>
+)}

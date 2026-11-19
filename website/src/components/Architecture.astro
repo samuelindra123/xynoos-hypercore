@@ -1,0 +1,56 @@
+<section id="architecture" class="architecture-section">
+  <div class="wrap">
+    <div class="section-head reveal">
+      <div>
+        <div class="eyebrow">02 / Inside the system</div><h2>
+          Three layers.<br />One considered response.
+        </h2>
+      </div><p>
+        Select a layer to inspect the architecture. Each has a distinct
+        responsibility—and a deliberate limit.
+      </p>
+    </div><div class="editorial-explorer reveal">
+      <div class="layer-list" role="group" aria-label="Architecture layers">
+        <button
+          type="button"
+          class="selected"
+          data-layer="0"
+          aria-pressed="true"
+          ><span>01</span><strong>Perception</strong><small>PressureIQ</small><b
+            >↗</b
+          ></button
+        ><button type="button" data-layer="1" aria-pressed="false"
+          ><span>02</span><strong>Reasoning</strong><small
+            >AURA / policy research</small
+          ><b>↗</b></button
+        ><button type="button" data-layer="2" aria-pressed="false"
+          ><span>03</span><strong>Restraint</strong><small
+            >Safety & recovery</small
+          ><b>↗</b></button>
+      </div><div class="layer-detail" aria-live="polite">
+        <div class="detail-head mono">
+          <span class="live-point"></span><span id="layer-tag"
+            >LAYER 01 / READ-ONLY</span
+          ><span>+</span>
+        </div><div class="detail-glyph" id="detail-glyph" aria-hidden="true">
+          <div class="glyph-grid"></div><div class="glyph-plane plane-back">
+          </div><div class="glyph-plane plane-front"></div><div
+            class="glyph-bars"
+          >
+            <i></i><i></i><i></i><i></i><i></i>
+          </div><span class="glyph-label">SIGNAL → CONTEXT → DECISION</span>
+        </div><h3 id="layer-title">Listen before deciding.</h3><p
+          id="layer-copy"
+        >
+          PressureIQ collects and qualifies Linux resource signals. Host support
+          and permissions affect availability; missing or stale telemetry
+          requires conservative handling.
+        </p><a
+          id="layer-link"
+          class="text-link"
+          href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/ARCHITECTURE.md"
+          >Read the architecture ↗</a>
+      </div>
+    </div>
+  </div>
+</section>

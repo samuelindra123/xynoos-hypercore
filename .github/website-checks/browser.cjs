@@ -22,6 +22,19 @@ const {chromium}=require('playwright'),assert=require('node:assert/strict'),fs=r
    for(const [index,shot] of [[1,'cpu'],[2,'ram'],[3,'gpu'],[4,'reason'],[5,'safety']]){await page.locator('[data-film-scene="'+index+'"]').click();assert.equal(await page.locator('.system-film').getAttribute('data-shot'),shot);assertions++}
    await page.locator('[data-film-scene="1"]').click();await page.waitForTimeout(2600);await page.locator('.system-film').screenshot({path:path.join(artifacts,'film-'+width+'.png')});
    await page.locator('#film-play').click();assert.ok(await page.locator('.system-film').evaluate(el=>el.classList.contains('film-running')));await page.locator('#film-play').click();assertions++;
+   const directory=page.locator('header details');
+   const routes=await directory.locator('a').evaluateAll(links=>links.slice(1).map(link=>link.href));
+   assert.equal(routes.length,8);assertions++;
+   for(const route of routes){
+    await page.goto(url);
+    await directory.locator('summary').focus();
+    await page.keyboard.press('Enter');
+    await directory.locator('a[href="'+new URL(route).pathname+'"]').click();
+    assert.equal(page.url(),route);
+    assert.equal(await page.locator('main h1').count(),1);
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),'no horizontal overflow '+route+' '+width);
+    assertions+=3;
+   }
    assert.deepEqual(errors,[],'no browser errors or missing assets');assertions++;await page.close();
   }
   const page=await browser.newPage({viewport:{width:375,height:812},reducedMotion:'reduce'});await page.goto(url,{waitUntil:'networkidle'});assert.ok(await page.locator('#film-play').isDisabled());await page.locator('[data-film-scene="3"]').click();assert.equal(await page.locator('.system-film').getAttribute('data-shot'),'gpu');assert.equal(await page.locator('.board-camera').evaluate(el=>getComputedStyle(el).transitionDuration),'0s');assertions+=3;await page.close();

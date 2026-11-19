@@ -99,28 +99,62 @@ class ArchiveTests(unittest.TestCase):
 
     def test_combined_pages_preserves_studio_and_all_signed_packages(self):
         self.add('0.1.0~preview.2-1')
-        seed = Path(self.directory.name) / 'history'
-        seed.mkdir()
-        shutil.copytree(self.root, seed / 'apt')
-        archive.run('git', 'init', '-b', 'distribution/apt-history', str(seed))
-        archive.run('git', '-C', str(seed), 'config', 'user.name', 'Disposable Test')
-        archive.run('git', '-C', str(seed), 'config', 'user.email', 'test@example.invalid')
-        archive.run('git', '-C', str(seed), 'add', 'apt')
-        archive.run('git', '-C', str(seed), 'commit', '-m', 'Signed test history')
-        def local_git(*args):
-            return archive.run(*(str(seed) if a == 'https://github.com/samuelindra123/xynoos-hypercore.git' else a for a in args))
         output = Path(self.directory.name) / 'combined'
-        with patch.object(pages, 'run', side_effect=local_git), patch.dict(os.environ, XYNOOS_APT_FINGERPRINT=self.fpr), patch('sys.argv', ['pages.py', str(output)]):
+        built = Path(self.directory.name) / 'dist'
+        (built / '_astro').mkdir(parents=True)
+        (built / 'index.html').write_text('<!doctype html><title>Studio fixture</title>')
+        (built / '_astro/studio.css').write_text('body { color: white; }')
+
+        def local_git(*args):
+            if args[1] == 'ls-remote':
+                return b'fixture refs/heads/distribution/apt-history'
+            self.assertEqual(args[1], 'clone')
+            shutil.copytree(self.root, Path(args[-1]) / 'apt')
+
+        with patch.object(pages, 'STUDIO_DIST', built), patch.object(pages, 'run', side_effect=local_git), \
+             patch.dict(os.environ, XYNOOS_APT_FINGERPRINT=self.fpr), patch('sys.argv', ['pages.py', str(output)]):
             pages.main()
         self.assertEqual(len(archive.verify(output / 'apt', self.fpr)['versions']), 2)
-        for path in Path('website').rglob('*'):
-            if path.is_file():
-                self.assertEqual((output / path.relative_to('website')).read_bytes(), path.read_bytes())
+        self.assertEqual(self.file_bytes(output / 'apt'), self.file_bytes(self.root))
+        self.assertEqual(self.file_bytes(output), {
+            **self.file_bytes(built),
+            '.nojekyll': b'',
+            **{'apt/' + key: data for key, data in self.file_bytes(self.root).items()},
+        })
+
+    @staticmethod
+    def file_bytes(root):
+        return {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob('*') if p.is_file()}
+
+    def test_pages_rejects_reserved_paths_and_symlinks_before_copy(self):
+        directory = Path(self.directory.name)
+        for name in ('apt', 'APT', 'legacy', 'linked'):
+            with self.subTest(name=name):
+                built = directory / ('dist-' + name)
+                built.mkdir()
+                (built / 'index.html').write_text('Studio fixture')
+                if name == 'linked':
+                    (built / name).symlink_to(self.root)
+                else:
+                    (built / name).mkdir()
+                output = directory / 'unsafe-pages'
+                with patch.object(pages, 'STUDIO_DIST', built), patch.object(pages, 'run') as git, \
+                     patch('sys.argv', ['pages.py', str(output)]):
+                    with self.assertRaisesRegex(ValueError, 'reserved|symlinks'):
+                        pages.main()
+                    git.assert_not_called()
+                self.assertFalse(output.exists())
 
     def test_missing_history_cannot_erase_a_live_archive(self):
         from io import BytesIO
-        output = Path(self.directory.name) / 'unsafe-pages'
-        with patch.object(pages, 'run', return_value=b''), patch.object(pages.urllib.request, 'urlopen', return_value=BytesIO(b'live signed archive')), patch('sys.argv', ['pages.py', str(output)]):
+        directory = Path(self.directory.name)
+        built = directory / 'dist'
+        built.mkdir()
+        (built / 'index.html').write_text('Studio fixture')
+        output = directory / 'unsafe-pages'
+        with patch.object(pages, 'STUDIO_DIST', built), patch.object(pages, 'run', return_value=b''), \
+             patch.object(pages.urllib.request, 'urlopen', return_value=BytesIO(b'live signed archive')), \
+             patch('sys.argv', ['pages.py', str(output)]):
             with self.assertRaisesRegex(ValueError, 'Public archive exists'):
                 pages.main()
         self.assertFalse(output.exists())

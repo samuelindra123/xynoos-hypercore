@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import subprocess
 import sys
 import tempfile
 import time
@@ -12,6 +13,7 @@ import urllib.error
 import urllib.request
 from urllib.parse import quote
 from archive import require, verify, fingerprint
+from pages import STUDIO_DIST
 
 BASE = 'https://samuelindra123.github.io/xynoos-hypercore/'
 
@@ -44,28 +46,33 @@ def fetch(relative, expected):
     ) from last
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--require-apt', action='store_true')
-    args = parser.parse_args()
-    for original in Path('website').rglob('*'):
+def verify_studio(built):
+    require((built / 'index.html').is_file(), 'Astro build output missing')
+    for original in sorted(built.rglob('*')):
         if original.is_file():
-            relative = str(original.relative_to('website'))
-            # GitHub Pages consumes this hidden sentinel during Jekyll processing,
-            # but does not expose it as a public HTTP asset. Verify the rendered
-            # Studio files below without treating the control file as a page.
+            relative = original.relative_to(built).as_posix()
+            # GitHub Pages consumes the hidden sentinel rather than serving it.
             if relative == '.nojekyll':
                 require(original.read_bytes() == b'', 'Unexpected .nojekyll contents')
                 continue
-            public = fetch('' if relative == 'index.html' else relative,
-                           'Studio homepage' if relative == 'index.html' else f'Studio asset {relative}')
+            homepage = relative == 'index.html'
+            route = relative.removesuffix('index.html') if original.name == 'index.html' else relative
+            public = fetch(route, 'Studio homepage' if homepage else f'Studio asset {relative}')
             require(public == original.read_bytes(), 'Public Studio asset differs: ' + relative)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--require-apt', action='store_true')
+    parser.add_argument('--apt-only', action='store_true', help='Verify only the published archive')
+    args = parser.parse_args()
+    if not args.apt_only:
+        verify_studio(STUDIO_DIST)
     # Discovery of history must succeed; do not silently skip a previously published archive.
-    import subprocess
     history = subprocess.check_output(['git', 'ls-remote', '--heads', 'https://github.com/samuelindra123/xynoos-hypercore.git',
                                        'refs/heads/distribution/apt-history']).strip()
     if not history:
-        require(not args.require_apt, 'APT archive not published')
+        require(not (args.require_apt or args.apt_only), 'APT archive not published')
         print('PASS: public Studio/assets; APT NOT PUBLISHED')
         return
     with tempfile.TemporaryDirectory() as temporary:
@@ -84,7 +91,6 @@ def main():
             path = save(relative)
             save('dists/preview/main/binary-amd64/by-hash/SHA256/' + hashlib.sha256(path.read_bytes()).hexdigest())
         # Verify signatures before trusting the ledger's filenames; constrain paths too.
-        import subprocess
         subprocess.run(['gpgv', '--keyring', str(root / 'xynoos-archive-keyring.gpg'), str(root / 'dists/preview/InRelease')], check=True)
         ledger = json.loads((root / 'dists/preview/versions.json').read_text())
         for record in ledger['versions'].values():
@@ -92,7 +98,8 @@ def main():
             require(relative.startswith('pool/main/x/xynoos-hypercore/') and '..' not in Path(relative).parts, 'Unsafe ledger path')
             save(relative)
         verify(root, os.environ.get('XYNOOS_APT_FINGERPRINT', ''))
-    print('PASS: public Studio/assets, key fingerprint, InRelease/Release.gpg, SHA256 indexes and all retained packages')
+    scope = 'public archive' if args.apt_only else 'public Studio/assets and archive'
+    print(f'PASS: {scope}, key fingerprint, InRelease/Release.gpg, SHA256 indexes and all retained packages')
 
 
 if __name__ == '__main__':

@@ -1,0 +1,30 @@
+---
+import { sections, sitePath } from "../lib/site";
+const { active, studio = false } = Astro.props;
+---
+<details class:list={["site-directory", { "studio-directory": studio }]}>
+  <summary>Explore</summary>
+  <div class="directory-panel" role="group" aria-label="Xynoos pages">
+    <a href={sitePath()}>Studio home</a>
+    {sections.map(({ slug, name }) => (
+      <a href={sitePath(slug)} aria-current={active === slug ? "page" : undefined}>{name}</a>
+    ))}
+  </div>
+</details>
+
+<style>
+  .site-directory { position: relative; z-index: 2; }
+  summary { cursor: pointer; font-weight: 700; }
+  summary:focus-visible, a:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+  .directory-panel {
+    position: absolute; top: calc(100% + 12px); left: 0; width: max-content;
+    display: grid; min-width: 180px; padding: 8px; border: 1px solid #69747a;
+    background: #141a1c; color: #f1f4ee; box-shadow: 0 12px 28px #0005;
+  }
+  details:not([open]) .directory-panel { display: none; }
+  a { display: block; padding: 7px 12px; font-size: .875rem; text-decoration: none; }
+  a:hover, a[aria-current] { background: #263634; color: #c4f4d9; }
+  .studio-directory { align-self: center; flex: 1; margin-left: clamp(12px, 2vw, 30px); font-size: .75rem; }
+  .studio-directory summary { width: max-content; }
+  @media (max-width: 600px) { .studio-directory { margin-left: 12px; } }
+</style>

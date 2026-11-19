@@ -1,0 +1,34 @@
+---
+import Inside from "../layouts/Inside.astro";
+import Status from "../components/Status.astro";
+import { debian, release, repository, standalone } from "../lib/site";
+const entries = [
+  { version: debian.version, tag: debian.tag, date: "2026-11-18", day: "18 Nov 2026", track: "Debian preview", entries: [
+    ["Distribution", "First published amd64 Debian package. APT and dpkg manage the installed binary."],
+    ["Provenance", "The immutable prerelease ships checksums, source provenance, a scoped SBOM and an attestation bundle."],
+  ] },
+  { version: standalone, tag: standalone, date: "2026-11-17", day: "17 Nov 2026", track: "Standalone preview", entries: [
+    ["Installer", "Creates private paths with explicit permissions and explains unsafe existing directory modes."],
+    ["Validation", "Includes regression coverage for the permission failures reported on the physical N5000."],
+  ] },
+  { version: "v0.1.0-preview.2", tag: "v0.1.0-preview.2", date: "2026-11-16", day: "16 Nov 2026", track: "Standalone preview", entries: [
+    ["Release", "Signed read-only preview for baseline x86_64. Subsequent physical testing confirmed isolated update and rollback and surfaced the HOME permissions issue."],
+  ] },
+  { version: "v0.1.0-preview.1", tag: "v0.1.0-preview.1", date: "2026-11-16", day: "16 Nov 2026", track: "Standalone preview", entries: [
+    ["Release", "Initial published developer preview with a static musl binary, signed manifest and GitHub build attestations."],
+  ] },
+];
+---
+<Inside section="changelog" description="An editorial history of published Xynoos HyperCore standalone and Debian preview releases.">
+  <div class="compact-intro release-intro"><p class="eyeline">Release history</p><h1>Changelog</h1><p class="lede">Published milestones in diagnostics, installation and distribution, with the original release artifacts.</p></div>
+  <ol class="timeline">
+    {entries.map((entry) => <li>
+      <time datetime={entry.date}>{entry.day}</time>
+      <article><Status>{entry.track}</Status><h2>{entry.version}</h2>
+        <dl>{entry.entries.map(([category, content]) => <div><dt>{category}</dt><dd>{content}</dd></div>)}</dl>
+        <a href={release(entry.tag)}>Release notes and assets</a>
+      </article>
+    </li>)}
+  </ol>
+  <p><a href={repository + "/releases"}>View all GitHub releases</a></p>
+</Inside>

@@ -1,0 +1,11 @@
+---
+interface Props {
+  links: { href: string; title: string; description: string }[];
+}
+const { links } = Astro.props;
+---
+<ul class="guide-links">
+  {links.map(({ href, title, description }) => (
+    <li><a href={href}><strong>{title}</strong><span>{description}</span></a></li>
+  ))}
+</ul>

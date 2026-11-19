@@ -1,0 +1,7 @@
+---
+interface Props {
+  tone?: "verified" | "research" | "pending";
+}
+const { tone = "research" } = Astro.props;
+---
+<span class:list={["status", "status-" + tone]}><slot /></span>

@@ -1,0 +1,52 @@
+---
+import BrandMark from "./BrandMark.astro";
+import SiteDirectory from "./SiteDirectory.astro";
+import { repository, sections, sitePath } from "../lib/site";
+interface Props {
+  section?: (typeof sections)[number]["slug"];
+}
+const { section } = Astro.props;
+---
+
+{section ? (
+  <>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <header class="inside-header">
+      <div class="shell header-row">
+        <a class="wordmark" href={sitePath()} aria-label="Xynoos Studio home"><BrandMark />XYNOOS</a>
+        <nav aria-label="Main navigation">
+          <a class="major-link" href={sitePath("hypercore")} aria-current={section === "hypercore" ? "page" : undefined}>HyperCore</a>
+          <a class="major-link" href={sitePath("documentation")} aria-current={section === "documentation" ? "page" : undefined}>Documentation</a>
+          <a class="major-link" href={sitePath("downloads")} aria-current={section === "downloads" ? "page" : undefined}>Downloads</a>
+          <SiteDirectory active={section} />
+        </nav>
+        <a class="repository-link" href={repository}>GitHub</a>
+      </div>
+    </header>
+  </>
+) : (
+  <>
+<div class="ambient-scene" aria-hidden="true">
+  <div class="ambient-light"></div><div class="ambient-grid"></div>
+</div><div class="reading-progress" aria-hidden="true"></div><a
+  class="skip"
+  href="#main">Skip to content</a
+><header class="wrap">
+  <a href="#main" class="brand" aria-label="Xynoos home"
+    ><BrandMark />XYNOOS<span class="studio-label">/ STUDIO</span></a
+  ><SiteDirectory studio /><button class="menu" aria-expanded="false" aria-controls="nav">Menu +</button
+  ><nav id="nav" aria-label="Main navigation">
+    <a href="#approach">Our approach</a><a href="#architecture">Architecture</a
+    ><a href="#research">Research</a><a href="#install">Install</a><button
+      class="motion-control"
+      type="button"
+      aria-pressed="false"
+      aria-label="Pause decorative motion">Motion <span>on</span></button
+    ><a
+      class="nav-cta"
+      href="https://github.com/samuelindra123/xynoos-hypercore"
+      >Open repository ↗</a>
+  </nav>
+</header>
+  </>
+)}
