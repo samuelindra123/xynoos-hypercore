@@ -1,38 +1,56 @@
 ---
 import BrandMark from "./BrandMark.astro";
-import { sections, sitePath } from "../lib/site";
+import { repository, sections, sitePath } from "../lib/site";
+
 interface Props {
   section?: (typeof sections)[number]["slug"];
 }
 const { section } = Astro.props;
 ---
 
-{section ? (
-    <footer class="inside-footer shell">
-      <div><a class="wordmark" href={sitePath()} aria-label="Xynoos Studio home"><BrandMark />XYNOOS</a><p>Experimental Linux research software · GPL-3.0-only</p></div>
-      <nav aria-label="Footer">
-        {sections.map(({ slug, name }) => <a href={sitePath(slug)} aria-current={section === slug ? "page" : undefined}>{name}</a>)}
-      </nav>
-    </footer>
-) : (
-<footer class="wrap foot">
-  <a href="https://github.com/samuelindra123/xynoos-hypercore" class="brand"
-    ><BrandMark />XYNOOS</a
-  ><span
-    >XYNOOS / STUDIO · Night edition<br />Research software · GPL-3.0-only</span
-  ><div>
-    <a
-      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/README.md"
-      >Documentation ↗</a
-    ><a
-      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/README.md#direction-and-contributing"
-      >Contributing ↗</a
-    ><a href="https://github.com/samuelindra123/xynoos-hypercore/issues"
-      >Issues ↗</a
-    ><a
-      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/README.md#direction-and-contributing"
-      >Roadmap ↗</a
-    ><a href="https://github.com/samuelindra123/xynoos-hypercore">GitHub ↗</a>
+<footer class="site-footer site-width">
+  <div class="footer-identity">
+    <a class="site-brand" href={sitePath()} aria-label="Xynoos Studio home"><BrandMark />XYNOOS</a>
+    <p>XYNOOS / STUDIO · Night edition<br />Research software · GPL-3.0-only</p>
+  </div>
+  <div class="footer-links" role="navigation" aria-label="Footer">
+    {sections.map(({ slug, name }) => (
+      <a href={sitePath(slug)} aria-current={section === slug ? "page" : undefined}>{name}</a>
+    ))}
+    <a href={repository + "/issues"}>Issues</a>
+    <a href={repository}>GitHub</a>
   </div>
 </footer>
-)}
+
+<style>
+  .site-footer {
+    display: grid;
+    grid-template-columns: minmax(12rem, 1fr) minmax(0, 2fr);
+    align-items: start;
+    gap: 1.25rem 2.5rem;
+    padding-block: 2rem 2.75rem;
+    border-top: 1px solid #48332c;
+  }
+  .footer-identity p { margin: .7rem 0 0; color: #b3a7ad; font-size: .875rem; line-height: 1.6; }
+  .footer-links {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: .35rem 1.1rem;
+  }
+  .footer-links a {
+    display: flex;
+    align-items: center;
+    min-height: 34px;
+    color: var(--ink);
+    font-size: .875rem;
+    text-decoration: none;
+    overflow-wrap: anywhere;
+  }
+  .footer-links a:hover, .footer-links a[aria-current] { color: var(--warm); text-decoration: underline; text-underline-offset: .25em; }
+  @media (max-width: 800px) {
+    .site-footer { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .footer-links { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>

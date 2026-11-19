@@ -13,15 +13,11 @@ for (const input of document.querySelectorAll('input')) {
   assert.ok(document.querySelector('label[for="' + input.id + '"]'));
 }
 
-const menu = document.querySelector('.menu');
-menu.click();
-assert.equal(menu.getAttribute('aria-expanded'), 'true');
-document.querySelector('nav a').click();
-assert.equal(menu.getAttribute('aria-expanded'), 'false');
-menu.click();
-document.dispatchEvent(new window.KeyboardEvent('keydown', { key: 'Escape' }));
-assert.equal(menu.getAttribute('aria-expanded'), 'false');
-assert.equal(document.activeElement, menu);
+const menu = document.querySelector('.site-menu-toggle');
+const navigation = document.getElementById(menu.getAttribute('popovertarget'));
+assert.equal(navigation.getAttribute('popover'), 'auto');
+assert.equal(navigation.querySelectorAll('a').length, 10);
+assert.equal(navigation.querySelector('[aria-current="page"]').textContent, 'Home');
 
 for (const index of [1, 2, 0]) {
   const button = document.querySelector('[data-layer="' + index + '"]');
@@ -30,4 +26,4 @@ for (const index of [1, 2, 0]) {
   assert.equal(button.getAttribute('aria-pressed'), 'true');
 }
 window.close();
-console.log('PASS Studio landmarks, navigation, keyboard dismissal and architecture controls.');
+console.log('PASS Studio landmarks, navigation markup and architecture controls.');

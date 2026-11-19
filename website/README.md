@@ -28,8 +28,8 @@ The project-path `robots.txt` points to the canonical sitemap. Domain-root crawl
 
 ## Website routes
 
-Studio remains the homepage. Its Explore menu links to HyperCore, Downloads,
-Documentation, Developers, Research, Changelog, Roadmap and About. The secondary
-pages share navigation, typography and editorial components. Their route registry
+Studio remains the homepage. Every page shares the Studio header, footer, theme,
+and direct links to HyperCore, Downloads, Documentation, Developers, Research,
+Changelog, Roadmap and About. The compact header uses a native popover menu. Their route registry
 in `src/lib/site.ts` also feeds the sitemap. Studio's interaction script loads on
 the homepage only.

@@ -430,52 +430,6 @@ section[id] {
 }
 
 /* STUDIO / NIGHT EDITION — the existing editorial system, given a luminous material language. */
-:root {
-  --accent: #ff7853;
-  --muted: #9d9caa;
-  --line: #2b292f;
-  --surface: #141318;
-  --warm: #ffd2b3;
-}
-body {
-  background: #0c0d11;
-  color: #f4f0ed;
-  isolation: isolate;
-  overflow-x: clip;
-}
-body:before {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: 0.025;
-  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 180 180' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Cpath fill='%23fff' filter='url(%23n)' d='M0 0h180v180H0z'/%3E%3C/svg%3E");
-}
-.ambient-scene {
-  position: absolute;
-  inset: 0 0 auto;
-  height: 1100px;
-  z-index: -2;
-  overflow: hidden;
-  pointer-events: none;
-}
-.ambient-light {
-  position: absolute;
-  inset: -10% -10%;
-  background:
-    radial-gradient(ellipse at 78% 34%, #913e292b, transparent 43%),
-    radial-gradient(ellipse at 12% 12%, #4d426420, transparent 44%);
-}
-.ambient-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(#b7a08c07 1px, transparent 1px),
-    linear-gradient(90deg, #b7a08c07 1px, transparent 1px);
-  background-size: 80px 80px;
-  mask-image: linear-gradient(transparent, #0008 20%, #000, transparent);
-}
 .reading-progress {
   position: fixed;
   top: 0;

@@ -1,5 +1,6 @@
 ---
 import "../styles/fonts.css";
+import "../styles/studio-theme.css";
 import "../styles/inside.css";
 import SiteFooter from "../components/SiteFooter.astro";
 import SiteHeader from "../components/SiteHeader.astro";
@@ -20,7 +21,7 @@ const canonical = new URL(section + "/", publicSite);
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="description" content={description} />
-    <meta name="theme-color" content="#101719" />
+    <meta name="theme-color" content="#0c0d11" />
     <title>{title}</title>
     <link rel="canonical" href={canonical} />
     <link rel="icon" href={sitePath() + "branding/mark.svg"} type="image/svg+xml" />
@@ -28,7 +29,7 @@ const canonical = new URL(section + "/", publicSite);
     <meta property="og:description" content={description} />
     <meta property="og:url" content={canonical} />
   </head>
-  <body class:list={["inside", section]}>
+  <body class="inside">
     <SiteHeader section={section} />
     <main id="main" class="shell">
       <nav class="breadcrumb" aria-label="Breadcrumb">

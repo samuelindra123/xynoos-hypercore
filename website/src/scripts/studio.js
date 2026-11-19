@@ -1,15 +1,3 @@
-const menu = document.querySelector(".menu");
-menu?.addEventListener("click", () => {
-  const open = menu.getAttribute("aria-expanded") !== "true";
-  menu.setAttribute("aria-expanded", open);
-  document.querySelector("nav").classList.toggle("open", open);
-});
-document.querySelectorAll("nav a").forEach((a) =>
-  a.addEventListener("click", () => {
-    document.querySelector("nav").classList.remove("open");
-    menu?.setAttribute("aria-expanded", "false");
-  }),
-);
 if (
   !matchMedia("(prefers-reduced-motion: reduce)").matches &&
   "IntersectionObserver" in window
@@ -70,17 +58,6 @@ document.querySelectorAll("[data-layer]").forEach((button) =>
       "detail-glyph mode-" + i;
   }),
 );
-
-document.addEventListener("keydown", (event) => {
-  if (
-    event.key === "Escape" &&
-    menu?.getAttribute("aria-expanded") === "true"
-  ) {
-    menu.setAttribute("aria-expanded", "false");
-    document.querySelector("nav").classList.remove("open");
-    menu.focus();
-  }
-});
 
 // Studio night edition: event-driven depth, with no persistent rendering loop.
 const motionQuery = matchMedia("(prefers-reduced-motion: reduce)");
