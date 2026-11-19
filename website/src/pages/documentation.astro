@@ -1,0 +1,37 @@
+---
+import Inside from "../layouts/Inside.astro";
+import GuideLinks from "../components/GuideLinks.astro";
+import CodeBlock from "../components/CodeBlock.astro";
+import { source, sitePath } from "../lib/site";
+---
+<Inside section="documentation" description="Xynoos installation, CLI usage, telemetry interpretation and lifecycle documentation.">
+  <div class="reading-grid docs-grid">
+    <nav class="contents" aria-label="Documentation contents">
+      <strong>Documentation</strong><a href="#first-run">First run</a><a href="#reference">CLI and telemetry</a><a href="#operations">Lifecycle and troubleshooting</a><a href={sitePath("developers")}>Developer setup</a>
+    </nav>
+    <div class="prose">
+      <h1>Documentation</h1><p class="lede">Install the preview, inspect Linux resource signals and understand the limits of the evidence.</p>
+      <section id="first-run"><h2>First run</h2>
+        <p>Choose an installation channel in <a href={sitePath("downloads")}>Downloads</a>. Once installed, check the version and run the diagnostic summary. On Debian, use <code>/usr/bin/xynoos</code> explicitly if a standalone build is also on your PATH.</p>
+        <CodeBlock label="Shell · inspect the installed binary" commands={`xynoos --version
+xynoos doctor
+xynoos status`} />
+        <p><code>doctor</code> checks availability. <code>status</code> reports what the collector can observe. Treat missing interfaces and scoped readings as part of the result.</p>
+      </section>
+      <section id="reference"><h2>CLI and telemetry</h2>
+        <GuideLinks links={[
+          { href: source("docs/wiki/CLI-Reference.md"), title: "CLI reference", description: "Commands, output flags, sampling limits and management behavior." },
+          { href: source("docs/wiki/PressureIQ.md"), title: "PressureIQ telemetry", description: "Pressure signals, collection scope and unavailable sources." },
+          { href: source("docs/wiki/Known-Limitations.md"), title: "Known limitations", description: "Hardware coverage and boundaries of the preview." },
+        ]} />
+      </section>
+      <section id="operations"><h2>Lifecycle and troubleshooting</h2>
+        <GuideLinks links={[
+          { href: source("docs/distribution/INSTALLATION.md"), title: "Debian installation and lifecycle", description: "Repository setup, manager ownership and version selection." },
+          { href: source("docs/INSTALL.md"), title: "Standalone installer", description: "Bootstrap verification, updates, rollback and removal." },
+          { href: source("docs/wiki/Troubleshooting.md"), title: "Troubleshooting", description: "Host compatibility, missing data and report collection." },
+        ]} />
+      </section>
+    </div>
+  </div>
+</Inside>

@@ -1,0 +1,19 @@
+---
+import Inside from "../layouts/Inside.astro";
+import Status from "../components/Status.astro";
+import { source, sitePath } from "../lib/site";
+const layers = [
+  { id: "pressureiq", name: "PressureIQ", label: "Collect", copy: "Read procfs, sysfs and available cgroup counters. The collector reports missing sources and keeps each observation’s timing and scope visible." },
+  { id: "aura", name: "AURA", label: "Reason", copy: "Evaluate supplied evidence and age to produce an advisory plan. The result exposes confidence, costs and limitations for inspection." },
+  { id: "hypermemory", name: "HyperMemory", label: "Experiment", copy: "Explore raw and LZ4 representations for owned pages in userspace. Logical byte accounting and process memory overhead are measured separately." },
+];
+---
+<Inside section="hypercore" description="Explore the on-demand diagnostics, advisory policy and userspace memory experiments in Xynoos HyperCore.">
+  <div class="engine-intro"><Status>Experimental preview</Status><h1>HyperCore</h1><p class="lede">An on-demand Linux resource intelligence engine. Observe live system signals, inspect the reasoning behind an advisory plan, and study bounded memory policies in userspace.</p><a class="action" href={sitePath("downloads")}>Get the preview</a></div>
+  <section class="engine-map" aria-labelledby="engine-map-title">
+    <div class="map-inlet"><h2 id="engine-map-title">Engine architecture</h2><p>Linux / Rust workspace</p></div>
+    <dl>{layers.map((layer) => <div id={layer.id}><dt class="engine-node"><span>{layer.label}</span>{layer.name}</dt><dd>{layer.copy}</dd></div>)}</dl>
+    <div class="map-outlet"><strong>Preview boundary</strong><p>The shipping CLI runs on demand. Physical control is disabled. DRM inventory describes discoverable devices; GPU utilization and acceleration support require separate evidence.</p></div>
+  </section>
+  <div class="inline-links"><a href={source("docs/resource-engine/REPORT.md")}>Integration and implementation report</a><a href={sitePath("research")}>Research methods</a><a href={sitePath("documentation")}>CLI documentation</a></div>
+</Inside>

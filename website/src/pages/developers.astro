@@ -1,0 +1,32 @@
+---
+import Inside from "../layouts/Inside.astro";
+import CodeBlock from "../components/CodeBlock.astro";
+import { repository, source, sitePath } from "../lib/site";
+---
+<Inside section="developers" description="Build Xynoos from source, run the Rust workspace checks, and find the project’s contribution paths.">
+  <div class="split-intro">
+    <div><p class="eyeline">Developers / Rust workspace</p><h1>Work on<br />HyperCore.</h1>
+      <p class="lede">Build the Linux diagnostics CLI, inspect its evidence, and reproduce a change before proposing it.</p>
+      <a class="action" href={repository}>Browse the source</a>
+    </div>
+    <CodeBlock label="Shell · local checkout" commands={`git clone ${repository}.git
+cd xynoos-hypercore
+cargo run --locked -p xynoos-cli -- doctor`} />
+  </div>
+  <div class="reading-grid">
+    <nav class="contents" aria-label="On this page"><strong>On this page</strong><a href="#environment">Environment</a><a href="#checks">Workspace checks</a><a href="#areas">Where to contribute</a></nav>
+    <div class="prose">
+      <section id="environment"><h2>Prepare your environment</h2><p>Use a Linux checkout with Git, Python and Rust. The workspace declares Rust 1.82 as its minimum supported version. Use the checked-in lockfile so your build uses the reviewed dependency versions. <a href={source("docs/wiki/Development-Setup.md")}>Full development setup</a></p></section>
+      <section id="checks"><h2>Verify a change locally</h2><p>Run focused workspace tests before opening a pull request. Release builds and destructive package lifecycle tests belong in Actions and disposable test environments.</p>
+        <CodeBlock label="Shell · Rust validation" commands={`cargo test --workspace --locked
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings`} />
+      </section>
+      <section id="areas"><h2>Choose an area</h2><dl class="rule-list">
+        <div><dt><a href={source("crates/xynoos-pressureiq")}>PressureIQ</a></dt><dd>Linux evidence collection and fixture-driven parser tests.</dd></div>
+        <div><dt><a href={source("crates/xynoos-aura")}>AURA</a></dt><dd>Placement simulations, advisory decisions and policy tests.</dd></div>
+        <div><dt><a href={source("docs/debian/PACKAGING.md")}>Debian packaging</a></dt><dd>Reproducible builds, package ownership and lifecycle evidence.</dd></div>
+      </dl><p><a href={source("docs/wiki/Contributing.md")}>Contribution guide</a> · <a href={sitePath("roadmap")}>Open engineering milestones</a></p></section>
+    </div>
+  </div>
+</Inside>

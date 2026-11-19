@@ -1,40 +1,35 @@
 # Xynoos Studio
 
-Selected Concept B Studio, packaged as a framework-free project site for:
+Studio is a static Astro project for <https://samuelindra123.github.io/xynoos-hypercore/>. The editorial site, architecture explorer, video rendering of the original illustrated hardware study, and installation and research links come from the original Studio. The [framework-free source](../legacy/github-pages/) is archived byte for byte.
 
-https://samuelindra123.github.io/xynoos-hypercore/
+## Local build and checks
 
-The night-edition editorial composition, self-hosted typography, layered SVG hero, pointer depth, architecture explorer, visual research notes and six-scene CPU/RAM/conceptual-GPU motion study are preserved. Only release metadata, repository evidence links, precise capability wording and containment of decorative viewport glow were adjusted. Original Concept B backups remain in the experimental worktree and are not published.
-
-This website is an illustration of experimental Linux resource intelligence, not a stable product or host-monitoring interface. It does not execute the Rust engine, read hardware or modify the host. GPU integration is a future illustration. No desktop-wide benefit or production readiness is claimed; physical kernel mutation is disabled for the illustrated control path.
-
-## Local verification
-
-From the repository root, using Node.js 24 or later:
+From the repository root, using Node.js 24.11.1 and npm. The lockfile pins Astro’s compiler to 0.5.2 because the 0.5.3 native binding exits with an illegal instruction on the Pentium Silver N5000 used for local validation.
 
 ```sh
+npm ci --prefix website
+npm run check --prefix website
+npm run build --prefix website
 npm ci --prefix .github/website-checks
 npm test --prefix .github/website-checks
-node .github/website-checks/preview.cjs
 ```
 
-Open http://localhost:4174/xynoos-hypercore/. The preview deliberately requires the project prefix, so broken root-relative references cannot silently pass.
+Run `node .github/website-checks/preview.cjs` to serve the build under `/xynoos-hypercore/`. The static checks use the generated HTML, CSS, JavaScript, and project-path HTTP responses. The DOM tests cover navigation, the architecture explorer, film controls, reduced motion, and clipboard fallback.
 
-Optional rendered checks:
+Run `npm run dev --prefix website` for live reload at <http://localhost:4321/>. Development serves from the domain root for convenient local browsing. Production builds retain the `/xynoos-hypercore/` base required by GitHub Pages. Run `npm run preview --prefix website` to inspect the production build at <http://localhost:4321/xynoos-hypercore/>.
 
-```sh
-.github/website-checks/node_modules/.bin/playwright install --with-deps chromium
-npm run browser --prefix .github/website-checks
-```
+Astro bundles the styles and event-driven interaction script. Local WOFF2 fonts retain their SIL Open Font Licenses in `public/fonts/`. The original social artwork is served as a JPEG from `public/media/`. The motion study uses its original interactive SVG artwork and scene controls. Inline SVG diagrams scale with the layout, and the hardware study's animation runs only while its interactive playback is active.
 
-Checks cover HTML structure, CSS parsing, JavaScript syntax, asset bytes over HTTP, fragment targets, SEO, repository evidence links, architecture layers, navigation, film controls, finite playback and reduced motion. Browser checks cover 375, 768 and 1440 px, loaded fonts, overflow, JavaScript/resource errors and real controls. Screenshots are written to ignored `.github/website-checks/artifacts/`.
+## Combined Pages artifact
 
-## Deployment
+`repository/pages.py` copies `website/dist/` to the artifact root and adds verified retained history under `/apt/`. It reserves `/apt/` and `/legacy/` and rejects Studio symlinks. Archive signing, fingerprints, and package checksums remain in the distribution pipeline. The Pages workflow uses the pinned toolchain and exact Studio revision for public byte verification.
 
-`.github/workflows/studio-pages.yml` validates website-only PRs. A push to `main` assembles byte-identical `website/` content with the verified retained archive from `distribution/apt-history` under `/apt/`, then deploys one Pages artifact through `github-pages`. The same reusable workflow handles APT publication/promotion/renewal. One global Pages concurrency group prevents competing deployment paths. Missing history cannot erase an already public archive. Public read-back checks Studio, assets, signatures and all retained package digests. First APT publication remains pending dedicated signing setup (#36). PRs never deploy. Action versions are pinned; validation has only `contents: read`, while the deployment job has `pages: write` and `id-token: write`.
+The project-path `robots.txt` points to the canonical sitemap. Domain-root crawler policy is controlled by the GitHub Pages host.
 
-One-time repository setting: **Settings → Pages → Build and deployment → Source: GitHub Actions**. If a token cannot enable Pages (HTTP 403), a repository administrator must select this setting, then run **Actions → Xynoos Studio Pages → Run workflow → main**, or re-run the failed deployment. A workflow file alone does not enable Pages.
+## Website routes
 
-No custom domain, server, database, authentication, external runtime API or frontend build is required. Fonts are local and include their SIL Open Font Licenses. The repository's GPL-3.0-only license applies to project source. The official branding in `assets/branding/` is preserved unchanged.
-
-`robots.txt` is included at the project path; GitHub Pages project sites cannot control the domain-root `/robots.txt`. The canonical URL and sitemap use the actual project URL.
+Studio remains the homepage. Every page shares the Studio header, footer, theme,
+and direct links to HyperCore, Downloads, Documentation, Developers, Research,
+Changelog, Roadmap and About. The compact header uses a native popover menu. Their route registry
+in `src/lib/site.ts` also feeds the sitemap. Studio's interaction script loads on
+the homepage only.

@@ -1,0 +1,21 @@
+---
+import Inside from "../layouts/Inside.astro";
+import { repository, source, sitePath } from "../lib/site";
+---
+<Inside section="about" description="How Samuel Indra Bastian and contributors developed Xynoos from a page-storage experiment into an open Linux research project.">
+  <article class="origin">
+    <header class="origin-head">
+      <div><p class="eyeline">The Xynoos story</p><h1>It began with<br />a page of<br /><em>memory.</em></h1><p class="byline">Founded by Samuel Indra Bastian</p></div>
+      <figure class="origin-plate">
+        <div class="page-stack" aria-hidden="true"><span></span><span></span><span></span><span></span></div>
+        <figcaption>Conceptual illustration of the original userspace page-store experiment</figcaption>
+      </figure>
+    </header>
+    <div class="origin-body">
+      <p class="origin-lede">The earliest HyperCore work asked a small, practical question: what does it cost to keep a page of memory compressed and recover it when needed?</p>
+      <section><h2>Start with something measurable.</h2><p>Samuel’s first research milestones created a userspace page store, checked the integrity of its contents, and separated logical byte counts from process memory. That distinction shaped the later work on placement policy: a decision only makes sense alongside the assumptions used to measure it.</p><a href={source("docs/reports/TASK-002-MEMORY-CORRECTNESS-BENCHMARK-REPORT.md")}>Read the early memory research</a></section>
+      <section><h2>Carry the evidence forward.</h2><p>The project grew to include Linux telemetry, advisory resource plans and a preview CLI. Debian 13 on a Pentium Silver N5000 became an explicit acceptance target. The remaining physical tests still matter because a successful build or a disposable-container result answers a different question from behavior on that machine.</p><a href={source("docs/N5000-PREVIEW-VALIDATION.md")}>Read the laptop validation protocol</a></section>
+      <section><h2>Do the work in public.</h2><p>Samuel Indra Bastian and contributors publish source, research reports and release artifacts under GPL-3.0-only. The history traces each stage of the work, including limitations that remain open.</p><div class="inline-links"><a href={repository + "/commits/main/"}>Project history</a><a href={sitePath("developers")}>Contribute to Xynoos</a></div></section>
+    </div>
+  </article>
+</Inside>

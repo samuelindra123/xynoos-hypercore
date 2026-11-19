@@ -1,0 +1,22 @@
+{
+  "name": "xynoos-studio",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.23.4"
+  },
+  "scripts": {
+    "dev": "astro dev --config astro.config.dev.mjs",
+    "build": "astro build",
+    "check": "astro check",
+    "preview": "astro preview"
+  },
+  "devDependencies": {
+    "@astrojs/check": "0.9.12",
+    "astro": "7.4.12",
+    "typescript": "5.9.3"
+  },
+  "overrides": {
+    "@astrojs/compiler-rs": "0.5.2"
+  }
+}

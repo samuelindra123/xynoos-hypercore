@@ -1,0 +1,12 @@
+---
+interface Props {
+  label: string;
+  commands: string;
+}
+const { label, commands } = Astro.props;
+const tokens = commands.split(/(\s+|"[^"]*"|--[\w-]+)/g);
+---
+<figure class="code-block">
+  <figcaption>{label}</figcaption>
+  <pre tabindex="0" aria-label={label}><code>{tokens.map((token) => <span class:list={{ option: token.startsWith("--"), string: token.startsWith('"') }}>{token}</span>)}</code></pre>
+</figure>

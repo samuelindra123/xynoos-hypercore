@@ -1,0 +1,26 @@
+---
+import Inside from "../layouts/Inside.astro";
+import Status from "../components/Status.astro";
+import { issue, repository, source } from "../lib/site";
+const milestones = [
+  { title: "Distribution", items: [
+    { label: "Verified", tone: "verified", title: "Signed Debian preview", description: "Published amd64 preview and a successful public-source installation on Debian 13.", href: repository + "/actions/runs/44278109854", link: "Public install evidence" },
+    { label: "Open", tone: "pending", title: "Real release-to-release upgrades", description: "Exercise upgrades and rollback once two actual Debian package versions are published.", href: issue(41), link: "Track issue #41" },
+    { label: "Gated", tone: "pending", title: "Stable suite and additional architectures", description: "Require separate compatibility and operating evidence before expanding support.", href: issue(44), link: "Track issue #44" },
+  ] },
+  { title: "Engine and hardware", items: [
+    { label: "Implemented", tone: "verified", title: "Read-only diagnostics", description: "PressureIQ collection, bounded samples and advisory resource plans are available in the CLI.", href: source("docs/resource-engine/REPORT.md"), link: "Implementation report" },
+    { label: "Awaiting physical evidence", tone: "pending", title: "MX Linux and N5000 acceptance", description: "Validate installation and diagnostic behavior on the target machine and OS.", href: issue(42), link: "Track issue #42" },
+    { label: "Open", tone: "research", title: "Representative workload measurements", description: "Repeat the matched workload protocol before claiming performance gains.", href: issue(21), link: "Track issue #21" },
+  ] },
+] as const;
+---
+<Inside section="roadmap" description="Track Xynoos engineering milestones and the evidence required to advance them.">
+  <div class="compact-intro"><p class="eyeline">Engineering roadmap</p><h1>What comes next.</h1><p class="lede">Follow the work from implementation through public and physical validation. Each milestone links to its evidence or acceptance criteria.</p></div>
+  <div class="roadmap-grid">
+    {milestones.map((lane) => <section class="lane">
+      <h2>{lane.title}</h2>
+      <ol>{lane.items.map((item) => <li><Status tone={item.tone}>{item.label}</Status><h3>{item.title}</h3><p>{item.description}</p><a href={item.href}>{item.link}</a></li>)}</ol>
+    </section>)}
+  </div>
+</Inside>

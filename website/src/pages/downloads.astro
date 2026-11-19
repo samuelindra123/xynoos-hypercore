@@ -1,0 +1,34 @@
+---
+import Inside from "../layouts/Inside.astro";
+import Status from "../components/Status.astro";
+import CodeBlock from "../components/CodeBlock.astro";
+import { debian, standalone, release, repository, source } from "../lib/site";
+---
+<Inside section="downloads" description="Get the signed standalone or Debian preview of Xynoos HyperCore and verify the release before installing.">
+  <div class="compact-intro"><p class="eyeline">Distribution</p><h1>Download HyperCore.</h1><p class="lede">Two installation channels for the experimental Linux preview. Choose the package manager that should own your installation.</p></div>
+  <div class="channel-grid">
+    <section class="channel"><Status>Developer preview</Status><h2>Standalone</h2><p class="version">{standalone} · Linux x86_64</p>
+      <p>Rootless installation into private user paths. Requires curl, Python 3.9+, OpenSSL 3 and a working CA certificate store.</p>
+      <a class="action" href={release(standalone)}>Standalone release assets</a>
+    </section>
+    <section class="channel"><Status tone="verified">Public APT install verified</Status><h2>Debian package</h2><p class="version">{debian.version} · Debian 13 amd64</p>
+      <p>APT and dpkg own the package lifecycle. Use the signed preview suite or verify and install the immutable GitHub release asset.</p>
+      <a class="action" href={release(debian.tag)}>Debian release assets</a>
+    </section>
+  </div>
+  <div class="channel-grid install-notes">
+    <section><h2>Install standalone</h2><p>Review the versioned bootstrap and its trust model before execution. The manager verifies a pinned Ed25519 signature on the manifest, then checks the binary’s SHA256 before activation.</p>
+      <CodeBlock label="Shell · versioned standalone bootstrap" commands={`curl --proto '=https' -fsSLo xynoos-install.sh ${"https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/" + standalone}/install.sh
+# Review xynoos-install.sh before running it.
+sh xynoos-install.sh --version ${standalone}
+export PATH="$HOME/.local/bin:$PATH"`} />
+      <a href={source("docs/INSTALL.md")}>Bootstrap trust and pinned verification</a>
+    </section>
+    <section><h2>Install with APT</h2><p>First configure the <code>preview</code> source with the archive key and independently pinned OpenPGP fingerprint in the <a href={source("docs/distribution/INSTALLATION.md")}>Debian installation guide</a>. Then install by package name.</p>
+      <CodeBlock label="Shell · after verifying and configuring the source" commands={`sudo apt -o APT::Update::Error-Mode=any update
+sudo apt install xynoos-hypercore
+/usr/bin/xynoos --version --json`} />
+      <p><a href={repository + "/actions/runs/44278109854"}>Public-source install run</a> · <a href={source("docs/distribution/INSTALLATION.md#method-b-direct-debian-download")}>Verify a direct Debian download</a></p>
+    </section>
+  </div>
+</Inside>

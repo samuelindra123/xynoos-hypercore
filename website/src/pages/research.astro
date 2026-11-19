@@ -1,0 +1,27 @@
+---
+import Inside from "../layouts/Inside.astro";
+import { source } from "../lib/site";
+---
+<Inside section="research" description="Xynoos technical research on Linux resource observation, policy simulation and bounded performance validation.">
+  <article class="paper">
+    <header class="paper-head">
+      <p class="eyeline">Engineering research</p><h1>From signals<br />to evidence.</h1>
+      <p class="lede">A research program in Linux telemetry, memory placement and the boundaries of safe resource control.</p>
+    </header>
+    <div class="paper-abstract"><h2>Abstract</h2><p>PressureIQ qualifies observations. AURA evaluates policies against supplied evidence. HyperMemory isolates storage experiments in userspace. Each part can be examined independently, so a finding about a policy or a fixture stays tied to its measurement scope.</p></div>
+    <figure class="evidence-figure">
+      <ol><li><strong>Observe</strong><span>Timed Linux counters and source status</span></li><li><strong>Model</strong><span>Bounded events and policy decisions</span></li><li><strong>Validate</strong><span>Fixtures, workload arms and recovery evidence</span></li></ol>
+      <figcaption>Research workflow. The stages describe how evidence is developed and reproduced.</figcaption>
+    </figure>
+    <div class="paper-body prose">
+      <section><h2>Observer overhead</h2><p>The integration report records 20 samples per release CLI command. The <code>resources</code> command had a median wall time of <strong>12.91 ms</strong>, including <strong>5.60 ms</strong> median hardware collection on the report host. This measures diagnostic overhead. Physical workload gains remain unverified.</p><p><a href={source("docs/resource-engine/REPORT.md#performance-scope")}>Read the measurement method and limitations</a> · <a href={source("docs/resource-engine/overhead.json")}>Inspect raw results</a></p></section>
+      <section><h2>Policy and control evidence</h2><p>Placement experiments compare candidate decisions with an independent oracle. Workload validation uses matched arms to separate the observer and policy overhead from an intervention. Disposable cgroup tests and physical acceptance have separate requirements.</p></section>
+      <section><h2>References</h2><ul class="references">
+        <li><a href={source("docs/RESEARCH-HISTORY.md")}>Research history and reproducibility index</a></li>
+        <li><a href={source("docs/reports/TASK-012-FASTPATH-RELIABILITY-REPORT.md")}>FastPath reliability and rollback</a></li>
+        <li><a href={source("docs/reports/TASK-015C-REAL-KERNEL-TRANSACTION-REPORT.md")}>Disposable kernel transaction evidence</a></li>
+        <li><a href={source("docs/reports/TASK-017-REAL-WORKLOAD-VALIDATION-REPORT.md")}>Matched workload validation</a></li>
+      </ul></section>
+    </div>
+  </article>
+</Inside>

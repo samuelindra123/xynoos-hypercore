@@ -1,0 +1,84 @@
+<section id="install" class="wrap install-section">
+  <div class="section-head">
+    <div>
+      <div class="eyebrow">AVAILABLE / EXPERIMENTAL DEVELOPER PREVIEW</div><h2>
+        From curiosity<br />to your <em>terminal.</em>
+      </h2>
+    </div><p>
+      One command. A verified, rootless install. Observe your system without a
+      source checkout or a background optimizer.
+    </p>
+  </div><div class="install-console">
+    <div class="install-console-top">
+      <span class="mono"
+        ><i class="live-point"></i> XYNOOS HYPERCORE / LINUX x86_64</span
+      ><button
+        id="copy-install"
+        type="button"
+        aria-label="Copy the official Xynoos installation command"
+        >Copy command <span aria-hidden="true">↗</span></button>
+    </div><pre
+      tabindex="0"
+      aria-label="Official installation command"><code id="install-command">curl -fsSL https://raw.githubusercontent.com/samuelindra123/xynoos-hypercore/main/install.sh | sh &amp;&amp; export PATH="$HOME/.local/bin:$PATH"</code></pre><div
+      class="install-console-bottom"
+    >
+      <span>PINNED RELEASE KEY · SIGNED MANIFEST · SHA256</span><span
+        id="install-copy-status"
+        role="status"
+        aria-live="polite">Ready when you are.</span>
+    </div>
+  </div><div class="install-followup">
+    <div>
+      <span class="mono">YOUR FIRST TWO COMMANDS</span><code>xynoos doctor</code
+      ><code>xynoos status</code>
+    </div><p>
+      Linux x86_64 · curl, Python 3.9+, OpenSSL 3, CA certificates.<br />Public
+      install tested on Ubuntu 24.04. Debian 13 / N5000 hardware validation
+      pending. No physical kernel mutation.
+    </p>
+  </div><div class="install-links">
+    <a
+      class="text-link"
+      href="https://github.com/samuelindra123/xynoos-hypercore/releases"
+      >Release notes &amp; assets ↗</a
+    ><a
+      class="text-link"
+      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/INSTALL.md"
+      >Bootstrap trust &amp; pinned verification ↗</a
+    ><a
+      class="text-link"
+      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/N5000-PREVIEW-VALIDATION.md"
+      >N5000 validation protocol ↗</a>
+  </div><p class="install-trust">
+    Native APT and direct Debian downloads: first signed publication pending.
+    The preview repository will support ordinary APT installation and upgrades
+    after public verification. <a
+      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/distribution/INSTALLATION.md"
+      >Debian channel status and installation methods ↗</a>
+  </p><div class="install-links">
+    <a
+      class="text-link"
+      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/wiki/Home.md"
+      >Developer Wiki sources ↗</a
+    ><a
+      class="text-link"
+      href="https://github.com/samuelindra123/xynoos-hypercore/wiki"
+      >Official Wiki location (publication pending) ↗</a
+    ><a
+      class="text-link"
+      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/wiki/Development-Setup.md"
+      >Development guide ↗</a
+    ><a
+      class="text-link"
+      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/wiki/Security-Policy.md"
+      >Security ↗</a
+    ><a
+      class="text-link"
+      href="https://github.com/samuelindra123/xynoos-hypercore/blob/main/docs/debian/HARDWARE.md"
+      >Hardware compatibility ↗</a>
+  </div><p class="install-trust">
+    The convenience bootstrap starts with GitHub HTTPS trust. The installer then
+    requires the pinned Ed25519 release key before executing the release binary.
+    Read the trust model before installing.
+  </p>
+</section>
