@@ -85,7 +85,7 @@ pub fn discover() -> Capabilities {
     }
 }
 
-fn validate_telemetry(
+pub fn validate_telemetry(
     snapshot: &SystemSnapshot,
     now: Instant,
     action: Action,
@@ -121,6 +121,12 @@ fn validate_telemetry(
     Ok(())
 }
 
+mod bound_child;
+pub mod child_memory;
+pub mod controller;
+pub mod empty_child_coordinator;
+pub mod safety;
+pub mod systemd_identity;
 pub mod transaction;
 
 /// Builds the v1 contract at decision time, so its age cannot be frozen by a caller.

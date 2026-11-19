@@ -26,6 +26,8 @@ pub trait Backend {
     fn identity(&mut self) -> Result<Identity, String>;
     fn read_low(&mut self) -> Result<u64, String>;
     fn write_low(&mut self, value: u64) -> Result<(), String>;
+    /// Refuse restoration while a controlled process might still be running.
+    fn ready_to_restore(&mut self) -> Result<(), String>;
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -34,8 +36,10 @@ pub enum Outcome {
     Declined,
     Conflict,
     ApplyFailed,
+    Ambiguous,
     VerificationFailed,
     RollbackFailed,
+    OperationFailed,
 }
 #[derive(Debug, Serialize)]
 pub struct TransactionReport {
@@ -53,6 +57,18 @@ pub fn run<B: Backend>(
     snapshot: &SystemSnapshot,
     action: Action,
     authorized: bool,
+) -> TransactionReport {
+    run_during(backend, snapshot, action, authorized, |_| Ok(()))
+}
+
+/// Invoke a bounded operation only after verified apply; always attempt guarded restoration.
+/// The callback must stop all workload processes before returning, including on error.
+pub fn run_during<B: Backend>(
+    backend: &mut B,
+    snapshot: &SystemSnapshot,
+    action: Action,
+    authorized: bool,
+    operation: impl FnOnce(&mut B) -> Result<(), String>,
 ) -> TransactionReport {
     let Action::MemoryLow { bytes } = action;
     let mut report = TransactionReport {
@@ -100,12 +116,18 @@ pub fn run<B: Backend>(
         report.outcome = Outcome::Restored;
         report
             .events
-            .push("already at requested value; no write".into());
+            .push("already at requested value; no write; operation declined".into());
+        report.outcome = Outcome::Declined;
         return report;
     }
     let applied = backend.write_low(bytes);
     if let Err(e) = &applied {
         report.events.push(format!("apply failed: {e}"));
+        report.outcome = Outcome::Ambiguous;
+        report
+            .events
+            .push("write effect unresolved; no callback, retry or rollback authorized".into());
+        return report;
     }
     let verification = check(backend, id, bytes);
     if let Err(e) = &verification {
@@ -129,6 +151,22 @@ pub fn run<B: Backend>(
         }
         return report;
     }
+    // Never release a workload after a failed write, even if the requested value appeared.
+    let mut operation_failed = false;
+    if applied.is_ok() {
+        if let Err(e) = operation(backend) {
+            operation_failed = true;
+            report.events.push(format!("operation failed: {e}"));
+        } else {
+            report.events.push("operation completed".into());
+        }
+    }
+    // Never restore while a workload may still be running.
+    if let Err(e) = backend.ready_to_restore() {
+        report.outcome = Outcome::Conflict;
+        report.events.push(format!("restoration blocked: {e}"));
+        return report;
+    }
     // Revalidate immediately before restoring; never intentionally overwrite a known change.
     if let Err(e) = check(backend, id, bytes) {
         report.outcome = Outcome::Conflict;
@@ -147,6 +185,8 @@ pub fn run<B: Backend>(
     }
     report.outcome = if applied.is_err() {
         Outcome::ApplyFailed
+    } else if operation_failed {
+        Outcome::OperationFailed
     } else {
         Outcome::Restored
     };
@@ -174,11 +214,18 @@ pub struct DisposableCgroup {
     name: std::ffi::CString,
     id: Identity,
     cleanup_on_drop: bool,
+    member: Option<xynoos_pressureiq::workload::Identity>,
+    unresolved: bool,
+}
+/// No production or fixture caller may enable physical cgroup mutation.
+pub(crate) fn physical_mutation_disabled() -> Result<(), String> {
+    Err("physical cgroup mutation disabled in all builds".into())
 }
 impl DisposableCgroup {
     /// Creates an empty child only after authorization and ownership/delegation checks.
     /// A non-root effective uid is required; no elevation is attempted.
     pub fn create(parent: &Path, authorized: bool) -> Result<Self, String> {
+        physical_mutation_disabled()?;
         if !authorized {
             return Err("explicit authorization required".into());
         }
@@ -275,6 +322,8 @@ impl DisposableCgroup {
                 name: name.clone(),
                 id,
                 cleanup_on_drop: true,
+                member: None,
+                unresolved: false,
             })
         })();
         if let Err(error) = result {
@@ -306,11 +355,67 @@ impl DisposableCgroup {
     }
 }
 impl DisposableCgroup {
+    /// Place a child owned by this process. The caller must keep it gated until
+    /// `verify_child` succeeds and must kill and reap it on every error path.
+    pub fn place_child(&mut self, child: &std::process::Child) -> Result<(), String> {
+        physical_mutation_disabled()?;
+        if self.member.is_some() {
+            return Err("target already used".into());
+        }
+        self.identity()?;
+        let id = xynoos_pressureiq::workload::identify(child.id())
+            .map_err(|e| format!("child identity: {e:?}"))?;
+        let control = openat(self.dir.as_raw_fd(), c"cgroup.procs", libc::O_WRONLY)?;
+        use std::os::unix::fs::FileExt;
+        let text = id.pid.to_string();
+        let written = control
+            .write_at(text.as_bytes(), 0)
+            .map_err(|e| format!("placement: {e}"))?;
+        if written != text.len() {
+            return Err("short placement write".into());
+        }
+        self.member = Some(id);
+        self.verify_child()
+    }
+
+    /// Verify exact single-process membership, process start time and cgroup identity.
+    pub fn verify_child(&mut self) -> Result<(), String> {
+        let id = self.member.clone().ok_or("no child placed")?;
+        if xynoos_pressureiq::workload::identify(id.pid)
+            .map_err(|e| format!("child identity: {e:?}"))?
+            != id
+        {
+            return Err("child identity changed".into());
+        }
+        let snapshot = xynoos_pressureiq::cgroup_pressure::collect(&id)
+            .map_err(|e| format!("membership: {e:?}"))?;
+        if snapshot.cgroup.device != self.id.device || snapshot.cgroup.inode != self.id.inode {
+            return Err("child cgroup identity mismatch".into());
+        }
+        self.identity()?;
+        if read_at(&self.dir, c"cgroup.procs")?.trim() != id.pid.to_string() {
+            return Err("target does not contain exactly the child".into());
+        }
+        Ok(())
+    }
+
+    /// Prevent all further control writes when child termination cannot be verified.
+    pub fn mark_unresolved(&mut self) {
+        self.unresolved = true;
+        self.cleanup_on_drop = false;
+    }
+
+    /// Preserve the target for operator inspection after ambiguous state or rollback failure.
+    pub fn preserve(mut self) {
+        self.cleanup_on_drop = false;
+    }
+
     /// Remove the empty disposable target explicitly and report cleanup errors.
     pub fn cleanup(mut self) -> Result<(), String> {
+        physical_mutation_disabled()?;
         // A failed explicit cleanup must not be followed by an unreported retry in Drop.
         self.cleanup_on_drop = false;
-        self.identity()?;
+        self.ready_to_restore()?;
         // SAFETY: valid descriptor and name; kernel rejects populated groups.
         if unsafe {
             libc::unlinkat(
@@ -327,6 +432,9 @@ impl DisposableCgroup {
 }
 impl Backend for DisposableCgroup {
     fn identity(&mut self) -> Result<Identity, String> {
+        if self.unresolved {
+            return Err("worker termination unresolved; target preserved".into());
+        }
         let current = openat(
             self.parent.as_raw_fd(),
             &self.name,
@@ -335,12 +443,27 @@ impl Backend for DisposableCgroup {
         let dm = current.metadata().map_err(|e| e.to_string())?;
         let control = openat(current.as_raw_fd(), c"memory.low", libc::O_RDONLY)?;
         let cm = control.metadata().map_err(|e| e.to_string())?;
-        if !read_at(&current, c"cgroup.procs")?.trim().is_empty()
+        let members = read_at(&current, c"cgroup.procs")?;
+        let members = members.trim();
+        let allowed = match &self.member {
+            None => members.is_empty(),
+            Some(id) if members == id.pid.to_string() => {
+                xynoos_pressureiq::workload::identify(id.pid).is_ok_and(|current| current == *id)
+            }
+            Some(id) if members.is_empty() => {
+                matches!(
+                    xynoos_pressureiq::workload::identify(id.pid),
+                    Err(xynoos_pressureiq::Error::Unsupported)
+                )
+            }
+            Some(_) => false,
+        };
+        if !allowed
             || !read_at(&current, c"cgroup.stat")?
                 .lines()
                 .any(|l| l.trim() == "nr_descendants 0")
         {
-            return Err("cgroup no longer empty or has descendants".into());
+            return Err("unexpected cgroup membership or descendants".into());
         }
         let id = Identity {
             device: dm.dev(),
@@ -352,6 +475,13 @@ impl Backend for DisposableCgroup {
         }
         Ok(id)
     }
+    fn ready_to_restore(&mut self) -> Result<(), String> {
+        self.identity()?;
+        if !read_at(&self.dir, c"cgroup.procs")?.trim().is_empty() {
+            return Err("controlled target still populated".into());
+        }
+        Ok(())
+    }
     fn read_low(&mut self) -> Result<u64, String> {
         read_at(&self.dir, c"memory.low")?
             .trim()
@@ -359,6 +489,7 @@ impl Backend for DisposableCgroup {
             .map_err(|_| "invalid memory.low".into())
     }
     fn write_low(&mut self, value: u64) -> Result<(), String> {
+        physical_mutation_disabled()?;
         use std::os::unix::fs::FileExt;
         let s = value.to_string();
         let n = self
@@ -373,11 +504,11 @@ impl Backend for DisposableCgroup {
 }
 impl Drop for DisposableCgroup {
     fn drop(&mut self) {
-        if !self.cleanup_on_drop {
+        if physical_mutation_disabled().is_err() || !self.cleanup_on_drop {
             return;
         }
         // Do not deliberately remove a replacement target. The final check/removal is not atomic.
-        if self.identity().is_err() {
+        if self.ready_to_restore().is_err() {
             return;
         }
         // SAFETY: removal fails for a populated cgroup.
@@ -390,7 +521,7 @@ impl Drop for DisposableCgroup {
         }
     }
 }
-fn openat(fd: i32, name: &std::ffi::CStr, flags: i32) -> Result<File, String> {
+pub(crate) fn openat(fd: i32, name: &std::ffi::CStr, flags: i32) -> Result<File, String> {
     // SAFETY: valid C string; O_NOFOLLOW prevents final symlink traversal.
     let raw = unsafe {
         libc::openat(
@@ -406,7 +537,7 @@ fn openat(fd: i32, name: &std::ffi::CStr, flags: i32) -> Result<File, String> {
         Ok(unsafe { File::from_raw_fd(raw) })
     }
 }
-fn open_absolute_dir(path: &Path) -> Result<File, String> {
+pub(crate) fn open_absolute_dir(path: &Path) -> Result<File, String> {
     use std::os::unix::ffi::OsStrExt;
     if !path.is_absolute() {
         return Err("parent must be absolute".into());
@@ -421,7 +552,7 @@ fn open_absolute_dir(path: &Path) -> Result<File, String> {
     }
     Ok(dir)
 }
-fn read_at(dir: &File, name: &std::ffi::CStr) -> Result<String, String> {
+pub(crate) fn read_at(dir: &File, name: &std::ffi::CStr) -> Result<String, String> {
     let f = openat(dir.as_raw_fd(), name, libc::O_RDONLY)?;
     let mut s = String::new();
     f.take(4097)
@@ -431,4 +562,83 @@ fn read_at(dir: &File, name: &std::ffi::CStr) -> Result<String, String> {
         return Err("control read too large".into());
     }
     Ok(s)
+}
+
+/// Read-only descriptor-relative manager and parent inspection; this is not
+/// authorization to mutate the parent or proof of systemd unit ownership.
+#[derive(Debug, Serialize)]
+pub struct ManagerParentInspection {
+    pub parent_device: u64,
+    pub parent_inode: u64,
+    pub manager_device: u64,
+    pub manager_inode: u64,
+    pub controllers: String,
+    pub enabled: String,
+    pub parent_empty: bool,
+}
+
+pub fn inspect_manager_parent(parent_path: &Path) -> Result<ManagerParentInspection, String> {
+    let pid = std::process::id();
+    let process = xynoos_pressureiq::workload::identify(pid)
+        .map_err(|e| format!("manager identity: {e:?}"))?;
+    let parent = open_absolute_dir(parent_path)?;
+    let meta = parent.metadata().map_err(|e| e.to_string())?;
+    // SAFETY: geteuid has no preconditions.
+    if unsafe { libc::geteuid() } == 0
+        || meta.uid() != unsafe { libc::geteuid() }
+        || meta.mode() & 0o022 != 0
+    {
+        return Err("parent ownership or mode invalid".into());
+    }
+    let mut st = std::mem::MaybeUninit::<libc::statfs>::uninit();
+    // SAFETY: parent is an open descriptor and st is valid output storage.
+    if unsafe { libc::fstatfs(parent.as_raw_fd(), st.as_mut_ptr()) } != 0 {
+        return Err(io::Error::last_os_error().to_string());
+    }
+    // SAFETY: successful fstatfs initialized st.
+    if unsafe { st.assume_init() }.f_type as u64 != 0x6367_7270 {
+        return Err("parent is not cgroup v2".into());
+    }
+    let up = openat(
+        parent.as_raw_fd(),
+        c"..",
+        libc::O_RDONLY | libc::O_DIRECTORY,
+    )?;
+    let up_meta = up.metadata().map_err(|e| e.to_string())?;
+    if up_meta.dev() != meta.dev() || up_meta.ino() == meta.ino() {
+        return Err("cgroup mount root refused".into());
+    }
+    let manager = openat(
+        parent.as_raw_fd(),
+        c"manager",
+        libc::O_RDONLY | libc::O_DIRECTORY,
+    )?;
+    let mm = manager.metadata().map_err(|e| e.to_string())?;
+    let observed = xynoos_pressureiq::cgroup_pressure::collect(&process)
+        .map_err(|e| format!("manager membership: {e:?}"))?;
+    if observed.cgroup.device != mm.dev() || observed.cgroup.inode != mm.ino() {
+        return Err("manager cgroup identity mismatch".into());
+    }
+    let procs = read_at(&parent, c"cgroup.procs")?;
+    let controllers = read_at(&parent, c"cgroup.controllers")?;
+    let enabled = read_at(&parent, c"cgroup.subtree_control")?;
+    let check = open_absolute_dir(parent_path)?
+        .metadata()
+        .map_err(|e| e.to_string())?;
+    let membership = xynoos_pressureiq::cgroup_pressure::collect(&process)
+        .map_err(|e| format!("manager membership changed: {e:?}"))?;
+    if (check.dev(), check.ino()) != (meta.dev(), meta.ino())
+        || (membership.cgroup.device, membership.cgroup.inode) != (mm.dev(), mm.ino())
+    {
+        return Err("parent or manager identity changed".into());
+    }
+    Ok(ManagerParentInspection {
+        parent_device: meta.dev(),
+        parent_inode: meta.ino(),
+        manager_device: mm.dev(),
+        manager_inode: mm.ino(),
+        controllers,
+        enabled,
+        parent_empty: procs.trim().is_empty(),
+    })
 }

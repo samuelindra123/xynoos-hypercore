@@ -1,0 +1,37 @@
+name: Historical PR safety validation
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [review/control-safety-foundation, task-018-real-optimization]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: historical-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  validate:
+    if: github.event_name != 'pull_request' || contains(fromJSON('["review/control-safety-foundation","task-018-real-optimization"]'), github.head_ref)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install exact Rust toolchain
+        run: rustup toolchain install 1.100.0 --profile minimal --component rustfmt --component clippy && rustup default 1.100.0
+      - name: Verify boundaries and all Rust targets
+        run: |
+          set -euo pipefail
+          cargo fmt --all -- --check
+          cargo test --workspace --all-targets --locked
+          cargo test --workspace --doc --locked
+          cargo clippy --workspace --all-targets --locked -- -D warnings
+          RUSTDOCFLAGS='-D warnings' cargo doc --workspace --no-deps --locked
+          cargo build --workspace --release --locked
+      - name: Fixture and owned-process Python lifecycle tests
+        run: python3 -m unittest discover -s scripts/tests -p 'test_*.py' -v
+      - name: Launcher fixture tests
+        run: bash scripts/tests/test-018e-launcher.sh

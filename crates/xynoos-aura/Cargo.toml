@@ -1,4 +1,5 @@
 [package]
+autoexamples = false
 name = "xynoos-aura"
 version = "0.1.0"
 edition = "2021"
@@ -8,3 +9,43 @@ license = "GPL-3.0-only"
 serde = { version = "1", features = ["derive"] }
 xynoos-pressureiq = { path = "../xynoos-pressureiq" }
 xynoos-core = { path = "../xynoos-core" }
+
+[[example]]
+name = "completion"
+path = "examples/completion.rs"
+
+[[example]]
+name = "fallible"
+path = "examples/fallible.rs"
+
+[[example]]
+name = "fastpath"
+path = "examples/fastpath.rs"
+
+[[example]]
+name = "reliability"
+path = "examples/reliability.rs"
+
+[[example]]
+name = "research"
+path = "examples/research.rs"
+
+[[example]]
+name = "scalability"
+path = "examples/scalability.rs"
+
+[[example]]
+name = "selector_research"
+path = "examples/selector_research.rs"
+
+[[example]]
+name = "tracker_validation"
+path = "examples/tracker_validation.rs"
+
+[[example]]
+name = "typed_research"
+path = "examples/typed_research.rs"
+
+[[example]]
+name = "aura_validation"
+path = "examples/validation.rs"
