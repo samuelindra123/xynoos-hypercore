@@ -1,5 +1,5 @@
 export const repository = "https://github.com/samuelindra123/xynoos-hypercore";
-export const publicSite = "https://samuelindra123.github.io/xynoos-hypercore/";
+export const publicSite = "https://website-xybc.vercel.app/";
 export const source = (path: string) => `${repository}/blob/main/${path}`;
 export const issue = (number: number) => `${repository}/issues/${number}`;
 export const release = (tag: string) => `${repository}/releases/tag/${tag}`;
