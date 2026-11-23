@@ -117,4 +117,3 @@ Pembaruan HyperMemory melengkapi engine penyimpanan memori userspace dengan jami
    - `reset_telemetry(&self)` mereset counter operasional.
    - `peek(&self, id: PageId) -> Result<Vec<u8>, Error>` memungkinkan inspeksi diagnostik non-intrusif tanpa memajukan access tick atau menambah hit counter.
    - Struktur `Stats` tetap memegang akuntansi penyimpanan fisik murni (`stored_bytes`, `accounted_bytes`, `buffer_capacity_bytes`, `metadata_bytes_lower_bound`) menjaga invarian historis.
-
