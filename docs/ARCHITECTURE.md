@@ -82,3 +82,39 @@ direktori maksimum 256 entri (hasil dapat terpotong pada sistem besar).
 Sampling dibatasi 1–60 sampel dengan interval 100–60000 ms dan sleep antar
 sampel; data disimpan maksimal dua snapshot dalam CLI. Read-only collector ini
 tidak mengubah kernel, cgroup, swap atau kebijakan AURA.
+
+## HyperMemory Milestone A & B: Correctness, Deterministic Eviction & Observability
+
+Pembaruan HyperMemory melengkapi engine penyimpanan memori userspace dengan jaminan correctness, penggusuran terikat (bounded deterministic eviction), dan observabilitas operasional:
+
+1. **Siklus Hidup Halaman Eksplisit**:
+   - `PageLifecycleState::Active` dan `PageLifecycleState::Evicted` memodelkan status halaman secara terverifikasi.
+   - `PageStore::contains(&self, id: PageId) -> bool` memeriksa keberadaan halaman secara O(1).
+   - `PageStore::lifecycle_state(&self, id: PageId) -> PageLifecycleState` memberikan inspeksi status tanpa mutasi.
+
+2. **Pengambilan Tanpa Alokasi (`get_into`)**:
+   - `get_into(&self, id: PageId, out: &mut [u8]) -> Result<usize, Error>` melakukan dekompresi langsung ke buffer milik pemanggil.
+   - Menghindari overhead alokasi `Vec<u8>` pada hot-path pembacaan.
+   - Mengembalikan `Error::OutputBufferTooSmall` bila ukuran buffer pemanggil kurang dari `page_size`.
+   - `get(&self, id: PageId)` tetap tersedia untuk backward compatibility dengan mengalokasikan buffer dan mendelegasikan ke `get_into`.
+
+3. **Pembaruan Halaman Atomik (`update`)**:
+   - `update(&mut self, id: PageId, data: &[u8]) -> Result<(), Error>` mengganti isi halaman secara in-place.
+   - Mengevaluasi delta budget sebelum komit; jika budget terlampaui atau input tidak valid, modifikasi dibatalkan tanpa mengubah state yang ada (atomic rollback).
+   - Menghitung ulang CRC32 payload dan original data serta memperbarui `last_accessed_tick`.
+
+4. **Mesin Penggusuran Deterministik (`EvictionPolicy`)**:
+   - `EvictionPolicy::Reject`: perilaku default historis (mengembalikan `Error::Full` atau `Error::BudgetExceeded`).
+   - `EvictionPolicy::Lru`: menggusur halaman yang paling lama tidak diakses (`last_accessed_tick` terendah; seri dipecahkan secara deterministik dengan `PageId.0` terendah).
+   - `EvictionPolicy::Fifo`: menggusur halaman yang paling awal disisipkan (`inserted_tick` terendah; seri dipecahkan dengan `PageId.0`).
+   - `insert_with_policy(&mut self, data: &[u8], policy: EvictionPolicy) -> Result<PageId, Error>`: secara otomatis menggusur halaman jika kapasitas penuh atau budget byte terlampaui sampai entri baru dapat dimuat.
+   - `evict(&mut self) -> Result<Option<PageId>, Error>`: API eksplisit untuk menggusur satu kandidat LRU.
+
+5. **Observabilitas & Telemetri Operasional (`Telemetry`)**:
+   - `telemetry(&self) -> Telemetry` mencatat metrik runtime ringan:
+     - `hit_count`, `miss_count`, `eviction_count`, `insert_count`, `update_count`, `remove_count`, `corruption_count`.
+     - `hit_ratio(&self) -> Option<f64>` menghitung rasio keberhasilan cache secara tepat.
+   - `reset_telemetry(&self)` mereset counter operasional.
+   - `peek(&self, id: PageId) -> Result<Vec<u8>, Error>` memungkinkan inspeksi diagnostik non-intrusif tanpa memajukan access tick atau menambah hit counter.
+   - Struktur `Stats` tetap memegang akuntansi penyimpanan fisik murni (`stored_bytes`, `accounted_bytes`, `buffer_capacity_bytes`, `metadata_bytes_lower_bound`) menjaga invarian historis.
+
