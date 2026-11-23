@@ -60,6 +60,10 @@ jobs:
         run: |
           target/release/xynoos-bench mixed > benchmark-results/mixed.csv
           cat benchmark-results/mixed.csv
+      - name: Run Eviction Scalability Benchmark
+        run: |
+          target/release/xynoos-bench scalability > benchmark-results/scalability.csv
+          cat benchmark-results/scalability.csv
       - name: Archive Benchmark Artifacts
         uses: actions/upload-artifact@v4
         with:

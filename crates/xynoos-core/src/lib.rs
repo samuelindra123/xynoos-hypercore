@@ -21,8 +21,14 @@ pub struct CostEstimate {
 /// Explicit lifecycle state of a page stored in a memory engine or cache tier.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PageLifecycleState {
+    /// Page is currently active and stored in the memory engine.
     Active,
+    /// Page was issued and was evicted by a capacity or budget policy.
     Evicted,
+    /// Page was issued and was explicitly removed by caller request.
+    Removed,
+    /// PageId was never issued by this store instance.
+    NeverCreated,
 }
 
 /// Deterministic eviction policies for bounded memory storage.

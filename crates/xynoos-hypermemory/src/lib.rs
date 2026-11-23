@@ -1,5 +1,10 @@
 #![forbid(unsafe_code)]
-use std::{cell::Cell, collections::HashMap, fmt, mem::size_of};
+use std::{
+    cell::Cell,
+    collections::{HashMap, VecDeque},
+    fmt,
+    mem::size_of,
+};
 pub use xynoos_core::{EvictionPolicy, PageId, PageLifecycleState};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -84,6 +89,7 @@ pub struct PageStore {
     budget: usize,
     accounted: usize,
     pages: HashMap<PageId, Entry>,
+    evicted_history: VecDeque<PageId>,
     tick: Cell<u64>,
     hit_count: Cell<u64>,
     miss_count: Cell<u64>,
@@ -113,6 +119,7 @@ impl PageStore {
             budget: usize::MAX,
             accounted: 0,
             pages: HashMap::new(),
+            evicted_history: VecDeque::new(),
             tick: Cell::new(0),
             hit_count: Cell::new(0),
             miss_count: Cell::new(0),
@@ -151,12 +158,18 @@ impl PageStore {
     pub fn lifecycle_state(&self, id: PageId) -> PageLifecycleState {
         if self.pages.contains_key(&id) {
             PageLifecycleState::Active
-        } else {
+        } else if id.0 >= self.next {
+            PageLifecycleState::NeverCreated
+        } else if self.evicted_history.contains(&id) {
             PageLifecycleState::Evicted
+        } else {
+            PageLifecycleState::Removed
         }
     }
 
     /// Menyisipkan halaman dengan kebijakan penggusuran yang ditentukan.
+    /// Memiliki jaminan transaksi fail-closed: jika terjadi error (alokasi, kehabisan ID/tick,
+    /// atau budget tidak mencukupi), tidak ada halaman yang tergusur dan state tetap utuh.
     pub fn insert_with_policy(
         &mut self,
         data: &[u8],
@@ -171,6 +184,14 @@ impl PageStore {
         if self.capacity == 0 {
             return Err(Error::Full);
         }
+
+        // 1. Pre-validasi kehabisan ID dan Tick SEBELUM melakukan penggusuran!
+        let next_id = self.next.checked_add(1).ok_or(Error::IdExhausted)?;
+        let id = PageId(self.next);
+        let tick = self.tick.get();
+        let next_tick = tick.checked_add(1).ok_or(Error::IdExhausted)?;
+
+        // 2. Pre-kompresi dan evaluasi biaya
         let compressed = lz4_flex::block::compress(data);
         // Vec capacity tidak pernah lebih kecil dari len; lewati alokasi raw jika
         // kompresi sudah pasti lebih kecil dari kandidat raw mana pun.
@@ -196,6 +217,10 @@ impl PageStore {
             return Err(Error::BudgetExceeded);
         }
 
+        // 3. Pre-reserve slot HashMap SEBELUM penggusuran untuk menjamin alokasi sukses
+        self.pages.try_reserve(1).map_err(|_| Error::Allocation)?;
+
+        // 4. Eksekusi penggusuran jika diizinkan policy
         if policy != EvictionPolicy::Reject {
             while self.pages.len() >= self.capacity {
                 if self.evict_with_policy(policy)?.is_none() {
@@ -223,11 +248,7 @@ impl PageStore {
             }
         }
 
-        let next = self.next.checked_add(1).ok_or(Error::IdExhausted)?;
-        let id = PageId(self.next);
-
-        self.pages.try_reserve(1).map_err(|_| Error::Allocation)?;
-        let tick = self.advance_tick()?;
+        // 5. Commit point non-fallible
         let entry = Entry {
             payload_crc: crc32fast::hash(&payload),
             original_crc: crc32fast::hash(data),
@@ -237,7 +258,8 @@ impl PageStore {
             last_accessed_tick: Cell::new(tick),
         };
         self.pages.insert(id, entry);
-        self.next = next;
+        self.next = next_id;
+        self.tick.set(next_tick);
         self.accounted = self.accounted.checked_add(cost).expect("checked budget");
         self.insert_count
             .set(self.insert_count.get().saturating_add(1));
@@ -350,7 +372,6 @@ impl PageStore {
             let old_entry = match self.pages.get(&id) {
                 Some(e) => e,
                 None => {
-                    self.miss_count.set(self.miss_count.get().saturating_add(1));
                     return Err(Error::NotFound);
                 }
             };
@@ -360,6 +381,10 @@ impl PageStore {
                 .checked_add(size_of::<(PageId, Entry)>())
                 .expect("validated cost")
         };
+
+        // Pre-validasi kehabisan tick sebelum mutasi
+        let tick = self.tick.get();
+        let next_tick = tick.checked_add(1).ok_or(Error::IdExhausted)?;
 
         let compressed = lz4_flex::block::compress(data);
         let (payload, raw) = if self.adaptive && compressed.capacity() >= data.len() {
@@ -398,13 +423,13 @@ impl PageStore {
                 .expect("accounting invariant")
         };
 
-        let tick = self.advance_tick()?;
         let entry = self.pages.get_mut(&id).expect("checked existence");
         entry.payload_crc = crc32fast::hash(&payload);
         entry.original_crc = crc32fast::hash(data);
         entry.payload = payload;
         entry.raw = raw;
         entry.last_accessed_tick.set(tick);
+        self.tick.set(next_tick);
         self.accounted = new_accounted;
         self.update_count
             .set(self.update_count.get().saturating_add(1));
@@ -415,7 +440,6 @@ impl PageStore {
         let entry = match self.pages.remove(&id) {
             Some(e) => e,
             None => {
-                self.miss_count.set(self.miss_count.get().saturating_add(1));
                 return Err(Error::NotFound);
             }
         };
@@ -429,9 +453,14 @@ impl PageStore {
             .checked_sub(cost)
             .expect("accounting invariant");
         if is_eviction {
+            self.evicted_history.push_back(id);
+            if self.evicted_history.len() > self.capacity.max(16) {
+                self.evicted_history.pop_front();
+            }
             self.eviction_count
                 .set(self.eviction_count.get().saturating_add(1));
         } else {
+            self.evicted_history.retain(|i| *i != id);
             self.remove_count
                 .set(self.remove_count.get().saturating_add(1));
         }
@@ -873,17 +902,44 @@ mod lifecycle_and_retrieval_tests {
     #[test]
     fn contains_and_lifecycle_state() {
         let mut s = PageStore::with_capacity(2).unwrap();
+
+        // NeverCreated sebelum halaman pernah diterbitkan
+        assert_eq!(
+            s.lifecycle_state(PageId(0)),
+            PageLifecycleState::NeverCreated
+        );
+        assert_eq!(
+            s.lifecycle_state(PageId(999)),
+            PageLifecycleState::NeverCreated
+        );
+        assert!(!s.contains(PageId(0)));
+
         let a = s.insert(&[10; 4096]).unwrap();
         assert!(s.contains(a));
         assert_eq!(s.lifecycle_state(a), PageLifecycleState::Active);
 
         let unk = PageId(999);
         assert!(!s.contains(unk));
-        assert_eq!(s.lifecycle_state(unk), PageLifecycleState::Evicted);
+        assert_eq!(s.lifecycle_state(unk), PageLifecycleState::NeverCreated);
 
+        // Penghapusan eksplisit
         s.remove(a).unwrap();
         assert!(!s.contains(a));
-        assert_eq!(s.lifecycle_state(a), PageLifecycleState::Evicted);
+        assert_eq!(s.lifecycle_state(a), PageLifecycleState::Removed);
+
+        // Penghapusan berulang menghasilkan NotFound dan tetap Removed
+        assert_eq!(s.remove(a), Err(Error::NotFound));
+        assert_eq!(s.lifecycle_state(a), PageLifecycleState::Removed);
+
+        // Penggusuran mencatat status Evicted
+        let p1 = s.insert(&[1; 4096]).unwrap();
+        let p2 = s.insert(&[2; 4096]).unwrap();
+        let p3 = s
+            .insert_with_policy(&[3; 4096], EvictionPolicy::Lru)
+            .unwrap();
+        assert_eq!(s.lifecycle_state(p1), PageLifecycleState::Evicted);
+        assert_eq!(s.lifecycle_state(p2), PageLifecycleState::Active);
+        assert_eq!(s.lifecycle_state(p3), PageLifecycleState::Active);
     }
 
     #[test]
@@ -1087,6 +1143,61 @@ mod eviction_tests {
         assert!(!s.contains(a));
         assert!(s.contains(b));
         assert_eq!(s.telemetry().eviction_count, 1);
+    }
+
+    #[test]
+    fn eviction_transaction_safety_on_id_or_tick_or_budget_failure() {
+        let mut s = PageStore::with_capacity(2).unwrap();
+        let a = s.insert(&[1; 4096]).unwrap();
+        let b = s.insert(&[2; 4096]).unwrap();
+        let before_stats = s.stats();
+        let before_telemetry = s.telemetry();
+
+        // 1. Next ID exhausted: must NOT evict a or b!
+        s.next = u64::MAX;
+        let res = s.insert_with_policy(&[3; 4096], EvictionPolicy::Lru);
+        assert_eq!(res, Err(Error::IdExhausted));
+        assert!(s.contains(a));
+        assert!(s.contains(b));
+        assert_eq!(s.stats(), before_stats);
+        assert_eq!(
+            s.telemetry().eviction_count,
+            before_telemetry.eviction_count
+        );
+
+        // Restore next
+        s.next = 2;
+
+        // 2. Tick exhausted: must NOT evict a or b!
+        s.tick.set(u64::MAX);
+        let res = s.insert_with_policy(&[3; 4096], EvictionPolicy::Lru);
+        assert_eq!(res, Err(Error::IdExhausted));
+        assert!(s.contains(a));
+        assert!(s.contains(b));
+        assert_eq!(s.stats(), before_stats);
+        assert_eq!(
+            s.telemetry().eviction_count,
+            before_telemetry.eviction_count
+        );
+
+        // Restore tick
+        s.tick.set(2);
+
+        // 3. Candidate larger than total budget: must NOT evict b1!
+        let mut budget_store = PageStore::adaptive(4096, 2, 2000).unwrap();
+        let b1 = budget_store.insert(&[0; 4096]).unwrap();
+        let mut random_page = vec![0u8; 4096];
+        let mut seed = 42u32;
+        for byte in random_page.iter_mut() {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            *byte = seed as u8;
+        }
+        let res = budget_store.insert_with_policy(&random_page, EvictionPolicy::Lru);
+        assert_eq!(res, Err(Error::BudgetExceeded));
+        assert!(budget_store.contains(b1));
+        assert_eq!(budget_store.telemetry().eviction_count, 0);
     }
 }
 

@@ -87,8 +87,12 @@ tidak mengubah kernel, cgroup, swap atau kebijakan AURA.
 
 Pembaruan HyperMemory melengkapi engine penyimpanan memori userspace dengan jaminan correctness, penggusuran terikat (bounded deterministic eviction), dan observabilitas operasional:
 
-1. **Siklus Hidup Halaman Eksplisit**:
-   - `PageLifecycleState::Active` dan `PageLifecycleState::Evicted` memodelkan status halaman secara terverifikasi.
+1. **Siklus Hidup Halaman Eksplisit (4-State Semantics)**:
+   - `PageLifecycleState` memodelkan 4 status halaman secara terverifikasi:
+     - `Active`: Halaman aktif dan valid di dalam store.
+     - `Evicted`: Halaman pernah dibuat tetapi telah digusur (evicted) oleh kebijakan LRU/FIFO karena batas kapasitas/budget.
+     - `Removed`: Halaman telah dihapus secara eksplisit oleh pemanggil via `remove()`.
+     - `NeverCreated`: ID halaman belum pernah dialokasikan (`PageId >= next`).
    - `PageStore::contains(&self, id: PageId) -> bool` memeriksa keberadaan halaman secara O(1).
    - `PageStore::lifecycle_state(&self, id: PageId) -> PageLifecycleState` memberikan inspeksi status tanpa mutasi.
 
@@ -100,14 +104,18 @@ Pembaruan HyperMemory melengkapi engine penyimpanan memori userspace dengan jami
 
 3. **Pembaruan Halaman Atomik (`update`)**:
    - `update(&mut self, id: PageId, data: &[u8]) -> Result<(), Error>` mengganti isi halaman secara in-place.
-   - Mengevaluasi delta budget sebelum komit; jika budget terlampaui atau input tidak valid, modifikasi dibatalkan tanpa mengubah state yang ada (atomic rollback).
+   - Melakukan pre-validasi tick exhaustion dan delta budget sebelum komit; jika budget terlampaui atau input tidak valid, modifikasi dibatalkan tanpa mengubah state yang ada (atomic rollback).
    - Menghitung ulang CRC32 payload dan original data serta memperbarui `last_accessed_tick`.
 
-4. **Mesin Penggusuran Deterministik (`EvictionPolicy`)**:
+4. **Mesin Penggusuran Deterministik & Keamanan Transaksional (`EvictionPolicy`)**:
    - `EvictionPolicy::Reject`: perilaku default historis (mengembalikan `Error::Full` atau `Error::BudgetExceeded`).
    - `EvictionPolicy::Lru`: menggusur halaman yang paling lama tidak diakses (`last_accessed_tick` terendah; seri dipecahkan secara deterministik dengan `PageId.0` terendah).
    - `EvictionPolicy::Fifo`: menggusur halaman yang paling awal disisipkan (`inserted_tick` terendah; seri dipecahkan dengan `PageId.0`).
-   - `insert_with_policy(&mut self, data: &[u8], policy: EvictionPolicy) -> Result<PageId, Error>`: secara otomatis menggusur halaman jika kapasitas penuh atau budget byte terlampaui sampai entri baru dapat dimuat.
+   - `insert_with_policy(&mut self, data: &[u8], policy: EvictionPolicy) -> Result<PageId, Error>`: menerapkan kontrak fail-closed transaction safety:
+     - Melakukan pre-validasi kehabisan ID (`next.checked_add(1)`) dan Tick (`tick.checked_add(1)`).
+     - Menghitung biaya kompresi kandidat dan memvalidasi `cost <= budget`.
+     - Melakukan pre-reserve slot HashMap (`try_reserve(1)`) sebelum proses penggusuran.
+     - Tidak ada halaman yang digusur apabila operasi penyisipan berpotensi gagal.
    - `evict(&mut self) -> Result<Option<PageId>, Error>`: API eksplisit untuk menggusur satu kandidat LRU.
 
 5. **Observabilitas & Telemetri Operasional (`Telemetry`)**:
