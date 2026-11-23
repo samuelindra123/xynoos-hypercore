@@ -125,3 +125,31 @@ Pembaruan HyperMemory melengkapi engine penyimpanan memori userspace dengan jami
    - `reset_telemetry(&self)` mereset counter operasional.
    - `peek(&self, id: PageId) -> Result<Vec<u8>, Error>` memungkinkan inspeksi diagnostik non-intrusif tanpa memajukan access tick atau menambah hit counter.
    - Struktur `Stats` tetap memegang akuntansi penyimpanan fisik murni (`stored_bytes`, `accounted_bytes`, `buffer_capacity_bytes`, `metadata_bytes_lower_bound`) menjaga invarian historis.
+
+
+## HyperCore Milestone C: AURA Adaptive Memory Tiering
+
+Milestone C mengintegrasikan engine telemetri Linux `PressureIQ`, mesin kebijakan `AURA`, dan penyimpanan fisik `HyperMemory` untuk mengorkestrasi migrasi tingkatan memori (*tiering*) userspace secara otomatis, adaptif, dan deterministik:
+
+1. **Tingkat Tekanan Memori Terstruktur (`MemoryPressure`)**:
+   - `MemoryPressure::Low`: Kapasitas memori longgar. Memprioritaskan throughput baca dan latensi terendah dengan mempertahankan halaman dalam `StorageTier::Memory` (raw byte buffer tanpa overhead dekompresi CPU).
+   - `MemoryPressure::Moderate`: Tekanan mulai terdeteksi (PSI elevated atau memori bebas < 25%). Halaman yang sering/baru diakses (*hot*, latensi <= threshold) dipertahankan di `Memory`, sedangkan halaman jarang diakses (*cold*) dimigrasikan ke `StorageTier::Compressed`.
+   - `MemoryPressure::High`: Tekanan tinggi (PSI sustained, direct reclaim aktif, atau memori bebas < 15%). Seluruh halaman aktif dimigrasikan ke `StorageTier::Compressed` untuk membebaskan ruang memori fisik.
+   - `MemoryPressure::Critical`: Tekanan kritis (swap thrashing terdeteksi atau memori bebas < 5%). Seluruh halaman aktif dipaksa ke `StorageTier::Compressed` guna meminimalkan jejak memori userspace dan mencegah kernel OOM killing.
+
+2. **Jembatan Telemetri Fail-Safe (`PressureBridge`)**:
+   - `PressureBridge::evaluate_pressure(diagnosis: &Diagnosis) -> MemoryPressure` memetakan diagnosis sistem dari `PressureIQ`.
+   - *Kontrak Fallback Telemetri*: Bila telemetri tidak andal (`diagnosis.reliable == false`) akibat pembacaan kedaluwarsa atau kegagalan pembacaan kernel PSI/cgroup, jembatan secara konservatif mengembalikan `MemoryPressure::Moderate`. Hal ini mencegah kepanikan sistem atau dekompresi berlebih saat kondisi sistem tidak dapat dipastikan.
+
+3. **Migrasi Halaman In-Place & Transaksional (`migrate_page`)**:
+   - `PageStore::migrate_page(&mut self, id: PageId, target: StorageTier) -> Result<bool, Error>`:
+     - **Memory -> Compressed**: Mengompresi payload secara in-place via LZ4, memvalidasi CRC32, dan memutakhirkan akuntansi kapasitas (mengurangi `accounted_bytes`). Mengembalikan `Ok(true)` bila terjadi migrasi, atau `Ok(false)` bila halaman sudah di tier target.
+     - **Compressed -> Memory**: Mendekompresi payload ke buffer sementara, memvalidasi CRC32 data asli, dan memeriksa batas budget (`accounted + diff <= budget`) sebelum komit (*fail-closed*). Jika budget terlampaui, halaman tetap berada di tier terkompresi tanpa perubahan data (*atomic rollback*).
+   - `PageStore::page_tier(&self, id: PageId) -> Result<StorageTier, Error>`: Mengetahui status tier halaman saat ini (`Memory` atau `Compressed`) secara O(1).
+   - `PageStore::page_cost_estimate(&self, id: PageId) -> Result<CostEstimate, Error>`: Menghitung estimasi latensi dan ukuran byte dengan penalti resensi akses (`recency_ticks`).
+   - `PageStore::apply_tiering<F>(&mut self, decide: F) -> Result<TieringReport, Error>`: Menerapkan fungsi keputusan ke seluruh halaman aktif dengan pengurutan ID deterministik, menghasilkan `TieringReport`.
+
+4. **Koordinator Tiering AURA (`AuraTieringCoordinator`)**:
+   - Mengorkestrasi evaluasi `PressureIQ` dan eksekusi `HyperMemory` secara non-intrusif:
+     - `step(&self, store: &mut PageStore, diagnosis: &Diagnosis) -> Result<TieringReport, Error>`
+     - `step_with_pressure(&self, store: &mut PageStore, pressure: MemoryPressure) -> Result<TieringReport, Error>`

@@ -5,7 +5,7 @@ use std::{
     fmt,
     mem::size_of,
 };
-pub use xynoos_core::{EvictionPolicy, PageId, PageLifecycleState};
+pub use xynoos_core::{CostEstimate, EvictionPolicy, PageId, PageLifecycleState, StorageTier};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
@@ -70,6 +70,16 @@ impl Stats {
     pub fn compression_ratio(&self) -> Option<f64> {
         (self.original_bytes != 0).then(|| self.stored_bytes as f64 / self.original_bytes as f64)
     }
+}
+
+/// Laporan hasil migrasi tiering adaptif antar tingkatan memori.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TieringReport {
+    pub inspected_pages: usize,
+    pub migrated_to_compressed: usize,
+    pub migrated_to_memory: usize,
+    pub no_change: usize,
+    pub net_accounted_delta: isize,
 }
 /// Batas ukuran simulasi untuk membatasi alokasi setiap pengambilan.
 pub const MAX_PAGE_SIZE: usize = 1024 * 1024;
@@ -502,6 +512,198 @@ impl PageStore {
     /// Menghapus halaman dari store secara eksplisit.
     pub fn remove(&mut self, id: PageId) -> Result<(), Error> {
         self.remove_internal(id, false)
+    }
+
+    /// Mengetahui tingkat penyimpanan (tier) halaman saat ini: Memory (raw) atau Compressed.
+    pub fn page_tier(&self, id: PageId) -> Result<StorageTier, Error> {
+        match self.pages.get(&id) {
+            Some(entry) => {
+                if entry.raw {
+                    Ok(StorageTier::Memory)
+                } else {
+                    Ok(StorageTier::Compressed)
+                }
+            }
+            None => Err(Error::NotFound),
+        }
+    }
+
+    /// Menghitung estimasi biaya halaman (latensi akses dan kapasitas memori).
+    pub fn page_cost_estimate(&self, id: PageId) -> Result<CostEstimate, Error> {
+        let entry = self.pages.get(&id).ok_or(Error::NotFound)?;
+        let bytes = entry
+            .payload
+            .capacity()
+            .checked_add(size_of::<(PageId, Entry)>())
+            .ok_or(Error::BudgetExceeded)?;
+        let recency_penalty = self
+            .tick
+            .get()
+            .saturating_sub(entry.last_accessed_tick.get())
+            .saturating_mul(150);
+        let base_latency: u64 = if entry.raw { 200 } else { 1200 };
+        let latency_ns = base_latency.saturating_add(recency_penalty);
+        Ok(CostEstimate { latency_ns, bytes })
+    }
+
+    /// Memigrasikan halaman secara in-place ke tingkatan penyimpanan target (Memory atau Compressed).
+    /// Mempertahankan jaminan konsistensi transaksional fail-closed: jika migrasi gagal
+    /// (misal karena alokasi atau pelampauan budget saat ekspansi ke raw), halaman tetap utuh.
+    pub fn migrate_page(&mut self, id: PageId, target: StorageTier) -> Result<bool, Error> {
+        let entry = self.pages.get(&id).ok_or(Error::NotFound)?;
+        let current_tier = if entry.raw {
+            StorageTier::Memory
+        } else {
+            StorageTier::Compressed
+        };
+        if current_tier == target {
+            return Ok(false);
+        }
+
+        let old_cost = entry
+            .payload
+            .capacity()
+            .checked_add(size_of::<(PageId, Entry)>())
+            .expect("validated cost");
+
+        match target {
+            StorageTier::Compressed => {
+                let decompressed = &entry.payload;
+                if crc32fast::hash(decompressed) != entry.payload_crc {
+                    self.corruption_count
+                        .set(self.corruption_count.get().saturating_add(1));
+                    return Err(Error::PayloadChecksumMismatch);
+                }
+                let compressed = lz4_flex::block::compress(decompressed);
+                let new_cost = compressed
+                    .capacity()
+                    .checked_add(size_of::<(PageId, Entry)>())
+                    .ok_or(Error::BudgetExceeded)?;
+
+                let new_accounted = if new_cost >= old_cost {
+                    let diff = new_cost - old_cost;
+                    let acc = self
+                        .accounted
+                        .checked_add(diff)
+                        .ok_or(Error::BudgetExceeded)?;
+                    if acc > self.budget {
+                        return Err(Error::BudgetExceeded);
+                    }
+                    acc
+                } else {
+                    let diff = old_cost - new_cost;
+                    self.accounted
+                        .checked_sub(diff)
+                        .expect("accounting invariant")
+                };
+
+                let entry = self.pages.get_mut(&id).expect("checked existence");
+                entry.payload = compressed;
+                entry.raw = false;
+                entry.payload_crc = crc32fast::hash(&entry.payload);
+                self.accounted = new_accounted;
+                self.update_count
+                    .set(self.update_count.get().saturating_add(1));
+                Ok(true)
+            }
+            StorageTier::Memory => {
+                if crc32fast::hash(&entry.payload) != entry.payload_crc {
+                    self.corruption_count
+                        .set(self.corruption_count.get().saturating_add(1));
+                    return Err(Error::PayloadChecksumMismatch);
+                }
+                let mut raw_buf = Vec::new();
+                raw_buf
+                    .try_reserve_exact(self.page_size)
+                    .map_err(|_| Error::Allocation)?;
+                raw_buf.resize(self.page_size, 0);
+                let n = lz4_flex::block::decompress_into(&entry.payload, &mut raw_buf)
+                    .map_err(|_| Error::Decompression)?;
+                if n != self.page_size {
+                    return Err(Error::Decompression);
+                }
+                if crc32fast::hash(&raw_buf) != entry.original_crc {
+                    self.corruption_count
+                        .set(self.corruption_count.get().saturating_add(1));
+                    return Err(Error::ChecksumMismatch);
+                }
+
+                let new_cost = raw_buf
+                    .capacity()
+                    .checked_add(size_of::<(PageId, Entry)>())
+                    .ok_or(Error::BudgetExceeded)?;
+
+                let new_accounted = if new_cost >= old_cost {
+                    let diff = new_cost - old_cost;
+                    let acc = self
+                        .accounted
+                        .checked_add(diff)
+                        .ok_or(Error::BudgetExceeded)?;
+                    if acc > self.budget {
+                        return Err(Error::BudgetExceeded);
+                    }
+                    acc
+                } else {
+                    let diff = old_cost - new_cost;
+                    self.accounted
+                        .checked_sub(diff)
+                        .expect("accounting invariant")
+                };
+
+                let entry = self.pages.get_mut(&id).expect("checked existence");
+                entry.payload = raw_buf;
+                entry.raw = true;
+                entry.payload_crc = crc32fast::hash(&entry.payload);
+                self.accounted = new_accounted;
+                self.update_count
+                    .set(self.update_count.get().saturating_add(1));
+                Ok(true)
+            }
+        }
+    }
+
+    /// Menerapkan fungsi keputusan tiering ke seluruh halaman aktif secara deterministik.
+    pub fn apply_tiering<F>(&mut self, mut decide: F) -> Result<TieringReport, Error>
+    where
+        F: FnMut(PageId, StorageTier, CostEstimate) -> StorageTier,
+    {
+        let mut ids: Vec<PageId> = self.pages.keys().copied().collect();
+        ids.sort_by_key(|id| id.0);
+
+        let initial_accounted = self.accounted;
+        let mut report = TieringReport {
+            inspected_pages: ids.len(),
+            ..Default::default()
+        };
+
+        for id in ids {
+            let current_tier = self.page_tier(id)?;
+            let cost = self.page_cost_estimate(id)?;
+            let target = decide(id, current_tier, cost);
+            if target == current_tier {
+                report.no_change += 1;
+            } else {
+                match self.migrate_page(id, target) {
+                    Ok(true) => {
+                        if target == StorageTier::Compressed {
+                            report.migrated_to_compressed += 1;
+                        } else {
+                            report.migrated_to_memory += 1;
+                        }
+                    }
+                    Ok(false) => {
+                        report.no_change += 1;
+                    }
+                    Err(Error::BudgetExceeded) => {
+                        report.no_change += 1;
+                    }
+                    Err(e) => return Err(e),
+                }
+            }
+        }
+
+        report.net_accounted_delta = (self.accounted as isize) - (initial_accounted as isize);
+        Ok(report)
     }
 
     /// Mendapatkan snapshot telemetri operasional.
@@ -1370,5 +1572,120 @@ mod property_invariant_tests {
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tiering_tests {
+    use super::*;
+
+    #[test]
+    fn test_tier_query_and_roundtrip_migration() {
+        let mut s = PageStore::adaptive(4096, 4, 65536).unwrap();
+        // Insert a page with compressible repetitive data
+        let mut data = vec![0x42u8; 4096];
+        data[0] = 0xAA;
+        data[4095] = 0xBB;
+        let id = s.insert(&data).unwrap();
+
+        // Compressible data starts in Compressed tier under adaptive store
+        assert_eq!(s.page_tier(id).unwrap(), StorageTier::Compressed);
+
+        // Migrate to Memory tier (raw)
+        let migrated = s.migrate_page(id, StorageTier::Memory).unwrap();
+        assert!(migrated);
+        assert_eq!(s.page_tier(id).unwrap(), StorageTier::Memory);
+
+        // Verify content integrity
+        let read_back = s.get(id).unwrap();
+        assert_eq!(read_back, data);
+
+        // No-op migration to the same tier
+        let noop = s.migrate_page(id, StorageTier::Memory).unwrap();
+        assert!(!noop);
+        assert_eq!(s.page_tier(id).unwrap(), StorageTier::Memory);
+
+        // Migrate back to Compressed tier
+        let migrated_back = s.migrate_page(id, StorageTier::Compressed).unwrap();
+        assert!(migrated_back);
+        assert_eq!(s.page_tier(id).unwrap(), StorageTier::Compressed);
+
+        // Verify content integrity again
+        let mut buf = vec![0u8; 4096];
+        let bytes_read = s.get_into(id, &mut buf).unwrap();
+        assert_eq!(bytes_read, 4096);
+        assert_eq!(buf, data);
+    }
+
+    #[test]
+    fn test_migration_accounting_delta() {
+        let mut s = PageStore::adaptive(4096, 4, 65536).unwrap();
+        let data = vec![0x55u8; 4096];
+        let id = s.insert(&data).unwrap();
+
+        let initial_accounted = s.stats().accounted_bytes;
+        assert_eq!(s.page_tier(id).unwrap(), StorageTier::Compressed);
+
+        // Decompress to Memory tier: accounted bytes must increase
+        s.migrate_page(id, StorageTier::Memory).unwrap();
+        let memory_accounted = s.stats().accounted_bytes;
+        assert!(memory_accounted > initial_accounted);
+
+        // Re-compress: accounted bytes must decrease back to initial_accounted
+        s.migrate_page(id, StorageTier::Compressed).unwrap();
+        assert_eq!(s.stats().accounted_bytes, initial_accounted);
+    }
+
+    #[test]
+    fn test_migration_budget_protection() {
+        // Budget only allows compressed entry (~100 bytes), cannot fit 4096 raw bytes
+        let mut s = PageStore::adaptive(4096, 4, 1500).unwrap();
+        let data = vec![0x33u8; 4096];
+        let id = s.insert(&data).unwrap();
+        let initial_accounted = s.stats().accounted_bytes;
+
+        // Attempt migration to Memory: must fail with BudgetExceeded
+        let res = s.migrate_page(id, StorageTier::Memory);
+        assert_eq!(res, Err(Error::BudgetExceeded));
+
+        // State remains strictly unchanged and readable
+        assert_eq!(s.page_tier(id).unwrap(), StorageTier::Compressed);
+        assert_eq!(s.stats().accounted_bytes, initial_accounted);
+        assert_eq!(s.get(id).unwrap(), data);
+    }
+
+    #[test]
+    fn test_apply_tiering_deterministic() {
+        let mut s = PageStore::adaptive(4096, 8, 131072).unwrap();
+        let mut ids = Vec::new();
+        for i in 0..5 {
+            let data = vec![i as u8; 4096];
+            ids.push(s.insert(&data).unwrap());
+        }
+
+        // Apply tiering: migrate all to Memory
+        let report1 = s
+            .apply_tiering(|_id, _tier, _cost| StorageTier::Memory)
+            .unwrap();
+        assert_eq!(report1.inspected_pages, 5);
+        assert_eq!(report1.migrated_to_memory, 5);
+        assert_eq!(report1.no_change, 0);
+
+        // Re-apply tiering to Memory: no changes
+        let report2 = s
+            .apply_tiering(|_id, _tier, _cost| StorageTier::Memory)
+            .unwrap();
+        assert_eq!(report2.inspected_pages, 5);
+        assert_eq!(report2.migrated_to_memory, 0);
+        assert_eq!(report2.no_change, 5);
+
+        // Migrate all to Compressed
+        let report3 = s
+            .apply_tiering(|_id, _tier, _cost| StorageTier::Compressed)
+            .unwrap();
+        assert_eq!(report3.inspected_pages, 5);
+        assert_eq!(report3.migrated_to_compressed, 5);
+        assert_eq!(report3.no_change, 0);
+        assert!(report3.net_accounted_delta < 0);
     }
 }

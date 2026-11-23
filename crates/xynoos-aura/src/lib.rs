@@ -8,7 +8,9 @@ impl DecisionPolicy for Baseline {
     fn decide(&self, pressure: MemoryPressure, _cost: CostEstimate) -> StorageTier {
         match pressure {
             MemoryPressure::Low => StorageTier::Memory,
-            MemoryPressure::Moderate | MemoryPressure::High => StorageTier::Compressed,
+            MemoryPressure::Moderate | MemoryPressure::High | MemoryPressure::Critical => {
+                StorageTier::Compressed
+            }
         }
     }
 }
@@ -30,6 +32,10 @@ mod tests {
                 Baseline.decide(MemoryPressure::High, c),
                 StorageTier::Compressed
             );
+            assert_eq!(
+                Baseline.decide(MemoryPressure::Critical, c),
+                StorageTier::Compressed
+            );
             assert_eq!(Baseline.decide(MemoryPressure::Low, c), StorageTier::Memory);
         }
     }
@@ -43,3 +49,6 @@ pub mod selector;
 pub mod memory;
 
 pub mod resource;
+
+pub mod tiering;
+pub use tiering::{AdaptiveTieringPolicy, AuraTieringCoordinator, PressureBridge};

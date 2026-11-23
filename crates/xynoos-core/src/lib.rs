@@ -1,11 +1,12 @@
 #![forbid(unsafe_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PageId(pub u64);
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MemoryPressure {
     Low,
     Moderate,
     High,
+    Critical,
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StorageTier {
