@@ -1,6 +1,12 @@
 #![forbid(unsafe_code)]
-use std::{collections::HashMap, fmt, mem::size_of};
-use xynoos_core::PageId;
+use std::{
+    cell::Cell,
+    collections::{HashMap, VecDeque},
+    fmt,
+    mem::size_of,
+};
+pub use xynoos_core::{EvictionPolicy, PageId, PageLifecycleState};
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
     InvalidPageSize,
@@ -14,6 +20,7 @@ pub enum Error {
     NotFound,
     IdExhausted,
     Decompression,
+    OutputBufferTooSmall { min_required: usize, actual: usize },
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -21,6 +28,26 @@ impl fmt::Display for Error {
     }
 }
 impl std::error::Error for Error {}
+
+/// Telemetri observabilitas operasi memory store.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Telemetry {
+    pub hit_count: u64,
+    pub miss_count: u64,
+    pub eviction_count: u64,
+    pub insert_count: u64,
+    pub update_count: u64,
+    pub remove_count: u64,
+    pub corruption_count: u64,
+}
+
+impl Telemetry {
+    pub fn hit_ratio(&self) -> Option<f64> {
+        let total = self.hit_count.checked_add(self.miss_count)?;
+        (total != 0).then(|| self.hit_count as f64 / total as f64)
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Stats {
     pub page_count: usize,
@@ -51,6 +78,8 @@ struct Entry {
     payload_crc: u32,
     original_crc: u32,
     raw: bool,
+    inserted_tick: u64,
+    last_accessed_tick: Cell<u64>,
 }
 pub struct PageStore {
     page_size: usize,
@@ -60,6 +89,15 @@ pub struct PageStore {
     budget: usize,
     accounted: usize,
     pages: HashMap<PageId, Entry>,
+    evicted_history: VecDeque<PageId>,
+    tick: Cell<u64>,
+    hit_count: Cell<u64>,
+    miss_count: Cell<u64>,
+    eviction_count: Cell<u64>,
+    insert_count: Cell<u64>,
+    update_count: Cell<u64>,
+    remove_count: Cell<u64>,
+    corruption_count: Cell<u64>,
 }
 impl PageStore {
     pub fn new(page_size: usize, capacity: usize) -> Result<Self, Error> {
@@ -81,6 +119,15 @@ impl PageStore {
             budget: usize::MAX,
             accounted: 0,
             pages: HashMap::new(),
+            evicted_history: VecDeque::new(),
+            tick: Cell::new(0),
+            hit_count: Cell::new(0),
+            miss_count: Cell::new(0),
+            eviction_count: Cell::new(0),
+            insert_count: Cell::new(0),
+            update_count: Cell::new(0),
+            remove_count: Cell::new(0),
+            corruption_count: Cell::new(0),
         })
     }
     /// Membuat store adaptif dengan batas kapasitas buffer dan metadata entri aktif.
@@ -94,18 +141,57 @@ impl PageStore {
     pub fn with_capacity(capacity: usize) -> Result<Self, Error> {
         Self::new(4096, capacity)
     }
-    pub fn insert(&mut self, data: &[u8]) -> Result<PageId, Error> {
+
+    fn advance_tick(&self) -> Result<u64, Error> {
+        let current = self.tick.get();
+        let next = current.checked_add(1).ok_or(Error::IdExhausted)?;
+        self.tick.set(next);
+        Ok(current)
+    }
+
+    /// Memeriksa apakah suatu ID halaman saat ini aktif di store.
+    pub fn contains(&self, id: PageId) -> bool {
+        self.pages.contains_key(&id)
+    }
+
+    /// Mengetahui status siklus hidup halaman.
+    pub fn lifecycle_state(&self, id: PageId) -> PageLifecycleState {
+        if self.pages.contains_key(&id) {
+            PageLifecycleState::Active
+        } else if id.0 >= self.next {
+            PageLifecycleState::NeverCreated
+        } else if self.evicted_history.contains(&id) {
+            PageLifecycleState::Evicted
+        } else {
+            PageLifecycleState::Removed
+        }
+    }
+
+    /// Menyisipkan halaman dengan kebijakan penggusuran yang ditentukan.
+    /// Memiliki jaminan transaksi fail-closed: jika terjadi error (alokasi, kehabisan ID/tick,
+    /// atau budget tidak mencukupi), tidak ada halaman yang tergusur dan state tetap utuh.
+    pub fn insert_with_policy(
+        &mut self,
+        data: &[u8],
+        policy: EvictionPolicy,
+    ) -> Result<PageId, Error> {
         if data.len() != self.page_size {
             return Err(Error::InvalidLength {
                 expected: self.page_size,
                 actual: data.len(),
             });
         }
-        if self.pages.len() >= self.capacity {
+        if self.capacity == 0 {
             return Err(Error::Full);
         }
-        let next = self.next.checked_add(1).ok_or(Error::IdExhausted)?;
+
+        // 1. Pre-validasi kehabisan ID dan Tick SEBELUM melakukan penggusuran!
+        let next_id = self.next.checked_add(1).ok_or(Error::IdExhausted)?;
         let id = PageId(self.next);
+        let tick = self.tick.get();
+        let next_tick = tick.checked_add(1).ok_or(Error::IdExhausted)?;
+
+        // 2. Pre-kompresi dan evaluasi biaya
         let compressed = lz4_flex::block::compress(data);
         // Vec capacity tidak pernah lebih kecil dari len; lewati alokasi raw jika
         // kompresi sudah pasti lebih kecil dari kandidat raw mana pun.
@@ -126,26 +212,125 @@ impl PageStore {
             .capacity()
             .checked_add(size_of::<(PageId, Entry)>())
             .ok_or(Error::BudgetExceeded)?;
-        let accounted = self
-            .accounted
-            .checked_add(cost)
-            .ok_or(Error::BudgetExceeded)?;
-        if accounted > self.budget {
+
+        if cost > self.budget {
             return Err(Error::BudgetExceeded);
         }
+
+        // 3. Pre-reserve slot HashMap SEBELUM penggusuran untuk menjamin alokasi sukses
         self.pages.try_reserve(1).map_err(|_| Error::Allocation)?;
+
+        // 4. Eksekusi penggusuran jika diizinkan policy
+        if policy != EvictionPolicy::Reject {
+            while self.pages.len() >= self.capacity {
+                if self.evict_with_policy(policy)?.is_none() {
+                    return Err(Error::Full);
+                }
+            }
+            while match self.accounted.checked_add(cost) {
+                Some(acc) => acc > self.budget,
+                None => true,
+            } {
+                if self.evict_with_policy(policy)?.is_none() {
+                    return Err(Error::BudgetExceeded);
+                }
+            }
+        } else {
+            if self.pages.len() >= self.capacity {
+                return Err(Error::Full);
+            }
+            let accounted = self
+                .accounted
+                .checked_add(cost)
+                .ok_or(Error::BudgetExceeded)?;
+            if accounted > self.budget {
+                return Err(Error::BudgetExceeded);
+            }
+        }
+
+        // 5. Commit point non-fallible
         let entry = Entry {
             payload_crc: crc32fast::hash(&payload),
             original_crc: crc32fast::hash(data),
             payload,
             raw,
+            inserted_tick: tick,
+            last_accessed_tick: Cell::new(tick),
         };
         self.pages.insert(id, entry);
-        self.next = next;
-        self.accounted = accounted;
+        self.next = next_id;
+        self.tick.set(next_tick);
+        self.accounted = self.accounted.checked_add(cost).expect("checked budget");
+        self.insert_count
+            .set(self.insert_count.get().saturating_add(1));
         Ok(id)
     }
+
+    /// Menyisipkan halaman (kebijakan default: menolak bila kapasitas atau budget penuh).
+    pub fn insert(&mut self, data: &[u8]) -> Result<PageId, Error> {
+        self.insert_with_policy(data, EvictionPolicy::Reject)
+    }
+
+    /// Mengambil dekompresi halaman langsung ke buffer caller tanpa alokasi baru.
+    /// Memverifikasi CRC payload dan CRC data asli.
+    pub fn get_into(&self, id: PageId, out: &mut [u8]) -> Result<usize, Error> {
+        if out.len() < self.page_size {
+            return Err(Error::OutputBufferTooSmall {
+                min_required: self.page_size,
+                actual: out.len(),
+            });
+        }
+        let data = match self.pages.get(&id) {
+            Some(d) => d,
+            None => {
+                self.miss_count.set(self.miss_count.get().saturating_add(1));
+                return Err(Error::NotFound);
+            }
+        };
+        if crc32fast::hash(&data.payload) != data.payload_crc {
+            self.corruption_count
+                .set(self.corruption_count.get().saturating_add(1));
+            return Err(Error::PayloadChecksumMismatch);
+        }
+        let written = if data.raw {
+            if data.payload.len() != self.page_size {
+                return Err(Error::Decompression);
+            }
+            out[..self.page_size].copy_from_slice(&data.payload);
+            self.page_size
+        } else {
+            let n = lz4_flex::block::decompress_into(&data.payload, &mut out[..self.page_size])
+                .map_err(|_| Error::Decompression)?;
+            if n != self.page_size {
+                return Err(Error::Decompression);
+            }
+            n
+        };
+        if crc32fast::hash(&out[..self.page_size]) != data.original_crc {
+            self.corruption_count
+                .set(self.corruption_count.get().saturating_add(1));
+            return Err(Error::ChecksumMismatch);
+        }
+        let tick = self.advance_tick()?;
+        data.last_accessed_tick.set(tick);
+        self.hit_count.set(self.hit_count.get().saturating_add(1));
+        Ok(written)
+    }
+
+    /// Mengambil halaman dan mengembalikannya dalam Vec<u8> baru.
     pub fn get(&self, id: PageId) -> Result<Vec<u8>, Error> {
+        let mut output = Vec::new();
+        output
+            .try_reserve_exact(self.page_size)
+            .map_err(|_| Error::Allocation)?;
+        output.resize(self.page_size, 0);
+        self.get_into(id, &mut output)?;
+        Ok(output)
+    }
+
+    /// Membaca halaman tanpa memperbarui last_accessed_tick atau hit counter.
+    /// Berguna untuk inspeksi diagnostik non-intrusif.
+    pub fn peek(&self, id: PageId) -> Result<Vec<u8>, Error> {
         let data = self.pages.get(&id).ok_or(Error::NotFound)?;
         if crc32fast::hash(&data.payload) != data.payload_crc {
             return Err(Error::PayloadChecksumMismatch);
@@ -173,19 +358,174 @@ impl PageStore {
         }
         Ok(output)
     }
-    pub fn remove(&mut self, id: PageId) -> Result<(), Error> {
-        let entry = self.pages.remove(&id).ok_or(Error::NotFound)?;
+
+    /// Memperbarui isi halaman yang sudah ada secara atomik.
+    /// Bila gagal (misal ukuran salah atau budget terlampaui), state lama tetap utuh.
+    pub fn update(&mut self, id: PageId, data: &[u8]) -> Result<(), Error> {
+        if data.len() != self.page_size {
+            return Err(Error::InvalidLength {
+                expected: self.page_size,
+                actual: data.len(),
+            });
+        }
+        let old_cost = {
+            let old_entry = match self.pages.get(&id) {
+                Some(e) => e,
+                None => {
+                    return Err(Error::NotFound);
+                }
+            };
+            old_entry
+                .payload
+                .capacity()
+                .checked_add(size_of::<(PageId, Entry)>())
+                .expect("validated cost")
+        };
+
+        // Pre-validasi kehabisan tick sebelum mutasi
+        let tick = self.tick.get();
+        let next_tick = tick.checked_add(1).ok_or(Error::IdExhausted)?;
+
+        let compressed = lz4_flex::block::compress(data);
+        let (payload, raw) = if self.adaptive && compressed.capacity() >= data.len() {
+            let mut raw = Vec::new();
+            raw.try_reserve_exact(data.len())
+                .map_err(|_| Error::Allocation)?;
+            if raw.capacity() <= compressed.capacity() {
+                raw.extend_from_slice(data);
+                (raw, true)
+            } else {
+                (compressed, false)
+            }
+        } else {
+            (compressed, false)
+        };
+
+        let new_cost = payload
+            .capacity()
+            .checked_add(size_of::<(PageId, Entry)>())
+            .ok_or(Error::BudgetExceeded)?;
+
+        let new_accounted = if new_cost >= old_cost {
+            let diff = new_cost - old_cost;
+            let acc = self
+                .accounted
+                .checked_add(diff)
+                .ok_or(Error::BudgetExceeded)?;
+            if acc > self.budget {
+                return Err(Error::BudgetExceeded);
+            }
+            acc
+        } else {
+            let diff = old_cost - new_cost;
+            self.accounted
+                .checked_sub(diff)
+                .expect("accounting invariant")
+        };
+
+        let entry = self.pages.get_mut(&id).expect("checked existence");
+        entry.payload_crc = crc32fast::hash(&payload);
+        entry.original_crc = crc32fast::hash(data);
+        entry.payload = payload;
+        entry.raw = raw;
+        entry.last_accessed_tick.set(tick);
+        self.tick.set(next_tick);
+        self.accounted = new_accounted;
+        self.update_count
+            .set(self.update_count.get().saturating_add(1));
+        Ok(())
+    }
+
+    fn remove_internal(&mut self, id: PageId, is_eviction: bool) -> Result<(), Error> {
+        let entry = match self.pages.remove(&id) {
+            Some(e) => e,
+            None => {
+                return Err(Error::NotFound);
+            }
+        };
+        let cost = entry
+            .payload
+            .capacity()
+            .checked_add(size_of::<(PageId, Entry)>())
+            .expect("validated entry cost");
         self.accounted = self
             .accounted
-            .checked_sub(
-                entry
-                    .payload
-                    .capacity()
-                    .checked_add(size_of::<(PageId, Entry)>())
-                    .expect("validated entry cost"),
-            )
+            .checked_sub(cost)
             .expect("accounting invariant");
+        if is_eviction {
+            self.evicted_history.push_back(id);
+            if self.evicted_history.len() > self.capacity.max(16) {
+                self.evicted_history.pop_front();
+            }
+            self.eviction_count
+                .set(self.eviction_count.get().saturating_add(1));
+        } else {
+            self.evicted_history.retain(|i| *i != id);
+            self.remove_count
+                .set(self.remove_count.get().saturating_add(1));
+        }
         Ok(())
+    }
+
+    /// Menggusur sebuah halaman sesuai kebijakan penggusuran.
+    pub fn evict_with_policy(&mut self, policy: EvictionPolicy) -> Result<Option<PageId>, Error> {
+        if self.pages.is_empty() || policy == EvictionPolicy::Reject {
+            return Ok(None);
+        }
+        let candidate_id = match policy {
+            EvictionPolicy::Lru => self
+                .pages
+                .iter()
+                .min_by_key(|(id, e)| (e.last_accessed_tick.get(), id.0))
+                .map(|(id, _)| *id),
+            EvictionPolicy::Fifo => self
+                .pages
+                .iter()
+                .min_by_key(|(id, e)| (e.inserted_tick, id.0))
+                .map(|(id, _)| *id),
+            EvictionPolicy::Reject => None,
+        };
+
+        if let Some(id) = candidate_id {
+            self.remove_internal(id, true)?;
+            Ok(Some(id))
+        } else {
+            Ok(None)
+        }
+    }
+
+    /// Menggusur satu halaman menggunakan LRU.
+    pub fn evict(&mut self) -> Result<Option<PageId>, Error> {
+        self.evict_with_policy(EvictionPolicy::Lru)
+    }
+
+    /// Menghapus halaman dari store secara eksplisit.
+    pub fn remove(&mut self, id: PageId) -> Result<(), Error> {
+        self.remove_internal(id, false)
+    }
+
+    /// Mendapatkan snapshot telemetri operasional.
+    pub fn telemetry(&self) -> Telemetry {
+        Telemetry {
+            hit_count: self.hit_count.get(),
+            miss_count: self.miss_count.get(),
+            eviction_count: self.eviction_count.get(),
+            insert_count: self.insert_count.get(),
+            update_count: self.update_count.get(),
+            remove_count: self.remove_count.get(),
+            corruption_count: self.corruption_count.get(),
+        }
+    }
+
+    /// Mereset counter telemetri operasional menjadi nol.
+    pub fn reset_telemetry(&self) {
+        self.hit_count.set(0);
+        self.miss_count.set(0);
+        self.eviction_count.set(0);
+        self.insert_count.set(0);
+        self.update_count.set(0);
+        self.remove_count.set(0);
+        self.corruption_count.set(0);
     }
     pub fn stats(&self) -> Stats {
         Stats {
@@ -551,6 +891,484 @@ mod budget_boundary_tests {
                 st.accounted_bytes,
                 st.buffer_capacity_bytes + st.metadata_bytes_lower_bound
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod lifecycle_and_retrieval_tests {
+    use super::*;
+
+    #[test]
+    fn contains_and_lifecycle_state() {
+        let mut s = PageStore::with_capacity(2).unwrap();
+
+        // NeverCreated sebelum halaman pernah diterbitkan
+        assert_eq!(
+            s.lifecycle_state(PageId(0)),
+            PageLifecycleState::NeverCreated
+        );
+        assert_eq!(
+            s.lifecycle_state(PageId(999)),
+            PageLifecycleState::NeverCreated
+        );
+        assert!(!s.contains(PageId(0)));
+
+        let a = s.insert(&[10; 4096]).unwrap();
+        assert!(s.contains(a));
+        assert_eq!(s.lifecycle_state(a), PageLifecycleState::Active);
+
+        let unk = PageId(999);
+        assert!(!s.contains(unk));
+        assert_eq!(s.lifecycle_state(unk), PageLifecycleState::NeverCreated);
+
+        // Penghapusan eksplisit
+        s.remove(a).unwrap();
+        assert!(!s.contains(a));
+        assert_eq!(s.lifecycle_state(a), PageLifecycleState::Removed);
+
+        // Penghapusan berulang menghasilkan NotFound dan tetap Removed
+        assert_eq!(s.remove(a), Err(Error::NotFound));
+        assert_eq!(s.lifecycle_state(a), PageLifecycleState::Removed);
+
+        // Penggusuran mencatat status Evicted
+        let p1 = s.insert(&[1; 4096]).unwrap();
+        let p2 = s.insert(&[2; 4096]).unwrap();
+        let p3 = s
+            .insert_with_policy(&[3; 4096], EvictionPolicy::Lru)
+            .unwrap();
+        assert_eq!(s.lifecycle_state(p1), PageLifecycleState::Evicted);
+        assert_eq!(s.lifecycle_state(p2), PageLifecycleState::Active);
+        assert_eq!(s.lifecycle_state(p3), PageLifecycleState::Active);
+    }
+
+    #[test]
+    fn get_into_and_buffer_bounds() {
+        let mut s = PageStore::with_capacity(2).unwrap();
+        let payload = vec![0xAB; 4096];
+        let id = s.insert(&payload).unwrap();
+
+        let mut small_buf = [0u8; 1024];
+        assert_eq!(
+            s.get_into(id, &mut small_buf),
+            Err(Error::OutputBufferTooSmall {
+                min_required: 4096,
+                actual: 1024
+            })
+        );
+
+        let mut exact_buf = [0u8; 4096];
+        let n = s.get_into(id, &mut exact_buf).unwrap();
+        assert_eq!(n, 4096);
+        assert_eq!(&exact_buf[..], &payload[..]);
+
+        let mut large_buf = [0u8; 8192];
+        let n = s.get_into(id, &mut large_buf).unwrap();
+        assert_eq!(n, 4096);
+        assert_eq!(&large_buf[..4096], &payload[..]);
+    }
+
+    #[test]
+    fn peek_does_not_advance_tick_or_increment_hit_counter() {
+        let mut s = PageStore::with_capacity(2).unwrap();
+        let payload = vec![0x55; 4096];
+        let id = s.insert(&payload).unwrap();
+
+        let initial_telemetry = s.telemetry();
+        assert_eq!(initial_telemetry.hit_count, 0);
+
+        let peeked = s.peek(id).unwrap();
+        assert_eq!(peeked, payload);
+        assert_eq!(s.telemetry().hit_count, 0);
+
+        let read = s.get(id).unwrap();
+        assert_eq!(read, payload);
+        assert_eq!(s.telemetry().hit_count, 1);
+    }
+}
+
+#[cfg(test)]
+mod update_tests {
+    use super::*;
+
+    #[test]
+    fn update_basic_and_integrity() {
+        let mut s = PageStore::adaptive(4096, 2, usize::MAX).unwrap();
+        let v1 = vec![0x11; 4096];
+        let v2 = vec![0x22; 4096];
+        let id = s.insert(&v1).unwrap();
+        assert_eq!(s.get(id).unwrap(), v1);
+
+        s.update(id, &v2).unwrap();
+        assert_eq!(s.get(id).unwrap(), v2);
+        assert_eq!(s.telemetry().update_count, 1);
+
+        assert_eq!(s.update(PageId(999), &v2), Err(Error::NotFound));
+        assert_eq!(
+            s.update(id, &[0; 100]),
+            Err(Error::InvalidLength {
+                expected: 4096,
+                actual: 100
+            })
+        );
+    }
+
+    #[test]
+    fn update_budget_overflow_is_atomic() {
+        let input1 = [0u8; 4096];
+        let mut probe = PageStore::adaptive(4096, 2, usize::MAX).unwrap();
+        let id_probe = probe.insert(&input1).unwrap();
+        let cost1 = probe.stats().accounted_bytes;
+        probe.remove(id_probe).unwrap();
+
+        let mut s = PageStore::adaptive(4096, 2, cost1).unwrap();
+        let id = s.insert(&input1).unwrap();
+
+        let mut seed = 999u32;
+        let random_page: Vec<u8> = (0..4096)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                seed as u8
+            })
+            .collect();
+
+        let before_stats = s.stats();
+        let res = s.update(id, &random_page);
+        assert_eq!(res, Err(Error::BudgetExceeded));
+        assert_eq!(s.stats(), before_stats);
+        assert_eq!(s.get(id).unwrap(), input1);
+    }
+}
+
+#[cfg(test)]
+mod eviction_tests {
+    use super::*;
+
+    #[test]
+    fn reject_policy_never_evicts() {
+        let mut s = PageStore::with_capacity(2).unwrap();
+        let a = s.insert(&[1; 4096]).unwrap();
+        let b = s.insert(&[2; 4096]).unwrap();
+        assert_eq!(s.insert(&[3; 4096]), Err(Error::Full));
+        assert!(s.contains(a));
+        assert!(s.contains(b));
+        assert_eq!(s.evict_with_policy(EvictionPolicy::Reject), Ok(None));
+    }
+
+    #[test]
+    fn lru_eviction_order() {
+        let mut s = PageStore::with_capacity(3).unwrap();
+        let a = s.insert(&[1; 4096]).unwrap();
+        let b = s.insert(&[2; 4096]).unwrap();
+        let c = s.insert(&[3; 4096]).unwrap();
+
+        // Access A to make B the least recently accessed
+        let _ = s.get(a).unwrap();
+
+        // Inserting D with LRU policy should evict B
+        let d = s
+            .insert_with_policy(&[4; 4096], EvictionPolicy::Lru)
+            .unwrap();
+        assert!(s.contains(a));
+        assert!(!s.contains(b));
+        assert!(s.contains(c));
+        assert!(s.contains(d));
+        assert_eq!(s.telemetry().eviction_count, 1);
+
+        // Access C, so A becomes LRU
+        let _ = s.get(c).unwrap();
+        let e = s
+            .insert_with_policy(&[5; 4096], EvictionPolicy::Lru)
+            .unwrap();
+        assert!(!s.contains(a));
+        assert!(s.contains(c));
+        assert!(s.contains(d));
+        assert!(s.contains(e));
+        assert_eq!(s.telemetry().eviction_count, 2);
+    }
+
+    #[test]
+    fn fifo_eviction_order() {
+        let mut s = PageStore::with_capacity(3).unwrap();
+        let a = s.insert(&[1; 4096]).unwrap();
+        let b = s.insert(&[2; 4096]).unwrap();
+        let c = s.insert(&[3; 4096]).unwrap();
+
+        // Access A - should NOT prevent FIFO from evicting A because A was inserted first!
+        let _ = s.get(a).unwrap();
+
+        let d = s
+            .insert_with_policy(&[4; 4096], EvictionPolicy::Fifo)
+            .unwrap();
+        assert!(!s.contains(a));
+        assert!(s.contains(b));
+        assert!(s.contains(c));
+        assert!(s.contains(d));
+        assert_eq!(s.telemetry().eviction_count, 1);
+    }
+
+    #[test]
+    fn budget_constrained_lru_eviction() {
+        let page = [0u8; 4096];
+        let mut probe = PageStore::adaptive(4096, 5, usize::MAX).unwrap();
+        let id = probe.insert(&page).unwrap();
+        let single_cost = probe.stats().accounted_bytes;
+        probe.remove(id).unwrap();
+
+        // Budget fits exactly 2 pages
+        let mut s = PageStore::adaptive(4096, 5, single_cost * 2).unwrap();
+        let p1 = s.insert(&page).unwrap();
+        let p2 = s.insert(&page).unwrap();
+        assert_eq!(s.stats().page_count, 2);
+
+        // Third insert with LRU must evict p1 to satisfy budget
+        let p3 = s.insert_with_policy(&page, EvictionPolicy::Lru).unwrap();
+        assert_eq!(s.stats().page_count, 2);
+        assert!(!s.contains(p1));
+        assert!(s.contains(p2));
+        assert!(s.contains(p3));
+        assert!(s.stats().accounted_bytes <= s.stats().budget_bytes);
+    }
+
+    #[test]
+    fn explicit_evict() {
+        let mut s = PageStore::with_capacity(2).unwrap();
+        assert_eq!(s.evict(), Ok(None));
+        let a = s.insert(&[1; 4096]).unwrap();
+        let b = s.insert(&[2; 4096]).unwrap();
+
+        assert_eq!(s.evict(), Ok(Some(a)));
+        assert!(!s.contains(a));
+        assert!(s.contains(b));
+        assert_eq!(s.telemetry().eviction_count, 1);
+    }
+
+    #[test]
+    fn eviction_transaction_safety_on_id_or_tick_or_budget_failure() {
+        let mut s = PageStore::with_capacity(2).unwrap();
+        let a = s.insert(&[1; 4096]).unwrap();
+        let b = s.insert(&[2; 4096]).unwrap();
+        let before_stats = s.stats();
+        let before_telemetry = s.telemetry();
+
+        // 1. Next ID exhausted: must NOT evict a or b!
+        s.next = u64::MAX;
+        let res = s.insert_with_policy(&[3; 4096], EvictionPolicy::Lru);
+        assert_eq!(res, Err(Error::IdExhausted));
+        assert!(s.contains(a));
+        assert!(s.contains(b));
+        assert_eq!(s.stats(), before_stats);
+        assert_eq!(
+            s.telemetry().eviction_count,
+            before_telemetry.eviction_count
+        );
+
+        // Restore next
+        s.next = 2;
+
+        // 2. Tick exhausted: must NOT evict a or b!
+        s.tick.set(u64::MAX);
+        let res = s.insert_with_policy(&[3; 4096], EvictionPolicy::Lru);
+        assert_eq!(res, Err(Error::IdExhausted));
+        assert!(s.contains(a));
+        assert!(s.contains(b));
+        assert_eq!(s.stats(), before_stats);
+        assert_eq!(
+            s.telemetry().eviction_count,
+            before_telemetry.eviction_count
+        );
+
+        // Restore tick
+        s.tick.set(2);
+
+        // 3. Candidate larger than total budget: must NOT evict b1!
+        let mut budget_store = PageStore::adaptive(4096, 2, 2000).unwrap();
+        let b1 = budget_store.insert(&[0; 4096]).unwrap();
+        let mut random_page = vec![0u8; 4096];
+        let mut seed = 42u32;
+        for byte in random_page.iter_mut() {
+            seed ^= seed << 13;
+            seed ^= seed >> 17;
+            seed ^= seed << 5;
+            *byte = seed as u8;
+        }
+        let res = budget_store.insert_with_policy(&random_page, EvictionPolicy::Lru);
+        assert_eq!(res, Err(Error::BudgetExceeded));
+        assert!(budget_store.contains(b1));
+        assert_eq!(budget_store.telemetry().eviction_count, 0);
+    }
+}
+
+#[cfg(test)]
+mod telemetry_tests {
+    use super::*;
+
+    #[test]
+    fn telemetry_counters_and_ratio() {
+        let mut s = PageStore::with_capacity(3).unwrap();
+        let a = s.insert(&[1; 4096]).unwrap();
+        let b = s.insert(&[2; 4096]).unwrap();
+
+        // Hits and misses
+        let _ = s.get(a);
+        let _ = s.get(b);
+        let _ = s.get(PageId(999));
+
+        let t = s.telemetry();
+        assert_eq!(t.insert_count, 2);
+        assert_eq!(t.hit_count, 2);
+        assert_eq!(t.miss_count, 1);
+        let ratio = t.hit_ratio().unwrap();
+        assert!((ratio - (2.0 / 3.0)).abs() < 1e-6);
+
+        // Update
+        s.update(a, &[3; 4096]).unwrap();
+        assert_eq!(s.telemetry().update_count, 1);
+
+        // Remove
+        s.remove(b).unwrap();
+        assert_eq!(s.telemetry().remove_count, 1);
+
+        // Reset
+        s.reset_telemetry();
+        assert_eq!(s.telemetry(), Telemetry::default());
+        assert_eq!(s.telemetry().hit_ratio(), None);
+    }
+}
+
+#[cfg(test)]
+mod property_invariant_tests {
+    use super::*;
+
+    #[test]
+    fn extensive_randomized_invariants() {
+        let mut seed = 0xCAFEBABE88u64;
+        let mut rand = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+
+        for page_size in [64, 256, 1024] {
+            for capacity in [4, 8, 16] {
+                let budget = (capacity / 2 + 1) * (page_size + size_of::<(PageId, Entry)>() + 64);
+                let mut s = PageStore::adaptive(page_size, capacity, budget).unwrap();
+                let mut oracle: HashMap<PageId, Vec<u8>> = HashMap::new();
+
+                for _step in 0..1000 {
+                    let op = (rand() % 7) as u8;
+                    match op {
+                        0 => {
+                            // Insert with Reject policy
+                            let data: Vec<u8> = (0..page_size).map(|_| rand() as u8).collect();
+                            if let Ok(id) = s.insert(&data) {
+                                oracle.insert(id, data);
+                            }
+                        }
+                        1 => {
+                            // Insert with LRU policy
+                            let data: Vec<u8> = (0..page_size).map(|_| rand() as u8).collect();
+                            if let Ok(id) = s.insert_with_policy(&data, EvictionPolicy::Lru) {
+                                // Some page might have been evicted, reconcile with oracle
+                                oracle.retain(|id, _| s.contains(*id));
+                                oracle.insert(id, data);
+                            }
+                        }
+                        2 => {
+                            // Insert with FIFO policy
+                            let data: Vec<u8> = (0..page_size).map(|_| rand() as u8).collect();
+                            if let Ok(id) = s.insert_with_policy(&data, EvictionPolicy::Fifo) {
+                                oracle.retain(|id, _| s.contains(*id));
+                                oracle.insert(id, data);
+                            }
+                        }
+                        3 => {
+                            // Update
+                            if !oracle.is_empty() {
+                                let keys: Vec<_> = oracle.keys().copied().collect();
+                                let target_id = keys[(rand() as usize) % keys.len()];
+                                let new_data: Vec<u8> =
+                                    (0..page_size).map(|_| rand() as u8).collect();
+                                if s.update(target_id, &new_data).is_ok() {
+                                    oracle.insert(target_id, new_data);
+                                }
+                            }
+                        }
+                        4 => {
+                            // Get / Get_into / Peek
+                            if !oracle.is_empty() {
+                                let keys: Vec<_> = oracle.keys().copied().collect();
+                                let target_id = keys[(rand() as usize) % keys.len()];
+                                let expected = &oracle[&target_id];
+
+                                assert_eq!(&s.peek(target_id).unwrap(), expected);
+
+                                let mut buf = vec![0u8; page_size];
+                                let n = s.get_into(target_id, &mut buf).unwrap();
+                                assert_eq!(n, page_size);
+                                assert_eq!(&buf, expected);
+
+                                assert_eq!(&s.get(target_id).unwrap(), expected);
+                            }
+                        }
+                        5 => {
+                            // Explicit Remove
+                            if !oracle.is_empty() {
+                                let keys: Vec<_> = oracle.keys().copied().collect();
+                                let target_id = keys[(rand() as usize) % keys.len()];
+                                s.remove(target_id).unwrap();
+                                oracle.remove(&target_id);
+                            }
+                        }
+                        _ => {
+                            // Evict
+                            if let Ok(Some(evicted_id)) = s.evict() {
+                                oracle.remove(&evicted_id);
+                            }
+                        }
+                    }
+
+                    // Strict Invariant Assertions on Every Step:
+                    let st = s.stats();
+                    assert_eq!(
+                        st.accounted_bytes,
+                        st.buffer_capacity_bytes + st.metadata_bytes_lower_bound,
+                        "Invariant: accounted == buffer_capacity + metadata"
+                    );
+                    assert_eq!(
+                        st.page_count,
+                        st.raw_pages + st.compressed_pages,
+                        "Invariant: page_count == raw + compressed"
+                    );
+                    assert_eq!(
+                        st.stored_bytes,
+                        st.raw_bytes + st.compressed_bytes,
+                        "Invariant: stored_bytes == raw_bytes + compressed_bytes"
+                    );
+                    assert!(
+                        st.page_count <= st.capacity_pages,
+                        "Invariant: page_count <= capacity_pages"
+                    );
+                    assert!(
+                        st.accounted_bytes <= st.budget_bytes,
+                        "Invariant: accounted_bytes <= budget_bytes"
+                    );
+                    assert_eq!(
+                        st.page_count,
+                        oracle.len(),
+                        "Invariant: page_count == oracle.len"
+                    );
+
+                    for (id, data) in &oracle {
+                        assert!(s.contains(*id));
+                        assert_eq!(s.lifecycle_state(*id), PageLifecycleState::Active);
+                        assert_eq!(&s.peek(*id).unwrap(), data);
+                    }
+                }
+            }
         }
     }
 }

@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 use std::{collections::HashMap, error::Error, hint::black_box, process::Command, time::Instant};
-use xynoos_hypermemory::PageStore;
+use xynoos_hypermemory::{PageId, PageStore};
 const N: usize = 256;
 const SIZE: usize = 4096;
 const RUNS: usize = 32;
@@ -49,6 +49,15 @@ fn cpu_ns() -> Option<u64> {
 }
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().collect();
+    if args.len() == 2 && args[1] == "lifecycle" {
+        return run_lifecycle_benchmark();
+    }
+    if args.len() == 2 && args[1] == "mixed" {
+        return run_mixed_workload_benchmark();
+    }
+    if args.len() == 2 && args[1] == "scalability" {
+        return run_scalability_benchmark();
+    }
     if args.len() == 1 {
         println!("dataset,backend,run,insert_batch_ns_per_page,get_batch_ns_per_page,codec_compress_mib_s,codec_decompress_mib_s,payload_bytes,capacity_bytes,metadata_bytes,map_capacity,raw_pages,compressed_pages,rss_before_kib,rss_loaded_kib,peak_kib,cpu_ns");
         for (index, kind) in ["zero", "pattern", "structured", "entropy", "mixed"]
@@ -170,5 +179,297 @@ fn main() -> Result<(), Box<dyn Error>> {
             );
         }
     }
+    Ok(())
+}
+
+fn compute_stats(values: &[f64]) -> (f64, f64, f64, f64) {
+    if values.is_empty() {
+        return (0.0, 0.0, 0.0, 0.0);
+    }
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    let var = values.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / values.len() as f64;
+    let stddev = var.sqrt();
+    let min = values.iter().copied().fold(f64::INFINITY, f64::min);
+    let max = values.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+    (mean, stddev, min, max)
+}
+
+fn run_lifecycle_benchmark() -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE LIFECYCLE BENCHMARK (MULTI-RUN ABBA ORDER) ===");
+    println!("operation,runs,measured_iters_per_run,mean_ns_per_op,mean_mib_s,stddev_mib_s,min_mib_s,max_mib_s");
+
+    let mut store = PageStore::adaptive(SIZE, 128, usize::MAX)?;
+    let p = vec![0x42u8; SIZE];
+    let mut ids = Vec::new();
+    for _ in 0..128 {
+        ids.push(store.insert(&p)?);
+    }
+
+    // Warm-up unmeasured
+    let mut warmup_buf = vec![0u8; SIZE];
+    for i in 0..200 {
+        let id = ids[i % ids.len()];
+        let _ = black_box(store.get(black_box(id))?);
+        let _ = black_box(store.get_into(black_box(id), black_box(&mut warmup_buf))?);
+    }
+
+    let iters = 2000;
+    let mut get_mibs = Vec::with_capacity(4);
+    let mut get_ns = Vec::with_capacity(4);
+    let mut get_into_mibs = Vec::with_capacity(4);
+    let mut get_into_ns = Vec::with_capacity(4);
+
+    let mut buffer = vec![0u8; SIZE];
+
+    // Alternating ABBA execution order across 4 runs to prevent run-order bias
+    for run in 0..4 {
+        if run % 2 == 0 {
+            // A then B
+            let start = Instant::now();
+            for i in 0..iters {
+                let id = ids[i % ids.len()];
+                let out = store.get(black_box(id))?;
+                black_box(out);
+            }
+            let el = start.elapsed();
+            get_ns.push(el.as_nanos() as f64 / iters as f64);
+            get_mibs.push((iters * SIZE) as f64 / 1048576.0 / el.as_secs_f64());
+
+            let start = Instant::now();
+            for i in 0..iters {
+                let id = ids[i % ids.len()];
+                let n = store.get_into(black_box(id), black_box(&mut buffer))?;
+                black_box(n);
+            }
+            let el = start.elapsed();
+            get_into_ns.push(el.as_nanos() as f64 / iters as f64);
+            get_into_mibs.push((iters * SIZE) as f64 / 1048576.0 / el.as_secs_f64());
+        } else {
+            // B then A
+            let start = Instant::now();
+            for i in 0..iters {
+                let id = ids[i % ids.len()];
+                let n = store.get_into(black_box(id), black_box(&mut buffer))?;
+                black_box(n);
+            }
+            let el = start.elapsed();
+            get_into_ns.push(el.as_nanos() as f64 / iters as f64);
+            get_into_mibs.push((iters * SIZE) as f64 / 1048576.0 / el.as_secs_f64());
+
+            let start = Instant::now();
+            for i in 0..iters {
+                let id = ids[i % ids.len()];
+                let out = store.get(black_box(id))?;
+                black_box(out);
+            }
+            let el = start.elapsed();
+            get_ns.push(el.as_nanos() as f64 / iters as f64);
+            get_mibs.push((iters * SIZE) as f64 / 1048576.0 / el.as_secs_f64());
+        }
+    }
+
+    let (get_mean_mib, get_std_mib, get_min_mib, get_max_mib) = compute_stats(&get_mibs);
+    let (get_mean_ns, _, _, _) = compute_stats(&get_ns);
+    println!(
+        "get_allocating,4,{},{:.2},{:.2},{:.2},{:.2},{:.2}",
+        iters, get_mean_ns, get_mean_mib, get_std_mib, get_min_mib, get_max_mib
+    );
+
+    let (into_mean_mib, into_std_mib, into_min_mib, into_max_mib) = compute_stats(&get_into_mibs);
+    let (into_mean_ns, _, _, _) = compute_stats(&get_into_ns);
+    println!(
+        "get_into_zero_alloc,4,{},{:.2},{:.2},{:.2},{:.2},{:.2}",
+        iters, into_mean_ns, into_mean_mib, into_std_mib, into_min_mib, into_max_mib
+    );
+
+    // In-place update benchmark
+    let mut update_mibs = Vec::with_capacity(4);
+    let mut update_ns = Vec::with_capacity(4);
+    let new_p = vec![0x77u8; SIZE];
+    for _ in 0..4 {
+        let start = Instant::now();
+        for i in 0..iters {
+            let id = ids[i % ids.len()];
+            store.update(black_box(id), black_box(&new_p))?;
+        }
+        let el = start.elapsed();
+        update_ns.push(el.as_nanos() as f64 / iters as f64);
+        update_mibs.push((iters * SIZE) as f64 / 1048576.0 / el.as_secs_f64());
+    }
+    let (up_mean_mib, up_std_mib, up_min_mib, up_max_mib) = compute_stats(&update_mibs);
+    let (up_mean_ns, _, _, _) = compute_stats(&update_ns);
+    println!(
+        "update_in_place,4,{},{:.2},{:.2},{:.2},{:.2},{:.2}",
+        iters, up_mean_ns, up_mean_mib, up_std_mib, up_min_mib, up_max_mib
+    );
+
+    Ok(())
+}
+
+fn run_mixed_workload_benchmark() -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE MIXED WORKLOAD BENCHMARK (SEPARATED REQUESTS & TELEMETRY) ===");
+    println!("scenario,total_ops,req_reads,req_writes,req_updates,req_removes,cache_hits,cache_misses,hit_ratio,auto_evictions,median_ns,p95_ns,p99_ns,max_ns");
+
+    let scenarios = [
+        ("working_set_within_capacity", 64, 48, false),
+        ("working_set_exceeding_capacity", 64, 192, false),
+        ("skewed_hotspot_80_20", 64, 192, true),
+    ];
+
+    for (name, capacity, working_set_size, is_skewed) in scenarios {
+        let mut store = PageStore::adaptive(SIZE, capacity, usize::MAX)?;
+        let mut seed = 0x1234_5678_CAFE_BABE_u64;
+        let mut rand = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+
+        // Key-to-PageId mapping for the simulated working set
+        let mut working_set: HashMap<usize, PageId> = HashMap::new();
+        let initial_fill = working_set_size.min(capacity / 2);
+        for k in 0..initial_fill {
+            let page = vec![(k % 256) as u8; SIZE];
+            let id = store.insert(&page)?;
+            working_set.insert(k, id);
+        }
+
+        let total_ops = 5000;
+        let mut req_reads = 0;
+        let mut req_writes = 0;
+        let mut req_updates = 0;
+        let mut req_removes = 0;
+
+        let mut latencies = Vec::with_capacity(total_ops);
+        let mut read_buf = vec![0u8; SIZE];
+
+        store.reset_telemetry();
+
+        for _ in 0..total_ops {
+            let roll = rand() % 100;
+            let op_start = Instant::now();
+
+            if roll < 70 {
+                // 70% Requested Reads
+                req_reads += 1;
+                let key = if is_skewed && (rand() % 100) < 80 {
+                    // 80% of reads target the first 20% of keys (hotspot)
+                    let hot_count = (working_set_size * 20 / 100).max(1);
+                    (rand() as usize) % hot_count
+                } else {
+                    (rand() as usize) % working_set_size
+                };
+
+                if let Some(&id) = working_set.get(&key) {
+                    let _ = store.get_into(id, &mut read_buf);
+                } else {
+                    // Page not yet in working set -> reading nonexistent ID
+                    let _ = store.get_into(PageId(999_999), &mut read_buf);
+                }
+            } else if roll < 85 {
+                // 15% Requested Inserts with LRU policy
+                req_writes += 1;
+                let key = (rand() as usize) % working_set_size;
+                let page = vec![(key % 256) as u8; SIZE];
+                let id =
+                    store.insert_with_policy(&page, xynoos_hypermemory::EvictionPolicy::Lru)?;
+                // Reconcile working set with actual live store entries
+                working_set.retain(|_, id| store.contains(*id));
+                working_set.insert(key, id);
+            } else if roll < 95 {
+                // 10% Requested Updates
+                req_updates += 1;
+                let key = (rand() as usize) % working_set_size;
+                let page = vec![((key + 1) % 256) as u8; SIZE];
+                if let Some(&id) = working_set.get(&key) {
+                    let _ = store.update(id, &page);
+                }
+            } else {
+                // 5% Requested Explicit Removals
+                req_removes += 1;
+                if !working_set.is_empty() {
+                    let keys: Vec<_> = working_set.keys().copied().collect();
+                    let target_key = keys[(rand() as usize) % keys.len()];
+                    if let Some(id) = working_set.remove(&target_key) {
+                        let _ = store.remove(id);
+                    }
+                }
+            }
+
+            latencies.push(op_start.elapsed().as_nanos() as u64);
+        }
+
+        assert_eq!(
+            req_reads + req_writes + req_updates + req_removes,
+            total_ops,
+            "Workload integrity: sum of requested operations must equal total_ops"
+        );
+
+        latencies.sort_unstable();
+        let median = latencies[latencies.len() / 2];
+        let p95 = latencies[(latencies.len() as f64 * 0.95) as usize];
+        let p99 = latencies[(latencies.len() as f64 * 0.99) as usize];
+        let max_lat = latencies[latencies.len() - 1];
+
+        let t = store.telemetry();
+        println!(
+            "{},{},{},{},{},{},{},{},{:.4},{},{},{},{},{}",
+            name,
+            total_ops,
+            req_reads,
+            req_writes,
+            req_updates,
+            req_removes,
+            t.hit_count,
+            t.miss_count,
+            t.hit_ratio().unwrap_or(0.0),
+            t.eviction_count,
+            median,
+            p95,
+            p99,
+            max_lat
+        );
+    }
+
+    Ok(())
+}
+
+fn run_scalability_benchmark() -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE EVICTION SCALABILITY BENCHMARK (O(N) VERIFICATION) ===");
+    println!("capacity_pages,measured_evictions,total_ns,ns_per_evict,evictions_per_sec");
+
+    for &capacity in &[16, 64, 256, 1024, 4096] {
+        let mut store = PageStore::adaptive(SIZE, capacity, usize::MAX)?;
+        let page = vec![0x33u8; SIZE];
+
+        // Pre-fill store to exact capacity
+        for _ in 0..capacity {
+            store.insert(&page)?;
+        }
+
+        // Measure 500 consecutive insertions under LRU eviction saturation
+        let evict_iters = 500;
+        let start = Instant::now();
+        for i in 0..evict_iters {
+            let val = (i % 256) as u8;
+            let p = vec![val; SIZE];
+            let _ =
+                store.insert_with_policy(black_box(&p), xynoos_hypermemory::EvictionPolicy::Lru)?;
+        }
+        let elapsed = start.elapsed();
+        let ns_per_evict = elapsed.as_nanos() as f64 / evict_iters as f64;
+        let evicts_per_sec = evict_iters as f64 / elapsed.as_secs_f64();
+
+        println!(
+            "{},{},{},{:.2},{:.2}",
+            capacity,
+            evict_iters,
+            elapsed.as_nanos(),
+            ns_per_evict,
+            evicts_per_sec
+        );
+    }
+
     Ok(())
 }

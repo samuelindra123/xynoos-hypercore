@@ -1,0 +1,72 @@
+name: HyperCore Engine CI
+on:
+  push:
+    branches: [main, "feat/*", "fix/*", "task/*"]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Code Quality & Formatting
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Rustfmt Check
+        run: cargo fmt --all -- --check
+      - name: Workspace Check
+        run: cargo check --workspace --all-targets --locked
+      - name: Strict Clippy Check
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: Unit, Integration & Property Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Test Workspace
+        run: cargo test --workspace --all-targets --locked
+      - name: Test HyperMemory Release Mode (Exhaustive Randomized Invariants)
+        run: cargo test -p xynoos-hypermemory --release --locked
+
+  benchmark:
+    name: Memory Engine & Workload Benchmarks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Release
+        run: cargo build --workspace --release --locked
+      - name: Run Lifecycle Benchmark
+        run: |
+          mkdir -p benchmark-results
+          target/release/xynoos-bench lifecycle > benchmark-results/lifecycle.csv
+          cat benchmark-results/lifecycle.csv
+      - name: Run Mixed Cache Workload Benchmark
+        run: |
+          target/release/xynoos-bench mixed > benchmark-results/mixed.csv
+          cat benchmark-results/mixed.csv
+      - name: Run Eviction Scalability Benchmark
+        run: |
+          target/release/xynoos-bench scalability > benchmark-results/scalability.csv
+          cat benchmark-results/scalability.csv
+      - name: Archive Benchmark Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: hypercore-benchmark-results
+          path: benchmark-results/
+          retention-days: 7
