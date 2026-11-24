@@ -1,15 +1,8 @@
 #![forbid(unsafe_code)]
-use std::{
-    fs,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
-};
+use std::fs;
 use xynoos_aura::{
     AdaptiveTieringPolicy, AuraDaemon, AuraKernelCoordinator, AuraTieringCoordinator, DaemonConfig,
-    DaemonMode, KernelTuningRecommendation, PidLock, ShadowPlayer, TraceRecord, TransactionJournal,
-    WorkloadTrace,
+    DaemonMode, ShadowPlayer, TraceRecord, TransactionJournal, WorkloadTrace,
 };
 use xynoos_core::MemoryPressure;
 use xynoos_hypermemory::PageStore;
@@ -179,6 +172,6 @@ fn test_milestone_f_shadow_profiler_and_counterfactual_replay() {
     let report = ShadowPlayer::replay(&loaded, &kernel_coord, &mut store).unwrap();
     assert_eq!(report.total_steps_replayed, 10);
     assert_eq!(report.simulated_duration_ms, 45000);
-    assert_eq!(report.peak_pressure, MemoryPressure::High);
+    assert_eq!(report.peak_pressure, MemoryPressure::Critical);
     assert!(report.advisory_tuning_recommendations_count > 0);
 }

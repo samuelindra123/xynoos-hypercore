@@ -464,6 +464,7 @@ impl AuraDaemon {
 mod tests {
     use super::*;
 
+    #[allow(dead_code)]
     struct MockBackend {
         pub id: Identity,
         pub low: u64,

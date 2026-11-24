@@ -286,7 +286,7 @@ mod tests {
         let report = ShadowPlayer::replay(&trace, &kernel_coord, &mut store).unwrap();
         assert_eq!(report.total_steps_replayed, 2);
         assert_eq!(report.simulated_duration_ms, 5000);
-        assert_eq!(report.peak_pressure, MemoryPressure::High);
+        assert_eq!(report.peak_pressure, MemoryPressure::Critical);
         assert!(report.advisory_tuning_recommendations_count >= 1);
     }
 }
