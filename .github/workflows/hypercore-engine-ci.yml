@@ -68,6 +68,14 @@ jobs:
         run: |
           target/release/xynoos-bench policy-comparison > benchmark-results/policy-comparison.csv
           cat benchmark-results/policy-comparison.csv
+      - name: Run Multi-Page Clustering Benchmark
+        run: |
+          target/release/xynoos-bench clustering > benchmark-results/clustering.csv
+          cat benchmark-results/clustering.csv
+      - name: Run Kernel-Tiering Interplay Benchmark
+        run: |
+          target/release/xynoos-bench interplay > benchmark-results/interplay.csv
+          cat benchmark-results/interplay.csv
       - name: Archive Benchmark Artifacts
         uses: actions/upload-artifact@v4
         with:

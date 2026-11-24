@@ -14,11 +14,41 @@ use xynoos_pressureiq::system::{
 };
 
 pub const MAX_LOW_BYTES: u64 = 64 * 1024 * 1024;
+pub const MAX_HIGH_BYTES: u64 = 512 * 1024 * 1024;
+pub const MAX_MAX_BYTES: u64 = 1024 * 1024 * 1024;
 pub const MAX_AGE: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 pub enum Action {
     MemoryLow { bytes: u64 },
+    MemoryHigh { bytes: u64 },
+    MemoryMax { bytes: u64 },
+}
+
+impl Action {
+    pub const fn control_filename(&self) -> &'static str {
+        match self {
+            Action::MemoryLow { .. } => "memory.low",
+            Action::MemoryHigh { .. } => "memory.high",
+            Action::MemoryMax { .. } => "memory.max",
+        }
+    }
+
+    pub const fn bytes(&self) -> u64 {
+        match *self {
+            Action::MemoryLow { bytes }
+            | Action::MemoryHigh { bytes }
+            | Action::MemoryMax { bytes } => bytes,
+        }
+    }
+
+    pub const fn max_permitted_bytes(&self) -> u64 {
+        match self {
+            Action::MemoryLow { .. } => MAX_LOW_BYTES,
+            Action::MemoryHigh { .. } => MAX_HIGH_BYTES,
+            Action::MemoryMax { .. } => MAX_MAX_BYTES,
+        }
+    }
 }
 #[derive(Debug, Serialize)]
 pub struct Capabilities {
@@ -90,9 +120,11 @@ fn validate_telemetry(
     now: Instant,
     action: Action,
 ) -> Result<(), String> {
-    let Action::MemoryLow { bytes } = action;
-    if bytes > MAX_LOW_BYTES || bytes % 4096 != 0 {
-        return Err("memory.low outside bounds or not 4096-byte aligned".into());
+    let bytes = action.bytes();
+    let max = action.max_permitted_bytes();
+    let name = action.control_filename();
+    if bytes > max || bytes % 4096 != 0 {
+        return Err(format!("{name} outside bounds or not 4096-byte aligned"));
     }
     let age = now
         .checked_duration_since(snapshot.monotonic)
@@ -159,8 +191,9 @@ pub fn prepare(snapshot: &SystemSnapshot, now: Instant, target: &Path, action: A
         {
             return Err("invalid target identity".into());
         }
-        let file = target.join("memory.low");
-        let fm = fs::symlink_metadata(&file).map_err(|e| format!("memory.low: {e}"))?;
+        let filename = action.control_filename();
+        let file = target.join(filename);
+        let fm = fs::symlink_metadata(&file).map_err(|e| format!("{filename}: {e}"))?;
         if !fm.is_file() || fm.file_type().is_symlink() || fm.dev() != meta.dev() {
             return Err("invalid control identity".into());
         }
@@ -172,11 +205,15 @@ pub fn prepare(snapshot: &SystemSnapshot, now: Instant, target: &Path, action: A
             unsafe { libc::faccessat(libc::AT_FDCWD, name.as_ptr(), libc::W_OK, libc::AT_EACCESS) }
                 == 0,
         );
-        let content = fs::read_to_string(&file).map_err(|e| format!("read memory.low: {e}"))?;
-        let value = content
-            .trim()
-            .parse::<u64>()
-            .map_err(|_| "invalid memory.low")?;
+        let content = fs::read_to_string(&file).map_err(|e| format!("read {filename}: {e}"))?;
+        let trimmed = content.trim();
+        let value = if trimmed == "max" {
+            u64::MAX
+        } else {
+            trimmed
+                .parse::<u64>()
+                .map_err(|_| format!("invalid {filename}"))?
+        };
         audit.original_bytes = Some(value);
         audit.device = Some(meta.dev());
         audit.inode = Some(meta.ino());

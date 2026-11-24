@@ -9,4 +9,5 @@ xynoos-core = { path = "../xynoos-core" }
 xynoos-hypermemory = { path = "../xynoos-hypermemory" }
 xynoos-aura = { path = "../xynoos-aura" }
 xynoos-pressureiq = { path = "../xynoos-pressureiq" }
+xynoos-linux-control = { path = "../xynoos-linux-control" }
 lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-encode", "safe-decode"] }

@@ -2,6 +2,8 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct PageId(pub u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct ClusterId(pub u64);
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum MemoryPressure {
     Low,
     Moderate,

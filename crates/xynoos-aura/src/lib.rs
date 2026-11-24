@@ -55,3 +55,6 @@ pub use tiering::{
     AdaptiveTieringPolicy, AuraTieringCoordinator, PressureBridge, PressureStabilizer,
     TelemetryValidation,
 };
+
+pub mod interplay;
+pub use interplay::{AuraKernelCoordinator, InterplayReport, KernelTuningRecommendation};
