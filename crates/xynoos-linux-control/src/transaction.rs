@@ -26,6 +26,35 @@ pub trait Backend {
     fn identity(&mut self) -> Result<Identity, String>;
     fn read_low(&mut self) -> Result<u64, String>;
     fn write_low(&mut self, value: u64) -> Result<(), String>;
+
+    fn read_high(&mut self) -> Result<u64, String> {
+        Err("read_high not implemented".into())
+    }
+    fn write_high(&mut self, _value: u64) -> Result<(), String> {
+        Err("write_high not implemented".into())
+    }
+    fn read_max(&mut self) -> Result<u64, String> {
+        Err("read_max not implemented".into())
+    }
+    fn write_max(&mut self, _value: u64) -> Result<(), String> {
+        Err("write_max not implemented".into())
+    }
+
+    fn read_control(&mut self, action: Action) -> Result<u64, String> {
+        match action {
+            Action::MemoryLow { .. } => self.read_low(),
+            Action::MemoryHigh { .. } => self.read_high(),
+            Action::MemoryMax { .. } => self.read_max(),
+        }
+    }
+
+    fn write_control(&mut self, action: Action, value: u64) -> Result<(), String> {
+        match action {
+            Action::MemoryLow { .. } => self.write_low(value),
+            Action::MemoryHigh { .. } => self.write_high(value),
+            Action::MemoryMax { .. } => self.write_max(value),
+        }
+    }
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -48,13 +77,13 @@ pub struct TransactionReport {
 
 /// Apply temporarily and restore before returning. A conflict never triggers a blind
 /// rollback. Even identity/value checks cannot close the kernel's check/write race.
-pub fn run<B: Backend>(
+pub fn run<B: Backend + ?Sized>(
     backend: &mut B,
     snapshot: &SystemSnapshot,
     action: Action,
     authorized: bool,
 ) -> TransactionReport {
-    let Action::MemoryLow { bytes } = action;
+    let bytes = action.bytes();
     let mut report = TransactionReport {
         outcome: Outcome::Declined,
         original: None,
@@ -78,7 +107,7 @@ pub fn run<B: Backend>(
         }
     };
     report.identity = Some(id);
-    let original = match backend.read_low() {
+    let original = match backend.read_control(action) {
         Ok(v) => v,
         Err(e) => {
             report.events.push(e);
@@ -86,7 +115,7 @@ pub fn run<B: Backend>(
         }
     };
     report.original = Some(original);
-    if let Err(e) = check(backend, id, original) {
+    if let Err(e) = check(backend, id, action, original) {
         report.outcome = Outcome::Conflict;
         report.events.push(e);
         return report;
@@ -103,18 +132,18 @@ pub fn run<B: Backend>(
             .push("already at requested value; no write".into());
         return report;
     }
-    let applied = backend.write_low(bytes);
+    let applied = backend.write_control(action, bytes);
     if let Err(e) = &applied {
         report.events.push(format!("apply failed: {e}"));
     }
-    let verification = check(backend, id, bytes);
+    let verification = check(backend, id, action, bytes);
     if let Err(e) = &verification {
         report.events.push(format!("verification: {e}"));
     }
     if verification.is_err() {
         // A failed/partial write may have left the original value. Otherwise it is
         // ambiguous and must not be overwritten as though it were ours.
-        if check(backend, id, original).is_ok() {
+        if check(backend, id, action, original).is_ok() {
             report.outcome = if applied.is_err() {
                 Outcome::ApplyFailed
             } else {
@@ -130,17 +159,17 @@ pub fn run<B: Backend>(
         return report;
     }
     // Revalidate immediately before restoring; never intentionally overwrite a known change.
-    if let Err(e) = check(backend, id, bytes) {
+    if let Err(e) = check(backend, id, action, bytes) {
         report.outcome = Outcome::Conflict;
         report.events.push(e);
         return report;
     }
-    if let Err(e) = backend.write_low(original) {
+    if let Err(e) = backend.write_control(action, original) {
         report.outcome = Outcome::RollbackFailed;
         report.events.push(format!("rollback write: {e}"));
         return report;
     }
-    if let Err(e) = check(backend, id, original) {
+    if let Err(e) = check(backend, id, action, original) {
         report.outcome = Outcome::RollbackFailed;
         report.events.push(format!("rollback verification: {e}"));
         return report;
@@ -155,12 +184,20 @@ pub fn run<B: Backend>(
         .push("original state verified after restore".into());
     report
 }
-fn check<B: Backend>(backend: &mut B, id: Identity, value: u64) -> Result<(), String> {
+fn check<B: Backend + ?Sized>(
+    backend: &mut B,
+    id: Identity,
+    action: Action,
+    value: u64,
+) -> Result<(), String> {
     if backend.identity()? != id {
         return Err("target identity changed".into());
     }
-    if backend.read_low()? != value {
-        return Err("memory.low changed unexpectedly".into());
+    if backend.read_control(action)? != value {
+        return Err(format!(
+            "{} changed unexpectedly",
+            action.control_filename()
+        ));
     }
     Ok(())
 }
@@ -363,6 +400,56 @@ impl Backend for DisposableCgroup {
         let s = value.to_string();
         let n = self
             .control
+            .write_at(s.as_bytes(), 0)
+            .map_err(|e| e.to_string())?;
+        if n != s.len() {
+            return Err("short control write".into());
+        }
+        Ok(())
+    }
+    fn read_high(&mut self) -> Result<u64, String> {
+        let text = read_at(&self.dir, c"memory.high")?;
+        let trimmed = text.trim();
+        if trimmed == "max" {
+            Ok(u64::MAX)
+        } else {
+            trimmed.parse().map_err(|_| "invalid memory.high".into())
+        }
+    }
+    fn write_high(&mut self, value: u64) -> Result<(), String> {
+        use std::os::unix::fs::FileExt;
+        let control = openat(self.dir.as_raw_fd(), c"memory.high", libc::O_RDWR)?;
+        let s = if value == u64::MAX {
+            "max".to_string()
+        } else {
+            value.to_string()
+        };
+        let n = control
+            .write_at(s.as_bytes(), 0)
+            .map_err(|e| e.to_string())?;
+        if n != s.len() {
+            return Err("short control write".into());
+        }
+        Ok(())
+    }
+    fn read_max(&mut self) -> Result<u64, String> {
+        let text = read_at(&self.dir, c"memory.max")?;
+        let trimmed = text.trim();
+        if trimmed == "max" {
+            Ok(u64::MAX)
+        } else {
+            trimmed.parse().map_err(|_| "invalid memory.max".into())
+        }
+    }
+    fn write_max(&mut self, value: u64) -> Result<(), String> {
+        use std::os::unix::fs::FileExt;
+        let control = openat(self.dir.as_raw_fd(), c"memory.max", libc::O_RDWR)?;
+        let s = if value == u64::MAX {
+            "max".to_string()
+        } else {
+            value.to_string()
+        };
+        let n = control
             .write_at(s.as_bytes(), 0)
             .map_err(|e| e.to_string())?;
         if n != s.len() {

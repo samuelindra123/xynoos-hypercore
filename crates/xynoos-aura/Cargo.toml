@@ -9,3 +9,4 @@ serde = { version = "1", features = ["derive"] }
 xynoos-pressureiq = { path = "../xynoos-pressureiq" }
 xynoos-core = { path = "../xynoos-core" }
 xynoos-hypermemory = { path = "../xynoos-hypermemory" }
+xynoos-linux-control = { path = "../xynoos-linux-control" }

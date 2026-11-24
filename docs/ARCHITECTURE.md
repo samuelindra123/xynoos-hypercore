@@ -185,3 +185,31 @@ Milestone D memperkokoh keandalan (*reliability*), determinisme, dan efisiensi m
 
 5. **Keamanan Numerik & Akuntansi Kapasitas (`net_accounted_delta`)**:
    - Seluruh konversi ukuran memori dan perhitungan selisih akuntansi menggunakan aritmatika terikat (*checked arithmetic*) dengan validasi batas eksplisit (`isize::try_from`), mencegah *integer wraparound* dan inkonsistensi budget.
+
+## HyperCore Milestone E: Adaptive Kernel Interplay & Multi-Page Extent Clustering
+
+Milestone E memperluas jangkauan HyperCore dari manajemen memori userspace murni menuju koordinasi terpadu tingkat kernel (*kernel-userspace control interplay*) dan efisiensi kompresi memori multi-halaman (*multi-page extent clustering*):
+
+1. **Pengendalian Multi-Aksi cgroup v2 Linux (`xynoos-linux-control`)**:
+   - Memperluas enum `Action` dengan dukungan operasional untuk:
+     - `Action::MemoryLow { bytes }`: Batas proteksi minimum memori cgroup (reclaim throttle perlindungan proses esensial).
+     - `Action::MemoryHigh { bytes }`: Batas ambang penahanan memori cgroup (memicu throttle alokasi dan direct reclaim asinkron sebelum OOM).
+     - `Action::MemoryMax { bytes }`: Batas keras kapasitas memori cgroup (mencegah eksploitasi runaway allocation).
+   - Pengerasan batas keamanan (`MAX_LOW_BYTES = 64 MiB`, `MAX_HIGH_BYTES = 512 MiB`, `MAX_MAX_BYTES = 1024 MiB`) dan validasi kelipatan 4096-byte terikat.
+   - Peningkatan trait `Backend` dan `DisposableCgroup` dengan antarmuka terpadu `read_control` dan `write_control` yang mendukung rollback atomik dan verifikasi identitas cgroup non-intrusif.
+
+2. **Koordinator Interaksi Kernel-Userspace Terpadu (`AuraKernelCoordinator`)**:
+   - Menghubungkan engine tiering `AuraTieringCoordinator` dengan sistem kontrol kernel `xynoos-linux-control`.
+   - Menerjemahkan status tekanan memori yang telah distabilkan (`MemoryPressure`) menjadi rekomendasi aksi kernel terikat (`KernelTuningRecommendation`):
+     - `MemoryPressure::Low`: `KernelTuningRecommendation::None` (bebas penahanan alokasi).
+     - `MemoryPressure::Moderate`: `KernelTuningRecommendation::ProtectEssential` (menetapkan `memory.low` protektif pada cgroup proses penting).
+     - `MemoryPressure::High`: `KernelTuningRecommendation::ThrottleBackground` (menerapkan `memory.high` limit pada cgroup latar belakang untuk meredam eskalasi tekanan).
+     - `MemoryPressure::Critical`: `KernelTuningRecommendation::EmergencyLimit` (menerapkan pembatasan darurat `memory.high` ketat guna mencegah aktivasi kernel OOM-killer).
+   - Menjalankan orkestrasi transaksional fail-closed: jika target disposable cgroup disediakan dan terotorisasi, operasi kernel dieksekusi dan dipulihkan secara aman dengan laporan gabungan `InterplayReport`.
+
+3. **Penyimpanan Terkelompok Multi-Halaman (*Page Clustering / Extent Storage*) (`ClusterStore`)**:
+   - Mengelompokkan $N$ halaman kontigu (2, 4, 8, atau 16 halaman; rentang 8 KiB hingga 64 KiB) ke dalam satu unit kluster terpadu (`ClusterStore`).
+   - *Keuntungan Kompresi Silang Halaman*: Kompresi blok LZ4 pada tingkat kluster (misal 16 KiB) memanfaatkan korelasi kamus antar halaman berdekatan, menghasilkan rasio kompresi jauh lebih unggul dibandingkan kompresi halaman tunggal 4 KiB (mengurangi konsumsi memori hingga >80% pada beban terstruktur).
+   - *Pengurangan Overhead Metadata*: Menggabungkan $N$ halaman ke dalam satu entri kluster mengamortisasi header LZ4 dan alokasi `HashMap`, memotong overhead pelacakan per-halaman secara signifikan.
+   - *Akses Granular Sub-Halaman*: Menyediakan `get_page_into(cluster_id, page_idx, out)` yang memverifikasi CRC32 individual sub-halaman tanpa merusak integritas kluster.
+   - *Proteksi Inkompresibel & Pemulihan*: Jika data kluster berentropi tinggi dan tidak menghasilkan penghematan ukuran, kluster otomatis dipertahankan dalam format raw `StorageTier::Memory`.

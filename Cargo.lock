@@ -126,6 +126,7 @@ dependencies = [
  "serde",
  "xynoos-core",
  "xynoos-hypermemory",
+ "xynoos-linux-control",
  "xynoos-pressureiq",
 ]
 
@@ -137,6 +138,7 @@ dependencies = [
  "xynoos-aura",
  "xynoos-core",
  "xynoos-hypermemory",
+ "xynoos-linux-control",
  "xynoos-pressureiq",
 ]
 

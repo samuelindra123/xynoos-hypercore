@@ -41,6 +41,8 @@ impl Fixture {
         ));
         fs::create_dir(&dir).unwrap();
         fs::write(dir.join("memory.low"), "4096").unwrap();
+        fs::write(dir.join("memory.high"), "16384").unwrap();
+        fs::write(dir.join("memory.max"), "65536").unwrap();
         Self {
             dir,
             reads: 0,
@@ -54,6 +56,18 @@ impl Fixture {
     }
     fn value(&self) -> u64 {
         fs::read_to_string(self.dir.join("memory.low"))
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
+    fn value_high(&self) -> u64 {
+        fs::read_to_string(self.dir.join("memory.high"))
+            .unwrap()
+            .parse()
+            .unwrap()
+    }
+    fn value_max(&self) -> u64 {
+        fs::read_to_string(self.dir.join("memory.max"))
             .unwrap()
             .parse()
             .unwrap()
@@ -96,6 +110,24 @@ impl Backend for Fixture {
         if self.fail_after_write == Some(self.writes) {
             return Err("injected error after mutation".into());
         }
+        Ok(())
+    }
+    fn read_high(&mut self) -> Result<u64, String> {
+        self.reads += 1;
+        Ok(self.value_high())
+    }
+    fn write_high(&mut self, value: u64) -> Result<(), String> {
+        self.writes += 1;
+        fs::write(self.dir.join("memory.high"), value.to_string()).map_err(|e| e.to_string())?;
+        Ok(())
+    }
+    fn read_max(&mut self) -> Result<u64, String> {
+        self.reads += 1;
+        Ok(self.value_max())
+    }
+    fn write_max(&mut self, value: u64) -> Result<(), String> {
+        self.writes += 1;
+        fs::write(self.dir.join("memory.max"), value.to_string()).map_err(|e| e.to_string())?;
         Ok(())
     }
 }
@@ -213,4 +245,67 @@ fn rollback_verification_failure_is_reported() {
     let report = run(&mut f, &collect_system(), action(), true);
     assert_eq!(report.outcome, Outcome::RollbackFailed);
     assert_eq!(f.value(), 12288);
+}
+
+#[test]
+fn memory_high_transaction_lifecycle_and_restoration() {
+    let mut f = Fixture::new();
+    let action = Action::MemoryHigh { bytes: 32768 };
+    let report = run(&mut f, &collect_system(), action, true);
+    assert_eq!(report.outcome, Outcome::Restored);
+    assert_eq!(f.value_high(), 16384);
+    assert_eq!(f.writes, 2);
+}
+
+#[test]
+fn memory_max_transaction_lifecycle_and_restoration() {
+    let mut f = Fixture::new();
+    let action = Action::MemoryMax { bytes: 131072 };
+    let report = run(&mut f, &collect_system(), action, true);
+    assert_eq!(report.outcome, Outcome::Restored);
+    assert_eq!(f.value_max(), 65536);
+    assert_eq!(f.writes, 2);
+}
+
+#[test]
+fn memory_high_and_max_bounds_and_alignment_checks() {
+    use xynoos_linux_control::{MAX_HIGH_BYTES, MAX_MAX_BYTES};
+    let mut f = Fixture::new();
+    let sys = collect_system();
+    // Non-aligned high
+    assert_eq!(
+        run(&mut f, &sys, Action::MemoryHigh { bytes: 4095 }, true).outcome,
+        Outcome::Declined
+    );
+    // Over max permitted high
+    assert_eq!(
+        run(
+            &mut f,
+            &sys,
+            Action::MemoryHigh {
+                bytes: MAX_HIGH_BYTES + 4096
+            },
+            true
+        )
+        .outcome,
+        Outcome::Declined
+    );
+    // Non-aligned max
+    assert_eq!(
+        run(&mut f, &sys, Action::MemoryMax { bytes: 4097 }, true).outcome,
+        Outcome::Declined
+    );
+    // Over max permitted max
+    assert_eq!(
+        run(
+            &mut f,
+            &sys,
+            Action::MemoryMax {
+                bytes: MAX_MAX_BYTES + 4096
+            },
+            true
+        )
+        .outcome,
+        Outcome::Declined
+    );
 }

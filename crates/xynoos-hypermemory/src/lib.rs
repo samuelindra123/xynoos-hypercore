@@ -6,8 +6,12 @@ use std::{
     mem::size_of,
 };
 pub use xynoos_core::{
-    CostEstimate, EvictionPolicy, MigrationBudget, PageId, PageLifecycleState, StorageTier,
+    ClusterId, CostEstimate, EvictionPolicy, MigrationBudget, PageId, PageLifecycleState,
+    StorageTier,
 };
+
+pub mod cluster;
+pub use cluster::*;
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
