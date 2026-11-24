@@ -499,12 +499,12 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         i += 1;
     }
 
-    let mut config = xynoos_aura::DaemonConfig::default();
-    config.mode = mode;
-    config.interval_ms = interval_ms;
-    if let Some(pf) = pid_file {
-        config.pid_file = Some(pf);
-    }
+    let config = xynoos_aura::DaemonConfig {
+        mode,
+        interval_ms,
+        pid_file,
+        ..Default::default()
+    };
 
     if status {
         println!(
@@ -524,7 +524,7 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let stop_signal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let diag = daemon
         .run_with_signal(stop_signal, max_cycles)
-        .map_err(|e| Box::<dyn Error>::from(e))?;
+        .map_err(Box::<dyn Error>::from)?;
 
     if human {
         println!("AURA Daemon Status: {:?}", diag.mode);

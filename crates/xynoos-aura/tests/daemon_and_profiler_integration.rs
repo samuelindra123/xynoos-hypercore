@@ -48,8 +48,10 @@ impl Backend for MockBackend {
 
 #[test]
 fn test_milestone_f_daemon_modes_and_safety_invariants() {
-    let mut config = DaemonConfig::default();
-    config.mode = DaemonMode::ObserveOnly;
+    let config = DaemonConfig {
+        mode: DaemonMode::ObserveOnly,
+        ..Default::default()
+    };
     let mut daemon = AuraDaemon::new(config).unwrap();
 
     let diag = Diagnosis {
@@ -96,8 +98,10 @@ fn test_milestone_f_crash_recovery_and_rollback() {
     let temp_dir = std::env::temp_dir().join(format!("xynoos_f_crash_{}", std::process::id()));
     let journal_file = temp_dir.join("recovery_journal.json");
 
-    let mut config = DaemonConfig::default();
-    config.journal_file = Some(journal_file.clone());
+    let config = DaemonConfig {
+        journal_file: Some(journal_file.clone()),
+        ..Default::default()
+    };
     let mut daemon = AuraDaemon::new(config).unwrap();
 
     let target_id = Identity {

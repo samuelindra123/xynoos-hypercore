@@ -939,8 +939,10 @@ fn run_daemon_benchmark() -> Result<(), Box<dyn Error>> {
     let modes = [DaemonMode::ObserveOnly, DaemonMode::Advisory];
 
     for &mode in &modes {
-        let mut config = DaemonConfig::default();
-        config.mode = mode;
+        let config = DaemonConfig {
+            mode,
+            ..Default::default()
+        };
         let mut daemon = AuraDaemon::new(config)?;
 
         let diag = Diagnosis {

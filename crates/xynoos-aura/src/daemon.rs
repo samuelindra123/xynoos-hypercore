@@ -292,9 +292,7 @@ impl AuraDaemon {
             }
             KernelTuningRecommendation::EmergencyLimit { .. } => {
                 // Batas darurat: tekan alokasi ke 80% dari penggunaan saat ini
-                let target = (current_usage_bytes * 80 / 100)
-                    .max(4096)
-                    .min(MAX_HIGH_BYTES);
+                let target = (current_usage_bytes * 80 / 100).clamp(4096, MAX_HIGH_BYTES);
                 let aligned = target - (target % 4096);
                 if aligned == 0 {
                     None
@@ -494,8 +492,10 @@ mod tests {
 
     #[test]
     fn test_daemon_lifecycle_observe_only() {
-        let mut config = DaemonConfig::default();
-        config.mode = DaemonMode::ObserveOnly;
+        let config = DaemonConfig {
+            mode: DaemonMode::ObserveOnly,
+            ..Default::default()
+        };
         let mut daemon = AuraDaemon::new(config).unwrap();
 
         let diag = Diagnosis {
@@ -547,8 +547,10 @@ mod tests {
         let temp_dir = std::env::temp_dir().join(format!("xynoos_test_{}", std::process::id()));
         let journal_file = temp_dir.join("test_journal.json");
 
-        let mut config = DaemonConfig::default();
-        config.journal_file = Some(journal_file.clone());
+        let config = DaemonConfig {
+            journal_file: Some(journal_file.clone()),
+            ..Default::default()
+        };
         let mut daemon = AuraDaemon::new(config).unwrap();
 
         let mock_id = Identity {
