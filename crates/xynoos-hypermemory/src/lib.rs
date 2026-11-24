@@ -5,7 +5,9 @@ use std::{
     fmt,
     mem::size_of,
 };
-pub use xynoos_core::{CostEstimate, EvictionPolicy, PageId, PageLifecycleState, StorageTier};
+pub use xynoos_core::{
+    CostEstimate, EvictionPolicy, MigrationBudget, PageId, PageLifecycleState, StorageTier,
+};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
@@ -78,7 +80,11 @@ pub struct TieringReport {
     pub inspected_pages: usize,
     pub migrated_to_compressed: usize,
     pub migrated_to_memory: usize,
+    pub already_in_tier: usize,
     pub no_change: usize,
+    pub deferred_by_migration_budget: usize,
+    pub rejected_by_storage_budget: usize,
+    pub failed_migration: usize,
     pub net_accounted_delta: isize,
 }
 /// Batas ukuran simulasi untuk membatasi alokasi setiap pengambilan.
@@ -575,6 +581,12 @@ impl PageStore {
                     return Err(Error::PayloadChecksumMismatch);
                 }
                 let compressed = lz4_flex::block::compress(decompressed);
+                // Perlindungan halaman inkompresibel (Phase E):
+                // Jika kompresi tidak menghemat ruang memori, pertahankan di tier raw
+                // agar tidak terjadi pembengkakan memori akibat header LZ4.
+                if compressed.capacity() >= decompressed.capacity() {
+                    return Ok(false);
+                }
                 let new_cost = compressed
                     .capacity()
                     .checked_add(size_of::<(PageId, Entry)>())
@@ -662,8 +674,12 @@ impl PageStore {
         }
     }
 
-    /// Menerapkan fungsi keputusan tiering ke seluruh halaman aktif secara deterministik.
-    pub fn apply_tiering<F>(&mut self, mut decide: F) -> Result<TieringReport, Error>
+    /// Menerapkan fungsi keputusan tiering dengan batas anggaran migrasi per siklus evaluasi.
+    pub fn apply_tiering_with_budget<F>(
+        &mut self,
+        budget: MigrationBudget,
+        mut decide: F,
+    ) -> Result<TieringReport, Error>
     where
         F: FnMut(PageId, StorageTier, CostEstimate) -> StorageTier,
     {
@@ -676,15 +692,30 @@ impl PageStore {
             ..Default::default()
         };
 
+        let mut migrated_pages_count = 0usize;
+        let mut migrated_bytes_count = 0usize;
+
         for id in ids {
             let current_tier = self.page_tier(id)?;
             let cost = self.page_cost_estimate(id)?;
             let target = decide(id, current_tier, cost);
             if target == current_tier {
+                report.already_in_tier += 1;
                 report.no_change += 1;
             } else {
+                // Periksa batas anggaran migrasi (rate limiting)
+                if migrated_pages_count >= budget.max_pages
+                    || migrated_bytes_count.saturating_add(cost.bytes) > budget.max_bytes
+                {
+                    report.deferred_by_migration_budget += 1;
+                    report.no_change += 1;
+                    continue;
+                }
+
                 match self.migrate_page(id, target) {
                     Ok(true) => {
+                        migrated_pages_count += 1;
+                        migrated_bytes_count = migrated_bytes_count.saturating_add(cost.bytes);
                         if target == StorageTier::Compressed {
                             report.migrated_to_compressed += 1;
                         } else {
@@ -692,18 +723,40 @@ impl PageStore {
                         }
                     }
                     Ok(false) => {
+                        report.already_in_tier += 1;
                         report.no_change += 1;
                     }
                     Err(Error::BudgetExceeded) => {
+                        report.rejected_by_storage_budget += 1;
                         report.no_change += 1;
                     }
-                    Err(e) => return Err(e),
+                    Err(e) => {
+                        return Err(e);
+                    }
                 }
             }
         }
 
-        report.net_accounted_delta = (self.accounted as isize) - (initial_accounted as isize);
+        // Phase F: Keamanan Numerik & Akuntansi Terverifikasi
+        report.net_accounted_delta = if self.accounted >= initial_accounted {
+            let diff = self.accounted - initial_accounted;
+            isize::try_from(diff).unwrap_or(isize::MAX)
+        } else {
+            let diff = initial_accounted - self.accounted;
+            match isize::try_from(diff) {
+                Ok(v) => -v,
+                Err(_) => isize::MIN,
+            }
+        };
         Ok(report)
+    }
+
+    /// Menerapkan fungsi keputusan tiering ke seluruh halaman aktif secara deterministik (tanpa batas budget).
+    pub fn apply_tiering<F>(&mut self, decide: F) -> Result<TieringReport, Error>
+    where
+        F: FnMut(PageId, StorageTier, CostEstimate) -> StorageTier,
+    {
+        self.apply_tiering_with_budget(MigrationBudget::UNLIMITED, decide)
     }
 
     /// Mendapatkan snapshot telemetri operasional.
@@ -1687,5 +1740,80 @@ mod tiering_tests {
         assert_eq!(report3.migrated_to_compressed, 5);
         assert_eq!(report3.no_change, 0);
         assert!(report3.net_accounted_delta < 0);
+    }
+
+    #[test]
+    fn test_migration_budget_rate_limiting() {
+        let mut s = PageStore::adaptive(4096, 8, 131072).unwrap();
+        let mut ids = Vec::new();
+        for i in 0..4 {
+            let data = vec![i as u8; 4096];
+            ids.push(s.insert(&data).unwrap());
+        }
+
+        // Initially all 4 pages are Compressed.
+        // Apply tiering to Memory with bounded budget: max 2 pages per cycle.
+        let budget = MigrationBudget::bounded(2, usize::MAX);
+        let rep1 = s
+            .apply_tiering_with_budget(budget, |_id, _tier, _cost| StorageTier::Memory)
+            .unwrap();
+
+        assert_eq!(rep1.inspected_pages, 4);
+        assert_eq!(rep1.migrated_to_memory, 2);
+        assert_eq!(rep1.deferred_by_migration_budget, 2);
+        assert_eq!(rep1.no_change, 2);
+
+        // First 2 pages are now Memory, last 2 are still Compressed
+        assert_eq!(s.page_tier(ids[0]).unwrap(), StorageTier::Memory);
+        assert_eq!(s.page_tier(ids[1]).unwrap(), StorageTier::Memory);
+        assert_eq!(s.page_tier(ids[2]).unwrap(), StorageTier::Compressed);
+        assert_eq!(s.page_tier(ids[3]).unwrap(), StorageTier::Compressed);
+
+        // Second cycle: migrate remaining pages
+        let rep2 = s
+            .apply_tiering_with_budget(budget, |_id, _tier, _cost| StorageTier::Memory)
+            .unwrap();
+
+        assert_eq!(rep2.inspected_pages, 4);
+        assert_eq!(rep2.migrated_to_memory, 2);
+        assert_eq!(rep2.already_in_tier, 2);
+        assert_eq!(rep2.deferred_by_migration_budget, 0);
+        assert_eq!(rep2.no_change, 2);
+
+        // Now all 4 pages are in Memory
+        for id in &ids {
+            assert_eq!(s.page_tier(*id).unwrap(), StorageTier::Memory);
+        }
+    }
+
+    #[test]
+    fn test_incompressible_page_protection() {
+        let mut s = PageStore::adaptive(4096, 4, 65536).unwrap();
+
+        // High entropy pseudo-random 4096 bytes
+        let mut rng_seed = 0xDEAD_BEEF_CAFE_BABE_u64;
+        let mut random_page = vec![0u8; 4096];
+        for byte in random_page.iter_mut() {
+            rng_seed ^= rng_seed << 13;
+            rng_seed ^= rng_seed >> 7;
+            rng_seed ^= rng_seed << 17;
+            *byte = rng_seed as u8;
+        }
+
+        let id = s.insert(&random_page).unwrap();
+        // Since random data cannot be compressed, adaptive store kept it in Memory (raw)
+        assert_eq!(s.page_tier(id).unwrap(), StorageTier::Memory);
+
+        // Attempting to force migration to Compressed tier must be rejected
+        // because compression would expand memory rather than shrink it
+        let migrated = s.migrate_page(id, StorageTier::Compressed).unwrap();
+        assert!(
+            !migrated,
+            "Incompressible page must NOT be migrated to compressed tier"
+        );
+        assert_eq!(s.page_tier(id).unwrap(), StorageTier::Memory);
+
+        // Verify data remains 100% intact
+        assert_eq!(s.get(id).unwrap(), random_page);
     }
 }

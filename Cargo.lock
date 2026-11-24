@@ -134,7 +134,10 @@ name = "xynoos-bench"
 version = "0.1.0"
 dependencies = [
  "lz4_flex",
+ "xynoos-aura",
+ "xynoos-core",
  "xynoos-hypermemory",
+ "xynoos-pressureiq",
 ]
 
 [[package]]

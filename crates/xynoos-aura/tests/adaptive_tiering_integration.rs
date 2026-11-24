@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 use xynoos_aura::{AdaptiveTieringPolicy, AuraTieringCoordinator, PressureBridge};
-use xynoos_core::{MemoryPressure, StorageTier};
+use xynoos_core::{MemoryPressure, MigrationBudget, StorageTier};
 use xynoos_hypermemory::PageStore;
 use xynoos_pressureiq::intelligence::Diagnosis;
 
@@ -176,6 +176,148 @@ fn test_budget_exhaustion_on_tier_expansion() {
     assert!(store.stats().accounted_bytes <= store.stats().budget_bytes);
 
     // Verify all 4 pages are readable and uncorrupted!
+    for (i, id) in ids.iter().enumerate() {
+        assert_eq!(store.get(*id).unwrap(), vec![i as u8; 4096]);
+    }
+}
+
+#[test]
+fn test_oscillation_suppression_under_noisy_telemetry() {
+    let mut store = PageStore::adaptive(4096, 8, 131072).unwrap();
+    let mut ids = Vec::new();
+    for i in 0..8u8 {
+        ids.push(store.insert(&vec![i; 4096]).unwrap());
+    }
+
+    // Step into Moderate pressure initially
+    let diag_mod = make_diagnosis(vec!["elevated_pressure"], Some(30.0), true);
+    let diag_low = make_diagnosis(vec!["normal"], Some(80.0), true);
+
+    // Baseline coordinator: 0 hold ticks (will thrash on every oscillation)
+    let baseline_coord = AuraTieringCoordinator::new(AdaptiveTieringPolicy::new(500));
+    let _ = baseline_coord.step(&mut store, &diag_mod).unwrap();
+
+    // Reliable coordinator with 3 deescalation hold ticks
+    let reliable_coord = AuraTieringCoordinator::reliable(
+        AdaptiveTieringPolicy::new(500),
+        3,
+        MigrationBudget::UNLIMITED,
+    );
+    // Initialize stabilizer at Moderate
+    let _ = reliable_coord.step(&mut store, &diag_mod).unwrap();
+
+    // Now simulate 6 noisy ticks alternating Low, Moderate, Low, Moderate...
+    let mut migrations_with_stabilizer = 0;
+    for tick in 0..6 {
+        let diag = if tick % 2 == 0 { &diag_low } else { &diag_mod };
+        let rep = reliable_coord.step(&mut store, diag).unwrap();
+        migrations_with_stabilizer += rep.migrated_to_memory + rep.migrated_to_compressed;
+    }
+
+    // Because Low was never held for 3 consecutive ticks, the stabilizer kept the policy at Moderate!
+    // No thrashing between Memory and Compressed occurred!
+    assert_eq!(migrations_with_stabilizer, 0);
+
+    // Verify all pages are still completely intact
+    for (i, id) in ids.iter().enumerate() {
+        assert_eq!(store.get(*id).unwrap(), vec![i as u8; 4096]);
+    }
+}
+
+#[test]
+fn test_migration_rate_limiting_with_budget_and_resumption() {
+    let mut store = PageStore::adaptive(4096, 10, 262144).unwrap();
+    let mut ids = Vec::new();
+    for i in 0..10u8 {
+        ids.push(store.insert(&vec![i; 4096]).unwrap());
+    }
+
+    // All 10 pages start in Compressed tier
+    for id in &ids {
+        assert_eq!(store.page_tier(*id).unwrap(), StorageTier::Compressed);
+    }
+
+    // Bounded budget: at most 3 pages per cycle
+    let budget = MigrationBudget::bounded(3, usize::MAX);
+    let coordinator =
+        AuraTieringCoordinator::new(AdaptiveTieringPolicy::new(500)).with_budget(budget);
+
+    let diag_low = make_diagnosis(vec!["normal"], Some(85.0), true);
+
+    // Cycle 1: 3 migrated, 7 deferred
+    let r1 = coordinator.step(&mut store, &diag_low).unwrap();
+    assert_eq!(r1.migrated_to_memory, 3);
+    assert_eq!(r1.deferred_by_migration_budget, 7);
+
+    // Cycle 2: 3 migrated, 4 deferred
+    let r2 = coordinator.step(&mut store, &diag_low).unwrap();
+    assert_eq!(r2.migrated_to_memory, 3);
+    assert_eq!(r2.deferred_by_migration_budget, 4);
+
+    // Cycle 3: 3 migrated, 1 deferred
+    let r3 = coordinator.step(&mut store, &diag_low).unwrap();
+    assert_eq!(r3.migrated_to_memory, 3);
+    assert_eq!(r3.deferred_by_migration_budget, 1);
+
+    // Cycle 4: 1 migrated, 0 deferred
+    let r4 = coordinator.step(&mut store, &diag_low).unwrap();
+    assert_eq!(r4.migrated_to_memory, 1);
+    assert_eq!(r4.deferred_by_migration_budget, 0);
+
+    // All 10 pages are now in Memory tier
+    for id in &ids {
+        assert_eq!(store.page_tier(*id).unwrap(), StorageTier::Memory);
+    }
+
+    // Cycle 5: All already in Memory -> already_in_tier = 10, migrations = 0
+    let r5 = coordinator.step(&mut store, &diag_low).unwrap();
+    assert_eq!(r5.already_in_tier, 10);
+    assert_eq!(r5.migrated_to_memory, 0);
+
+    // Final data verification
+    for (i, id) in ids.iter().enumerate() {
+        assert_eq!(store.get(*id).unwrap(), vec![i as u8; 4096]);
+    }
+}
+
+#[test]
+fn test_selective_promotion_cold_page_savings() {
+    let mut store = PageStore::adaptive(4096, 8, 262144).unwrap();
+    let mut ids = Vec::new();
+    for i in 0..8u8 {
+        ids.push(store.insert(&vec![i; 4096]).unwrap());
+    }
+
+    // Access only the first 2 pages repeatedly to mark them as hot (recency bonus)
+    for _ in 0..5 {
+        let _ = store.get(ids[0]).unwrap();
+        let _ = store.get(ids[1]).unwrap();
+    }
+
+    // Configure coordinator with selective_promotion = true (reliable mode)
+    let coordinator = AuraTieringCoordinator::new(AdaptiveTieringPolicy::reliable(750));
+
+    let diag_low = make_diagnosis(vec!["normal"], Some(85.0), true);
+    let rep = coordinator.step(&mut store, &diag_low).unwrap();
+
+    assert_eq!(rep.inspected_pages, 8);
+    // 2 hot pages promoted to Memory
+    assert_eq!(rep.migrated_to_memory, 2);
+    // 6 cold pages remain Compressed
+    assert_eq!(store.page_tier(ids[0]).unwrap(), StorageTier::Memory);
+    assert_eq!(store.page_tier(ids[1]).unwrap(), StorageTier::Memory);
+    for id in &ids[2..] {
+        assert_eq!(store.page_tier(*id).unwrap(), StorageTier::Compressed);
+    }
+
+    // Accounting check: 2 raw pages (~8352 B) + 6 compressed pages (~600 B) < 8 raw pages (~33408 B)
+    let accounted = store.stats().accounted_bytes;
+    assert!(
+        accounted < 15000,
+        "Selective promotion must avoid inflating RAM with cold pages"
+    );
+
+    // Verify all pages read identically
     for (i, id) in ids.iter().enumerate() {
         assert_eq!(store.get(*id).unwrap(), vec![i as u8; 4096]);
     }

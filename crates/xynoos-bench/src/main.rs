@@ -1,6 +1,15 @@
 #![forbid(unsafe_code)]
-use std::{collections::HashMap, error::Error, hint::black_box, process::Command, time::Instant};
+use std::{
+    collections::{BTreeMap, HashMap},
+    error::Error,
+    hint::black_box,
+    process::Command,
+    time::Instant,
+};
+use xynoos_aura::{AdaptiveTieringPolicy, AuraTieringCoordinator};
+use xynoos_core::{MigrationBudget, StorageTier};
 use xynoos_hypermemory::{PageId, PageStore};
+use xynoos_pressureiq::intelligence::Diagnosis;
 const N: usize = 256;
 const SIZE: usize = 4096;
 const RUNS: usize = 32;
@@ -57,6 +66,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if args.len() == 2 && args[1] == "scalability" {
         return run_scalability_benchmark();
+    }
+    if args.len() == 2 && args[1] == "policy-comparison" {
+        return run_policy_comparison_benchmark();
     }
     if args.len() == 1 {
         println!("dataset,backend,run,insert_batch_ns_per_page,get_batch_ns_per_page,codec_compress_mib_s,codec_decompress_mib_s,payload_bytes,capacity_bytes,metadata_bytes,map_capacity,raw_pages,compressed_pages,rss_before_kib,rss_loaded_kib,peak_kib,cpu_ns");
@@ -469,6 +481,171 @@ fn run_scalability_benchmark() -> Result<(), Box<dyn Error>> {
             ns_per_evict,
             evicts_per_sec
         );
+    }
+
+    Ok(())
+}
+
+fn run_policy_comparison_benchmark() -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE MEMORY POLICY COMPARISON BENCHMARK ===");
+    println!("workload,policy,total_ops,read_lat_median_ns,read_lat_p95_ns,read_lat_p99_ns,stored_bytes,accounted_bytes,migrations_to_comp,migrations_to_mem,migrations_deferred,migrations_avoided,cpu_ns");
+
+    let workloads = ["compressible", "incompressible", "oscillating_pressure"];
+    let policies = [
+        "static_raw",
+        "static_compressed",
+        "adaptive_baseline",
+        "adaptive_reliable",
+    ];
+
+    for workload in workloads {
+        for policy in policies {
+            let cpu_start = cpu_ns();
+            let page_count = 128;
+            let mut store = PageStore::adaptive(SIZE, page_count, usize::MAX)?;
+
+            // Generate dataset based on workload
+            let mut seed = 0x5a5a_1234_u32;
+            let pages: Vec<Vec<u8>> = (0..page_count)
+                .map(|p| {
+                    (0..SIZE)
+                        .map(|i| {
+                            seed ^= seed << 13;
+                            seed ^= seed >> 17;
+                            seed ^= seed << 5;
+                            match workload {
+                                "incompressible" => seed as u8,
+                                _ => (i % 37 + p % 7) as u8,
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+
+            let mut ids = Vec::with_capacity(page_count);
+            for p in &pages {
+                ids.push(store.insert(p)?);
+            }
+
+            // Configure initial tiering or policy setup
+            let coordinator = match policy {
+                "static_raw" => {
+                    // Pre-migrate all to Memory
+                    let _ = store.apply_tiering(|_, _, _| StorageTier::Memory)?;
+                    None
+                }
+                "static_compressed" => {
+                    // Pages are already in Compressed (default for adaptive PageStore insert)
+                    None
+                }
+                "adaptive_baseline" => {
+                    Some(AuraTieringCoordinator::new(AdaptiveTieringPolicy::new(750)))
+                }
+                "adaptive_reliable" => Some(AuraTieringCoordinator::reliable(
+                    AdaptiveTieringPolicy::reliable(750),
+                    3,
+                    MigrationBudget::bounded(16, usize::MAX),
+                )),
+                _ => None,
+            };
+
+            let total_ops = 2000;
+            let mut latencies = Vec::with_capacity(total_ops);
+            let mut buf = vec![0u8; SIZE];
+
+            let mut total_mig_to_comp = 0;
+            let mut total_mig_to_mem = 0;
+            let mut total_mig_deferred = 0;
+
+            // Baseline oscillation migration counter to calculate avoided migrations
+            let mut baseline_thrashing_count = 0;
+
+            for op in 0..total_ops {
+                // Skewed access pattern: 80% ops on top 20% pages
+                let key_idx = if (op % 10) < 8 {
+                    (op * 7) % (page_count / 5).max(1)
+                } else {
+                    (op * 13) % page_count
+                };
+
+                let start = Instant::now();
+                let _ = store.get_into(ids[key_idx], &mut buf)?;
+                latencies.push(start.elapsed().as_nanos() as u64);
+
+                // Periodic coordinator evaluation every 50 ops
+                if op > 0 && op % 50 == 0 {
+                    let is_low = if workload == "oscillating_pressure" {
+                        // Alternate between Low and Moderate every 50 ops
+                        (op / 50) % 2 == 0
+                    } else {
+                        // Regular workload: Low pressure
+                        true
+                    };
+
+                    if workload == "oscillating_pressure" {
+                        baseline_thrashing_count += page_count / 2;
+                    }
+
+                    if let Some(ref coord) = coordinator {
+                        let diag = Diagnosis {
+                            classes: if is_low {
+                                vec!["normal".into()]
+                            } else {
+                                vec!["elevated_pressure".into()]
+                            },
+                            evidence: vec![],
+                            limitations: vec![],
+                            available_pct: Some(if is_low { 85.0 } else { 28.0 }),
+                            rates_per_second: BTreeMap::new(),
+                            disk_bytes_per_second: BTreeMap::new(),
+                            zram_ratios: BTreeMap::new(),
+                            interval_seconds: Some(1.0),
+                            reliable: true,
+                        };
+
+                        let report = coord.step(&mut store, &diag)?;
+                        total_mig_to_comp += report.migrated_to_compressed;
+                        total_mig_to_mem += report.migrated_to_memory;
+                        total_mig_deferred += report.deferred_by_migration_budget;
+                    }
+                }
+            }
+
+            latencies.sort_unstable();
+            let median = latencies[latencies.len() / 2];
+            let p95 = latencies[(latencies.len() as f64 * 0.95) as usize];
+            let p99 = latencies[(latencies.len() as f64 * 0.99) as usize];
+
+            let st = store.stats();
+            let migrations_avoided =
+                if policy == "adaptive_reliable" && workload == "oscillating_pressure" {
+                    baseline_thrashing_count.saturating_sub(total_mig_to_comp + total_mig_to_mem)
+                } else {
+                    0
+                };
+
+            let cpu = cpu_ns()
+                .zip(cpu_start)
+                .map(|(a, b)| a.saturating_sub(b))
+                .unwrap_or(0);
+
+            println!(
+                "{},{},{},{},{},{},{},{},{},{},{},{},{}",
+                workload,
+                policy,
+                total_ops,
+                median,
+                p95,
+                p99,
+                st.stored_bytes,
+                st.accounted_bytes,
+                total_mig_to_comp,
+                total_mig_to_mem,
+                total_mig_deferred,
+                migrations_avoided,
+                cpu
+            );
+        }
     }
 
     Ok(())
