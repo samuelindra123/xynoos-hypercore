@@ -10,6 +10,12 @@ use xynoos_pressureiq::{
 mod product;
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("daemon") {
+        return daemon_command(&args[1..]);
+    }
+    if args.first().map(String::as_str) == Some("profile") {
+        return profile_command(&args[1..]);
+    }
     if args.first().map(String::as_str) == Some("memory") {
         return memory_command(&args[1..]);
     }
@@ -452,4 +458,229 @@ fn memory_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         );
     }
     Ok(())
+}
+
+fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    let mut mode = xynoos_aura::DaemonMode::ObserveOnly;
+    let mut interval_ms = 5000u64;
+    let mut max_cycles = None;
+    let mut human = false;
+    let mut status = false;
+    let mut pid_file = None;
+
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--mode" => {
+                i += 1;
+                match args.get(i).map(String::as_str) {
+                    Some("observe-only") => mode = xynoos_aura::DaemonMode::ObserveOnly,
+                    Some("advisory") => mode = xynoos_aura::DaemonMode::Advisory,
+                    Some("transactional") => mode = xynoos_aura::DaemonMode::Transactional,
+                    _ => return Err("Invalid mode. Allowed: observe-only, advisory, transactional".into()),
+                }
+            }
+            "--interval-ms" => {
+                i += 1;
+                interval_ms = args.get(i).ok_or("missing interval-ms")?.parse()?;
+            }
+            "--max-cycles" => {
+                i += 1;
+                max_cycles = Some(args.get(i).ok_or("missing max-cycles")?.parse()?);
+            }
+            "--pid-file" => {
+                i += 1;
+                pid_file = Some(PathBuf::from(args.get(i).ok_or("missing pid-file")?));
+            }
+            "--status" => status = true,
+            "--human" => human = true,
+            _ => return Err("usage: daemon [--mode observe-only|advisory|transactional] [--interval-ms N] [--max-cycles N] [--status] [--human]".into()),
+        }
+        i += 1;
+    }
+
+    let mut config = xynoos_aura::DaemonConfig::default();
+    config.mode = mode;
+    config.interval_ms = interval_ms;
+    if let Some(pf) = pid_file {
+        config.pid_file = Some(pf);
+    }
+
+    if status {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&serde_json::json!({
+                "status": "configured",
+                "mode": config.mode,
+                "interval_ms": config.interval_ms,
+                "pid_file": config.pid_file,
+                "journal_file": config.journal_file,
+            }))?
+        );
+        return Ok(());
+    }
+
+    let mut daemon = xynoos_aura::AuraDaemon::new(config)?;
+    let stop_signal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let diag = daemon
+        .run_with_signal(stop_signal, max_cycles)
+        .map_err(|e| Box::<dyn Error>::from(e))?;
+
+    if human {
+        println!("AURA Daemon Status: {:?}", diag.mode);
+        println!("  Uptime: {} s", diag.uptime_secs);
+        println!(
+            "  Cycles: {} completed, {} failed",
+            diag.cycles_completed, diag.cycles_failed
+        );
+        println!("  Last pressure: {:?}", diag.last_raw_pressure);
+        println!("  Last recommendation: {:?}", diag.last_recommendation);
+    } else {
+        println!("{}", serde_json::to_string_pretty(&diag)?);
+    }
+    Ok(())
+}
+
+fn profile_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    if args.is_empty() {
+        return Err("usage: profile record [--output FILE] [--count N] | profile replay --trace FILE [--human]".into());
+    }
+    match args[0].as_str() {
+        "record" => {
+            let mut count = 5usize;
+            let mut interval_ms = 1000u64;
+            let mut output = PathBuf::from("workload_trace.json");
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--count" => {
+                        i += 1;
+                        count = args.get(i).ok_or("missing count")?.parse()?;
+                    }
+                    "--interval-ms" => {
+                        i += 1;
+                        interval_ms = args.get(i).ok_or("missing interval-ms")?.parse()?;
+                    }
+                    "--output" => {
+                        i += 1;
+                        output = PathBuf::from(args.get(i).ok_or("missing output path")?);
+                    }
+                    _ => {
+                        return Err(
+                            "usage: profile record [--count N] [--interval-ms N] [--output FILE]"
+                                .into(),
+                        )
+                    }
+                }
+                i += 1;
+            }
+
+            let mut trace = xynoos_aura::WorkloadTrace::new("cli-recorded-workload".into());
+            for step in 0..count {
+                let snap = xynoos_pressureiq::collect();
+                let diag = xynoos_aura::TraceRecord {
+                    step_index: step as u64,
+                    relative_timestamp_ms: (step as u64) * interval_ms,
+                    mem_total_bytes: snap
+                        .mem
+                        .result
+                        .as_ref()
+                        .ok()
+                        .and_then(|m| m.bytes.get("MemTotal"))
+                        .copied()
+                        .unwrap_or(0),
+                    mem_available_bytes: snap
+                        .mem
+                        .result
+                        .as_ref()
+                        .ok()
+                        .and_then(|m| m.bytes.get("MemAvailable"))
+                        .copied()
+                        .unwrap_or(0),
+                    available_pct: 50.0,
+                    psi_some_avg10: snap
+                        .psi
+                        .result
+                        .as_ref()
+                        .ok()
+                        .map(|p| p.some.avg10)
+                        .unwrap_or(0.0),
+                    psi_full_avg10: snap
+                        .psi
+                        .result
+                        .as_ref()
+                        .ok()
+                        .and_then(|p| p.full.as_ref().map(|f| f.avg10))
+                        .unwrap_or(0.0),
+                    swap_thrashing: false,
+                    severe_psi: false,
+                    high_page_fault_rate: false,
+                    cgroup_usage_bytes: 0,
+                };
+                trace.append(diag);
+                if step + 1 < count {
+                    std::thread::sleep(Duration::from_millis(interval_ms));
+                }
+            }
+            trace.save_to_file(&output)?;
+            println!(
+                "Recorded {} trace steps to {}",
+                trace.total_steps,
+                output.display()
+            );
+            Ok(())
+        }
+        "replay" => {
+            let mut trace_path = None;
+            let mut human = false;
+            let mut i = 1;
+            while i < args.len() {
+                match args[i].as_str() {
+                    "--trace" => {
+                        i += 1;
+                        trace_path = Some(PathBuf::from(args.get(i).ok_or("missing trace path")?));
+                    }
+                    "--human" => human = true,
+                    _ => return Err("usage: profile replay --trace FILE [--human]".into()),
+                }
+                i += 1;
+            }
+            let path = trace_path.ok_or("Missing --trace FILE")?;
+            let trace = xynoos_aura::WorkloadTrace::load_from_file(&path)?;
+
+            let tier_coord = xynoos_aura::AuraTieringCoordinator::new(
+                xynoos_aura::AdaptiveTieringPolicy::default(),
+            );
+            let kernel_coord = xynoos_aura::AuraKernelCoordinator::new(tier_coord);
+            let mut store = xynoos_hypermemory::PageStore::with_capacity(64)?;
+
+            let report = xynoos_aura::ShadowPlayer::replay(&trace, &kernel_coord, &mut store)?;
+            if human {
+                println!(
+                    "Shadow Profiler Replay Report: {}",
+                    report.workload_identifier
+                );
+                println!("  Steps replayed: {}", report.total_steps_replayed);
+                println!("  Duration: {} ms", report.simulated_duration_ms);
+                println!("  Peak pressure: {:?}", report.peak_pressure);
+                println!("  Migrations: {}", report.total_pages_migrated);
+                println!(
+                    "  Space saved: {} bytes",
+                    report.simulated_space_saved_bytes
+                );
+                println!(
+                    "  Compression ratio: {:.3}",
+                    report.simulated_compression_ratio
+                );
+                println!(
+                    "  Advisory recommendations: {}",
+                    report.advisory_tuning_recommendations_count
+                );
+            } else {
+                println!("{}", serde_json::to_string_pretty(&report)?);
+            }
+            Ok(())
+        }
+        _ => Err("usage: profile record | profile replay".into()),
+    }
 }

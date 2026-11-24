@@ -1,7 +1,7 @@
 //! A temporary memory.low transaction. The backend must represent a disposable,
 //! isolated target and return a stable identity. No operation is atomic with other writers.
 use crate::{validate_telemetry, Action};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs::File,
     io::{self, Read},
@@ -14,7 +14,7 @@ use std::{
 };
 use xynoos_pressureiq::system::SystemSnapshot;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Identity {
     pub device: u64,
     pub inode: u64,

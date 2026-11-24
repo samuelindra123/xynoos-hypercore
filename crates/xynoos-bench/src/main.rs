@@ -6,7 +6,10 @@ use std::{
     process::Command,
     time::Instant,
 };
-use xynoos_aura::{AdaptiveTieringPolicy, AuraKernelCoordinator, AuraTieringCoordinator};
+use xynoos_aura::{
+    AdaptiveTieringPolicy, AuraDaemon, AuraKernelCoordinator, AuraTieringCoordinator, DaemonConfig,
+    DaemonMode, ShadowPlayer, TraceRecord, WorkloadTrace,
+};
 use xynoos_core::{MigrationBudget, StorageTier};
 use xynoos_hypermemory::{ClusterStore, PageId, PageStore};
 use xynoos_linux_control::transaction::{self, Backend, Identity};
@@ -76,6 +79,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if args.len() == 2 && args[1] == "interplay" {
         return run_interplay_benchmark();
+    }
+    if args.len() == 2 && args[1] == "daemon" {
+        return run_daemon_benchmark();
+    }
+    if args.len() == 2 && args[1] == "shadow" {
+        return run_shadow_benchmark();
     }
     if args.len() == 1 {
         println!("dataset,backend,run,insert_batch_ns_per_page,get_batch_ns_per_page,codec_compress_mib_s,codec_decompress_mib_s,payload_bytes,capacity_bytes,metadata_bytes,map_capacity,raw_pages,compressed_pages,rss_before_kib,rss_loaded_kib,peak_kib,cpu_ns");
@@ -919,6 +928,124 @@ fn run_interplay_benchmark() -> Result<(), Box<dyn Error>> {
             mode, cycles, median, p95, p99, total_migrations, total_kernel_tx_restored, cpu
         );
     }
+
+    Ok(())
+}
+
+fn run_daemon_benchmark() -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE DAEMON CONTINUOUS EVALUATION BENCHMARK ===");
+    println!("mode,cycles,median_ns,p95_ns,p99_ns,rss_before_kib,rss_after_kib,cpu_ns");
+
+    let modes = [DaemonMode::ObserveOnly, DaemonMode::Advisory];
+
+    for &mode in &modes {
+        let mut config = DaemonConfig::default();
+        config.mode = mode;
+        let mut daemon = AuraDaemon::new(config)?;
+
+        let diag = Diagnosis {
+            classes: vec!["elevated_pressure".into()],
+            evidence: Vec::new(),
+            limitations: Vec::new(),
+            available_pct: Some(35.0),
+            rates_per_second: std::collections::BTreeMap::new(),
+            disk_bytes_per_second: std::collections::BTreeMap::new(),
+            zram_ratios: std::collections::BTreeMap::new(),
+            interval_seconds: Some(1.0),
+            reliable: true,
+        };
+
+        let rss_before = rss("VmRSS").unwrap_or(0);
+        let cpu_start = cpu_ns();
+        let cycles = 200;
+        let mut latencies = Vec::with_capacity(cycles);
+
+        for _ in 0..cycles {
+            let start = Instant::now();
+            let _ = daemon
+                .step::<xynoos_linux_control::transaction::DisposableCgroup>(&diag, None, None);
+            latencies.push(start.elapsed().as_nanos());
+        }
+
+        latencies.sort_unstable();
+        let median = latencies[latencies.len() / 2];
+        let p95 = latencies[(latencies.len() as f64 * 0.95) as usize];
+        let p99 = latencies[(latencies.len() as f64 * 0.99) as usize];
+        let rss_after = rss("VmRSS").unwrap_or(0);
+        let cpu = cpu_ns()
+            .zip(cpu_start)
+            .map(|(a, b)| a.saturating_sub(b))
+            .unwrap_or(0);
+
+        let mode_str = match mode {
+            DaemonMode::ObserveOnly => "observe_only",
+            DaemonMode::Advisory => "advisory",
+            DaemonMode::Transactional => "transactional",
+        };
+
+        println!(
+            "{},{},{},{},{},{},{},{}",
+            mode_str, cycles, median, p95, p99, rss_before, rss_after, cpu
+        );
+    }
+
+    Ok(())
+}
+
+fn run_shadow_benchmark() -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE WORKLOAD SHADOW REPLAY BENCHMARK ===");
+    println!("workload,steps,replay_time_us,us_per_step,space_saved_bytes,compression_ratio,advisory_recs");
+
+    let mut trace = WorkloadTrace::new("synthetic_benchmark_trace".into());
+    for step in 0..100 {
+        let (avail, swap) = if step % 20 < 10 {
+            (60.0, false)
+        } else {
+            (12.0, true)
+        };
+        trace.append(TraceRecord {
+            step_index: step as u64,
+            relative_timestamp_ms: (step as u64) * 1000,
+            mem_total_bytes: 4 * 1024 * 1024 * 1024,
+            mem_available_bytes: (avail * 40.0 * 1024.0 * 1024.0) as u64,
+            available_pct: avail,
+            psi_some_avg10: if swap { 25.0 } else { 1.0 },
+            psi_full_avg10: if swap { 12.0 } else { 0.0 },
+            swap_thrashing: swap,
+            severe_psi: swap,
+            high_page_fault_rate: swap,
+            cgroup_usage_bytes: 256 * 1024 * 1024,
+        });
+    }
+
+    let tier_coord = AuraTieringCoordinator::new(AdaptiveTieringPolicy::default());
+    let kernel_coord = AuraKernelCoordinator::new(tier_coord);
+    let mut store = PageStore::with_capacity(64)?;
+
+    let sample_page = [55u8; 4096];
+    for _ in 0..16 {
+        store.insert(&sample_page)?;
+    }
+
+    let start = Instant::now();
+    let report = ShadowPlayer::replay(&trace, &kernel_coord, &mut store)?;
+    let elapsed_us = start.elapsed().as_micros();
+    let us_per_step = if report.total_steps_replayed > 0 {
+        elapsed_us / (report.total_steps_replayed as u128)
+    } else {
+        0
+    };
+
+    println!(
+        "{},{},{},{},{},{:.4},{}",
+        report.workload_identifier,
+        report.total_steps_replayed,
+        elapsed_us,
+        us_per_step,
+        report.simulated_space_saved_bytes,
+        report.simulated_compression_ratio,
+        report.advisory_tuning_recommendations_count
+    );
 
     Ok(())
 }

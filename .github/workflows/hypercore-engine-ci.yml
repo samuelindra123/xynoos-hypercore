@@ -76,6 +76,14 @@ jobs:
         run: |
           target/release/xynoos-bench interplay > benchmark-results/interplay.csv
           cat benchmark-results/interplay.csv
+      - name: Run Continuous Daemon Benchmark
+        run: |
+          target/release/xynoos-bench daemon > benchmark-results/daemon.csv
+          cat benchmark-results/daemon.csv
+      - name: Run Shadow Workload Replay Benchmark
+        run: |
+          target/release/xynoos-bench shadow > benchmark-results/shadow.csv
+          cat benchmark-results/shadow.csv
       - name: Archive Benchmark Artifacts
         uses: actions/upload-artifact@v4
         with:

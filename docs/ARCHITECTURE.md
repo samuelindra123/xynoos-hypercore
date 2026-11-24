@@ -213,3 +213,35 @@ Milestone E memperluas jangkauan HyperCore dari manajemen memori userspace murni
    - *Pengurangan Overhead Metadata*: Menggabungkan $N$ halaman ke dalam satu entri kluster mengamortisasi header LZ4 dan alokasi `HashMap`, memotong overhead pelacakan per-halaman secara signifikan.
    - *Akses Granular Sub-Halaman*: Menyediakan `get_page_into(cluster_id, page_idx, out)` yang memverifikasi CRC32 individual sub-halaman tanpa merusak integritas kluster.
    - *Proteksi Inkompresibel & Pemulihan*: Jika data kluster berentropi tinggi dan tidak menghasilkan penghematan ukuran, kluster otomatis dipertahankan dalam format raw `StorageTier::Memory`.
+
+
+---
+
+## 8. Milestone F — Continuous Daemon, Advisory-First Architecture, and System Integration
+
+Milestone F menyatukan seluruh subsistem HyperCore ke dalam integrasi sistem end-to-end dengan arsitektur daemon berkelanjutan yang aman dan deterministik:
+
+1. **Continuous Userspace Daemon (`AuraDaemon`)**:
+   - *Lifecycle Prediktif*: Loop evaluasi periodik berbasis waktu (`interval_ms`, default 5000 ms) dengan penanganan sinyal terminasi (`SIGTERM`, `SIGINT`) untuk penutupan bersih dan pemulihan status.
+   - *Single-Instance Lock (`PidLock`)*: Penguncian eksklusif berkas PID (`/run/xynoos/hypercore.pid`) untuk mencegah instans ganda.
+   - *Exponential Backoff*: Menangani kegagalan pembacaan telemetri atau akses cgroup dengan backoff eksponensial adaptif (1s -> 2s -> 4s -> max 60s).
+   - *Batas Memori Terikat*: Mengawasi memori residen (RSS) agar tetap berada di bawah batas ambang 64 MiB (realisasi pengamatan aktual <15 MiB).
+
+2. **Arsitektur Keamanan Advisory-First & Sadar Beban (*Workload-Aware*)**:
+   - *Tiga Mode Operasi*:
+     - `ObserveOnly` (Default): Hanya memantau telemetri, menghitung tekanan, dan mencatat status. Sama sekali tidak memodifikasi memori userspace atau cgroup kernel.
+     - `Advisory`: Mengevaluasi tiering userspace dan menghasilkan rekomendasi cgroup terstruktur tanpa mengeksekusi penulisan kernel.
+     - `Transactional`: Menjalankan penyesuaian cgroup transaksional hanya jika diotorisasi secara eksplisit oleh operator.
+   - *Limit Sadar Beban*: Menghindari nilai statis buta (seperti 16 MiB atau 32 MiB tetap). Limit dihitung dinamis proporsional terhadap konsumsi aktual cgroup saat ini (110% untuk proteksi, 125% untuk penahanan, 80% untuk batas darurat).
+
+3. **Ketahanan Transaksi & Pemulihan Crash (*Crash Recovery Protocol*)**:
+   - *Jurnal Transaksi Lokal (`TransactionJournal`)*: Menulis metadata transaksi (`Identity`, `Action`, `original_value`, `requested_value`) ke disk/tmpfs sebelum melakukan penulisan cgroup.
+   - *Rekonsiliasi Startup*: Jika daemon mengalami crash unclean atau `SIGKILL`, daemon yang di-restart membaca jurnal, memverifikasi kecocokan inode cgroup, dan mengembalikan limit ke nilai awal baseline secara fail-safe.
+
+4. **Workload Shadow Replay Profiler (`ShadowProfiler` & `ShadowPlayer`)**:
+   - *Perekaman Sadar Privasi*: Hanya mencatat metadata performa non-intrusif (stempel waktu, persentase memori tersedia, rata-rata PSI, penggunaan cgroup). Sama sekali tidak menyalin isi memori aplikasi atau data pengguna.
+   - *Simulasi Kontrafaktual Deterministik*: Memutar ulang jejak rekaman terhadap `AuraKernelCoordinator` dan `PageStore` untuk mengukur estimasi penghematan memori, rasio kompresi, dan mitigasi PSI secara akurat tanpa menyentuh beban kerja produksi.
+
+5. **Integrasi Hardened Systemd & Debian Packaging**:
+   - Menyediakan unit `systemd/xynoos-hypercore.service` dan `systemd/xynoos-hypercore.slice` dengan pengerasan sandboxing sistem (`ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp=yes`, `NoNewPrivileges=yes`, `CapabilityBoundingSet=CAP_SYS_RESOURCE`).
+   - Layanan *tidak diaktifkan otomatis* saat instalasi paket Debian, menjaga prinsip netralitas distribusi.

@@ -1,0 +1,30 @@
+[Unit]
+Description=XYNOOS HyperCore Autonomous Memory & Resource Optimization Daemon
+Documentation=https://github.com/samuelindra123/xynoos-hypercore
+After=network.target local-fs.target
+PartOf=xynoos-hypercore.slice
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/default/xynoos-hypercore
+ExecStart=/usr/bin/xynoos daemon --mode observe-only --interval-ms 5000
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=15s
+Slice=xynoos-hypercore.slice
+
+# Sandboxing & Hardening Invariants
+ProtectSystem=strict
+ProtectHome=read-only
+PrivateTmp=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=false
+NoNewPrivileges=yes
+CapabilityBoundingSet=CAP_SYS_RESOURCE
+AmbientCapabilities=
+MemoryMax=64M
+CPUWeight=100
+
+[Install]
+WantedBy=multi-user.target

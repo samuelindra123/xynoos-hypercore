@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 use crate::tiering::{AuraTieringCoordinator, PressureBridge};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use xynoos_core::MemoryPressure;
 use xynoos_hypermemory::{PageStore, TieringReport};
 use xynoos_linux_control::{
@@ -10,7 +10,7 @@ use xynoos_linux_control::{
 use xynoos_pressureiq::{intelligence::Diagnosis, system::SystemSnapshot};
 
 /// Rekomendasi aksi kernel cgroup v2 berdasarkan status tekanan memori yang distabilkan.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum KernelTuningRecommendation {
     None,

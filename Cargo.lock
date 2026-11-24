@@ -124,6 +124,7 @@ name = "xynoos-aura"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "xynoos-core",
  "xynoos-hypermemory",
  "xynoos-linux-control",
@@ -149,6 +150,7 @@ dependencies = [
  "serde",
  "serde_json",
  "xynoos-aura",
+ "xynoos-core",
  "xynoos-decision",
  "xynoos-hypermemory",
  "xynoos-pressureiq",
@@ -157,6 +159,9 @@ dependencies = [
 [[package]]
 name = "xynoos-core"
 version = "0.1.0"
+dependencies = [
+ "serde",
+]
 
 [[package]]
 name = "xynoos-decision"
