@@ -6,10 +6,15 @@ use std::{
     process::Command,
     time::Instant,
 };
-use xynoos_aura::{AdaptiveTieringPolicy, AuraTieringCoordinator};
+use xynoos_aura::{
+    AdaptiveTieringPolicy, AuraKernelCoordinator, AuraTieringCoordinator,
+    KernelTuningRecommendation,
+};
 use xynoos_core::{MigrationBudget, StorageTier};
-use xynoos_hypermemory::{PageId, PageStore};
+use xynoos_hypermemory::{ClusterStore, PageId, PageStore};
+use xynoos_linux_control::transaction::{self, Backend, Identity, Outcome};
 use xynoos_pressureiq::intelligence::Diagnosis;
+use xynoos_pressureiq::system::SystemSnapshot;
 const N: usize = 256;
 const SIZE: usize = 4096;
 const RUNS: usize = 32;
@@ -69,6 +74,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if args.len() == 2 && args[1] == "policy-comparison" {
         return run_policy_comparison_benchmark();
+    }
+    if args.len() == 2 && args[1] == "clustering" {
+        return run_clustering_benchmark();
+    }
+    if args.len() == 2 && args[1] == "interplay" {
+        return run_interplay_benchmark();
     }
     if args.len() == 1 {
         println!("dataset,backend,run,insert_batch_ns_per_page,get_batch_ns_per_page,codec_compress_mib_s,codec_decompress_mib_s,payload_bytes,capacity_bytes,metadata_bytes,map_capacity,raw_pages,compressed_pages,rss_before_kib,rss_loaded_kib,peak_kib,cpu_ns");
@@ -646,6 +657,271 @@ fn run_policy_comparison_benchmark() -> Result<(), Box<dyn Error>> {
                 cpu
             );
         }
+    }
+
+    Ok(())
+}
+
+fn run_clustering_benchmark() -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE MULTI-PAGE CLUSTERING BENCHMARK ===");
+    println!("workload,cluster_pages,cluster_kib,original_bytes,stored_bytes,ratio,savings_pct,compress_mib_s,decompress_mib_s,cpu_ns");
+
+    let workloads = ["structured_logs", "kernel_memory", "random_entropy"];
+    let cluster_sizes = [1, 2, 4, 8];
+
+    for workload in workloads {
+        for pages_per_cluster in cluster_sizes {
+            let cpu_start = cpu_ns();
+            let total_pages = 64;
+            let cluster_count = total_pages / pages_per_cluster;
+
+            let mut seed = 0xabcdef_12_u32;
+            let pages: Vec<Vec<u8>> = (0..total_pages)
+                .map(|p| {
+                    (0..SIZE)
+                        .map(|i| {
+                            seed ^= seed << 13;
+                            seed ^= seed >> 17;
+                            seed ^= seed << 5;
+                            match workload {
+                                "structured_logs" => {
+                                    let pattern = b"{\"event\":\"page_fault\",\"pid\":1024,\"address\":0x7fff,\"tick\":";
+                                    let b = pattern[i % pattern.len()];
+                                    if i % 64 < 32 { b } else { ((p + i) % 10 + b'0' as usize) as u8 }
+                                }
+                                "kernel_memory" => {
+                                    if i % 8 == 0 {
+                                        (p as u8).wrapping_add((i / 8) as u8)
+                                    } else if i % 16 < 8 {
+                                        0
+                                    } else {
+                                        ((i % 256) ^ (p % 16)) as u8
+                                    }
+                                }
+                                _ => seed as u8,
+                            }
+                        })
+                        .collect()
+                })
+                .collect();
+
+            let mut store = ClusterStore::new(SIZE, pages_per_cluster, cluster_count, usize::MAX)?;
+
+            let start_comp = Instant::now();
+            let mut cluster_ids = Vec::with_capacity(cluster_count);
+            for c in 0..cluster_count {
+                let start_idx = c * pages_per_cluster;
+                let cluster_pages: Vec<&[u8]> = (0..pages_per_cluster)
+                    .map(|i| pages[start_idx + i].as_slice())
+                    .collect();
+                let id = store.insert_cluster(&cluster_pages)?;
+                cluster_ids.push(id);
+            }
+            let comp_elapsed = start_comp.elapsed();
+
+            let total_original_bytes = total_pages * SIZE;
+            let comp_mib_s = (total_original_bytes as f64 / (1024.0 * 1024.0))
+                / comp_elapsed.as_secs_f64().max(1e-9);
+
+            let mut out_buf = vec![0u8; SIZE * pages_per_cluster];
+            let start_decomp = Instant::now();
+            for &id in &cluster_ids {
+                let _ = store.get_cluster_into(id, &mut out_buf)?;
+            }
+            let decomp_elapsed = start_decomp.elapsed();
+            let decomp_mib_s = (total_original_bytes as f64 / (1024.0 * 1024.0))
+                / decomp_elapsed.as_secs_f64().max(1e-9);
+
+            let stats = store.stats();
+            let ratio = stats.compression_ratio().unwrap_or(1.0);
+            let savings = stats.space_savings_pct().unwrap_or(0.0);
+            let cpu = cpu_ns()
+                .zip(cpu_start)
+                .map(|(a, b)| a.saturating_sub(b))
+                .unwrap_or(0);
+
+            println!(
+                "{},{},{},{},{},{:.4},{:.2},{:.2},{:.2},{}",
+                workload,
+                pages_per_cluster,
+                pages_per_cluster * 4,
+                stats.original_bytes,
+                stats.stored_bytes,
+                ratio,
+                savings,
+                comp_mib_s,
+                decomp_mib_s,
+                cpu
+            );
+        }
+    }
+
+    Ok(())
+}
+
+struct BenchMockBackend {
+    low: u64,
+    high: u64,
+    max: u64,
+}
+impl Backend for BenchMockBackend {
+    fn identity(&mut self) -> Result<Identity, String> {
+        Ok(Identity {
+            device: 1,
+            inode: 200,
+            control_inode: 201,
+        })
+    }
+    fn read_low(&mut self) -> Result<u64, String> {
+        Ok(self.low)
+    }
+    fn write_low(&mut self, v: u64) -> Result<(), String> {
+        self.low = v;
+        Ok(())
+    }
+    fn read_high(&mut self) -> Result<u64, String> {
+        Ok(self.high)
+    }
+    fn write_high(&mut self, v: u64) -> Result<(), String> {
+        self.high = v;
+        Ok(())
+    }
+    fn read_max(&mut self) -> Result<u64, String> {
+        Ok(self.max)
+    }
+    fn write_max(&mut self, v: u64) -> Result<(), String> {
+        self.max = v;
+        Ok(())
+    }
+}
+
+fn run_interplay_benchmark() -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE KERNEL-TIERING INTERPLAY BENCHMARK ===");
+    println!("mode,cycles,read_lat_median_ns,read_lat_p95_ns,read_lat_p99_ns,tiering_migrations,kernel_tx_restored,cpu_ns");
+
+    let modes = [
+        "tiering_only",
+        "advisory_interplay",
+        "transactional_interplay",
+    ];
+    let cycles = 500;
+
+    for mode in modes {
+        let cpu_start = cpu_ns();
+        let page_count = 64;
+        let mut store = PageStore::adaptive(SIZE, page_count, usize::MAX)?;
+        let mut seed = 0x99aa_bbcc_u32;
+        let mut ids = Vec::with_capacity(page_count);
+
+        for p in 0..page_count {
+            let mut page = vec![0u8; SIZE];
+            for b in page.iter_mut() {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                *b = (seed as u8) ^ (p as u8);
+            }
+            ids.push(store.insert(&page)?);
+        }
+
+        let policy = AdaptiveTieringPolicy::reliable(800);
+        let tiering_coord =
+            AuraTieringCoordinator::reliable(policy, 2, MigrationBudget::bounded(8, usize::MAX));
+        let coordinator = AuraKernelCoordinator::new(tiering_coord);
+
+        let mut latencies = Vec::with_capacity(cycles);
+        let mut buf = vec![0u8; SIZE];
+        let mut total_migrations = 0;
+        let mut total_kernel_tx_restored = 0;
+
+        let mut mock_backend = BenchMockBackend {
+            low: 4096,
+            high: 65536,
+            max: 131072,
+        };
+
+        let mut snapshot = xynoos_pressureiq::system::collect_system();
+        snapshot.memory.psi.result = Ok(xynoos_pressureiq::parse_psi(
+            "some avg10=0 avg60=0 avg300=0 total=0\nfull avg10=0 avg60=0 avg300=0 total=0",
+        )
+        .unwrap());
+        snapshot.memory.mem.result = Ok(xynoos_pressureiq::parse_meminfo(
+            "MemTotal: 4096 kB\nMemAvailable: 2048 kB",
+        )
+        .unwrap());
+
+        for c in 0..cycles {
+            let key = (c * 11) % page_count;
+            let start = Instant::now();
+            let _ = store.get_into(ids[key], &mut buf)?;
+            latencies.push(start.elapsed().as_nanos() as u64);
+
+            if c > 0 && c % 25 == 0 {
+                let state_idx = (c / 25) % 4;
+                let (classes, available_pct) = match state_idx {
+                    0 => (vec!["normal".to_string()], 80.0),
+                    1 => (vec!["elevated_pressure".to_string()], 20.0),
+                    2 => (vec!["sustained_pressure".to_string()], 10.0),
+                    _ => (vec!["swap_thrashing".to_string()], 3.0),
+                };
+
+                let diag = Diagnosis {
+                    classes,
+                    evidence: vec![],
+                    limitations: vec![],
+                    available_pct: Some(available_pct),
+                    rates_per_second: BTreeMap::new(),
+                    disk_bytes_per_second: BTreeMap::new(),
+                    zram_ratios: BTreeMap::new(),
+                    interval_seconds: Some(1.0),
+                    reliable: true,
+                };
+
+                match mode {
+                    "tiering_only" => {
+                        let rep = coordinator.tiering_coordinator.step(&mut store, &diag)?;
+                        total_migrations += rep.migrated_to_compressed + rep.migrated_to_memory;
+                    }
+                    "advisory_interplay" => {
+                        let rep = coordinator
+                            .step::<BenchMockBackend>(&mut store, &diag, None, None, false)?;
+                        total_migrations += rep.tiering_report.migrated_to_compressed
+                            + rep.tiering_report.migrated_to_memory;
+                    }
+                    "transactional_interplay" => {
+                        let rep = coordinator.step(
+                            &mut store,
+                            &diag,
+                            Some(&snapshot),
+                            Some(&mut mock_backend),
+                            true,
+                        )?;
+                        total_migrations += rep.tiering_report.migrated_to_compressed
+                            + rep.tiering_report.migrated_to_memory;
+                        if let Some(tx) = rep.kernel_transaction {
+                            if tx.outcome == transaction::Outcome::Restored {
+                                total_kernel_tx_restored += 1;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        latencies.sort_unstable();
+        let median = latencies[latencies.len() / 2];
+        let p95 = latencies[(latencies.len() as f64 * 0.95) as usize];
+        let p99 = latencies[(latencies.len() as f64 * 0.99) as usize];
+        let cpu = cpu_ns()
+            .zip(cpu_start)
+            .map(|(a, b)| a.saturating_sub(b))
+            .unwrap_or(0);
+
+        println!(
+            "{},{},{},{},{},{},{},{}",
+            mode, cycles, median, p95, p99, total_migrations, total_kernel_tx_restored, cpu
+        );
     }
 
     Ok(())
