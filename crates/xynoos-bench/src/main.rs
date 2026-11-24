@@ -6,15 +6,11 @@ use std::{
     process::Command,
     time::Instant,
 };
-use xynoos_aura::{
-    AdaptiveTieringPolicy, AuraKernelCoordinator, AuraTieringCoordinator,
-    KernelTuningRecommendation,
-};
+use xynoos_aura::{AdaptiveTieringPolicy, AuraKernelCoordinator, AuraTieringCoordinator};
 use xynoos_core::{MigrationBudget, StorageTier};
 use xynoos_hypermemory::{ClusterStore, PageId, PageStore};
-use xynoos_linux_control::transaction::{self, Backend, Identity, Outcome};
+use xynoos_linux_control::transaction::{self, Backend, Identity};
 use xynoos_pressureiq::intelligence::Diagnosis;
-use xynoos_pressureiq::system::SystemSnapshot;
 const N: usize = 256;
 const SIZE: usize = 4096;
 const RUNS: usize = 32;
@@ -675,7 +671,7 @@ fn run_clustering_benchmark() -> Result<(), Box<dyn Error>> {
             let total_pages = 64;
             let cluster_count = total_pages / pages_per_cluster;
 
-            let mut seed = 0xabcdef_12_u32;
+            let mut seed = 0xabcd_ef12_u32;
             let pages: Vec<Vec<u8>> = (0..total_pages)
                 .map(|p| {
                     (0..SIZE)
