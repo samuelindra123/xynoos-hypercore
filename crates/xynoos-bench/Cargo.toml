@@ -5,5 +5,8 @@ edition = "2021"
 rust-version.workspace = true
 license = "GPL-3.0-only"
 [dependencies]
+xynoos-core = { path = "../xynoos-core" }
 xynoos-hypermemory = { path = "../xynoos-hypermemory" }
+xynoos-aura = { path = "../xynoos-aura" }
+xynoos-pressureiq = { path = "../xynoos-pressureiq" }
 lz4_flex = { version = "0.11", default-features = false, features = ["std", "safe-encode", "safe-decode"] }

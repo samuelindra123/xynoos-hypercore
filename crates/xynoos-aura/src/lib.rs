@@ -51,4 +51,7 @@ pub mod memory;
 pub mod resource;
 
 pub mod tiering;
-pub use tiering::{AdaptiveTieringPolicy, AuraTieringCoordinator, PressureBridge};
+pub use tiering::{
+    AdaptiveTieringPolicy, AuraTieringCoordinator, PressureBridge, PressureStabilizer,
+    TelemetryValidation,
+};
