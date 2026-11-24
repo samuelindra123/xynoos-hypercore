@@ -122,23 +122,33 @@
 ## 6. Temuan Empiris & Hasil Tolok Ukur
 
 ### 6.1 Efisiensi Kompresi Multi-Page Clustering (`xynoos-bench clustering`)
-| Beban Kerja | Halaman/Kluster | Ukuran Extent | Ukuran Asli | Ukuran Tersimpan | Rasio Kompresi | Penghematan (%) |
-|---|---|---|---|---|---|---|
-| `structured_logs` | 1 halaman (Baseline) | 4 KiB | 262.144 B | 45.312 B | 0.1728 | 82.72% |
-| `structured_logs` | 2 halaman | 8 KiB | 262.144 B | 27.648 B | 0.1055 | 89.45% |
-| `structured_logs` | 4 halaman (Default) | 16 KiB | 262.144 B | 17.408 B | 0.0664 | **93.36%** |
-| `structured_logs` | 8 halaman | 32 KiB | 262.144 B | 12.288 B | 0.0469 | **95.31%** |
-| `kernel_memory` | 1 halaman (Baseline) | 4 KiB | 262.144 B | 88.064 B | 0.3359 | 66.41% |
-| `kernel_memory` | 4 halaman (Default) | 16 KiB | 262.144 B | 41.984 B | 0.1601 | **83.99%** |
-| `random_entropy` | 4 halaman (Proteksi) | 16 KiB | 262.144 B | 262.144 B | 1.0000 | 0.00% (Raw tier) |
+| Beban Kerja | Halaman/Kluster | Ukuran Extent | Ukuran Asli | Ukuran Tersimpan | Rasio Kompresi | Penghematan (%) | Throughput Kompresi | Throughput Dekompresi |
+|---|---|---|---|---|---|---|---|---|
+| `structured_logs` | 1 halaman (Baseline) | 4 KiB | 262.144 B | 75.528 B | 0.2881 | 71.19% | 687.18 MiB/s | 1.752.96 MiB/s |
+| `structured_logs` | 2 halaman | 8 KiB | 262.144 B | 68.756 B | 0.2623 | 73.77% | 868.37 MiB/s | 2.173.46 MiB/s |
+| `structured_logs` | 4 halaman (Default) | 16 KiB | 262.144 B | 65.899 B | 0.2514 | **74.86%** | 813.00 MiB/s | 1.935.87 MiB/s |
+| `structured_logs` | 8 halaman | 32 KiB | 262.144 B | 64.446 B | 0.2458 | **75.42%** | 727.84 MiB/s | 1.928.24 MiB/s |
+| `kernel_memory` | 1 halaman (Baseline) | 4 KiB | 262.144 B | 71.012 B | 0.2709 | 72.91% | 966.25 MiB/s | 2.235.38 MiB/s |
+| `kernel_memory` | 2 halaman | 8 KiB | 262.144 B | 70.726 B | 0.2698 | 73.02% | 1.016.81 MiB/s | 2.260.89 MiB/s |
+| `kernel_memory` | 4 halaman (Default) | 16 KiB | 262.144 B | 63.822 B | 0.2435 | **75.65%** | 989.51 MiB/s | 2.692.14 MiB/s |
+| `kernel_memory` | 8 halaman | 32 KiB | 262.144 B | 60.375 B | 0.2303 | **76.97%** | 1.024.41 MiB/s | 3.003.54 MiB/s |
+| `random_entropy` | 4 halaman (Proteksi) | 16 KiB | 262.144 B | 262.144 B | 1.0000 | 0.00% (Raw tier) | 1.216.11 MiB/s | 9.925.76 MiB/s |
 
 **Analisis**:
-- Mengelompokkan 4 halaman (16 KiB extent) meningkatkan penghematan memori dari 82.7% menjadi **93.4%** pada data log terstruktur dan dari 66.4% menjadi **84.0%** pada struktur memori kernel, membuktikan efektivitas pemanfaatan kamus silang halaman LZ4.
+- Mengelompokkan halaman ke dalam kluster (16–32 KiB extent) meningkatkan rasio kompresi dan efisiensi memori hingga 75.4%–76.97% (menghemat 11.082 byte ekstra pada 64 halaman log dan 10.637 byte pada memori kernel dibandingkan baseline halaman tunggal 4 KiB).
+- Throughput dekompresi meningkat tajam hingga melampaui **2.600–3.000 MiB/s** berkat pemrosesan blok kontigu yang lebih ramah cache L1/L2 prosesor.
 - Proteksi inkompresibel secara akurat mendeteksi data entropi acak dan mempertahankan format raw tanpa ekspansi byte.
 
 ### 6.2 Evaluasi Interaksi Kernel-Userspace (`xynoos-bench interplay`)
-- Operasi advisory non-destruktif (`advisory_interplay`) menambahkan overhead latensi pembacaan kurang dari 40 ns per siklus.
-- Operasi transaksional terverifikasi (`transactional_interplay`) berhasil menerapkan dan memulihkan seluruh mutasi cgroup v2 (`Outcome::Restored`) tanpa kebocoran status residual atau kegagalan rollback.
+| Mode Evaluasi | Siklus | Latensi Median (ns) | Latensi P95 (ns) | Latensi P99 (ns) | Transaksi Kernel Dipulihkan | Total Waktu CPU (ns) |
+|---|---|---|---|---|---|---|
+| `tiering_only` | 500 | 421 | 451 | 711 | 0 | 2.996.603 |
+| `advisory_interplay` | 500 | 421 | 450 | 501 | 0 | 2.996.333 |
+| `transactional_interplay` | 500 | 421 | 451 | 491 | **19** | 3.000.360 |
+
+**Analisis**:
+- Seluruh 19 transaksi kernel cgroup v2 (`memory.low` dan `memory.high`) berhasil dieksekusi, diverifikasi, dan dipulihkan (`Outcome::Restored`) tanpa kebocoran state atau mutasi permanen.
+- Latensi pembacaan memori median tetap identik pada **421 ns** di seluruh mode; overhead CPU transaksi terverifikasi berada di bawah **0.13%** (selisih hanya 3.757 ns pada 500 siklus), membuktikan sifat non-intrusif dari AURA Kernel Interplay Coordinator.
 
 ---
 
