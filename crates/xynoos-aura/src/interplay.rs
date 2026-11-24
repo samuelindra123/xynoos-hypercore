@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
-use crate::tiering::{AuraTieringCoordinator, MemoryPressure};
+use crate::tiering::{AuraTieringCoordinator, PressureBridge};
 use serde::Serialize;
+use xynoos_core::MemoryPressure;
 use xynoos_hypermemory::{PageStore, TieringReport};
 use xynoos_linux_control::{
     transaction::{self, Backend, TransactionReport},
@@ -55,7 +56,7 @@ impl KernelTuningRecommendation {
 }
 
 /// Laporan hasil orkestrasi terpadu memori userspace dan tuning kernel.
-#[derive(Debug, Serialize)]
+#[derive(Debug)]
 pub struct InterplayReport {
     pub raw_pressure: MemoryPressure,
     pub stabilized_pressure: MemoryPressure,
@@ -110,8 +111,8 @@ impl AuraKernelCoordinator {
         backend: Option<&mut B>,
         authorized: bool,
     ) -> Result<InterplayReport, xynoos_hypermemory::Error> {
-        let raw_pressure = self.tiering_coordinator.evaluate_pressure(diagnosis);
-        let stabilized_pressure = self.tiering_coordinator.stabilized_pressure(raw_pressure);
+        let raw_pressure = PressureBridge::evaluate_pressure(diagnosis);
+        let stabilized_pressure = self.tiering_coordinator.stabilizer.step(raw_pressure);
 
         // Eksekusi tiering userspace HyperMemory
         let tiering_report = self

@@ -3,19 +3,16 @@ use crate::{Error, Telemetry, MAX_PAGE_SIZE};
 use std::{
     cell::Cell,
     collections::{HashMap, VecDeque},
-    fmt,
     mem::size_of,
 };
 pub use xynoos_core::{ClusterId, EvictionPolicy, StorageTier};
 
 struct ClusterEntry {
-    payload: Vec<u8>,
     payload_crc: u32,
+    payload: Vec<u8>,
     original_cluster_crc: u32,
     page_crcs: Vec<u32>,
     raw: bool,
-    pages_count: usize,
-    inserted_tick: u64,
     last_accessed_tick: Cell<u64>,
 }
 
@@ -164,7 +161,7 @@ impl ClusterStore {
                 actual: pages.len(),
             });
         }
-        for (i, p) in pages.iter().enumerate() {
+        for p in pages.iter() {
             if p.len() != self.page_size {
                 return Err(Error::InvalidLength {
                     expected: self.page_size,
@@ -221,11 +218,10 @@ impl ClusterStore {
 
         let entry = ClusterEntry {
             payload_crc: crc32fast::hash(&payload),
+            payload,
             original_cluster_crc,
             page_crcs,
             raw,
-            pages_count: pages.len(),
-            inserted_tick: tick,
             last_accessed_tick: Cell::new(tick),
         };
 
@@ -729,7 +725,7 @@ mod tests {
         assert!(!store.contains(id2));
 
         // Now capacity allows a new cluster
-        let id3 = store.insert_cluster(&[&p3, &p3, &p3, &p3]).unwrap();
+        let id3 = store.insert_cluster(&[&p3, &p3, &p4, &p4]).unwrap();
         assert!(store.contains(id3));
     }
 }
