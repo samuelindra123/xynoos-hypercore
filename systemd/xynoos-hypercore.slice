@@ -1,0 +1,12 @@
+[Unit]
+Description=XYNOOS HyperCore Resource Slice
+Documentation=https://github.com/samuelindra123/xynoos-hypercore
+Before=slices.target
+
+[Slice]
+MemoryAccounting=true
+MemoryHigh=48M
+MemoryMax=64M
+CPUAccounting=true
+CPUWeight=100
+TasksMax=64

@@ -1,0 +1,11 @@
+# Defaults for xynoos-hypercore service
+# Installed at /etc/default/xynoos-hypercore
+
+# Operational mode: observe-only (default, safest), advisory, or transactional
+XYNOOS_MODE="observe-only"
+
+# Polling evaluation interval in milliseconds
+XYNOOS_INTERVAL_MS="5000"
+
+# Optional cgroup v2 target slice to observe
+XYNOOS_CGROUP_TARGET=""

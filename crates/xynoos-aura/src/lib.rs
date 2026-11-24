@@ -58,3 +58,11 @@ pub use tiering::{
 
 pub mod interplay;
 pub use interplay::{AuraKernelCoordinator, InterplayReport, KernelTuningRecommendation};
+
+pub mod daemon;
+pub use daemon::{
+    AuraDaemon, DaemonConfig, DaemonDiagnostics, DaemonMode, PidLock, TransactionJournal,
+};
+
+pub mod profiler;
+pub use profiler::{ShadowEvaluationReport, ShadowPlayer, TraceRecord, WorkloadTrace};

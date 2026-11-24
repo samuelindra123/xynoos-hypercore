@@ -1,7 +1,7 @@
 //! Conservative Linux cgroup v2 inspection and policy preparation.
 //!
 //! Transactions are bounded and restore best-effort; cgroupfs has no atomic compare-and-swap.
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::{
     fs,
     os::unix::fs::MetadataExt,
@@ -18,7 +18,7 @@ pub const MAX_HIGH_BYTES: u64 = 512 * 1024 * 1024;
 pub const MAX_MAX_BYTES: u64 = 1024 * 1024 * 1024;
 pub const MAX_AGE: Duration = Duration::from_secs(5);
 
-#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Action {
     MemoryLow { bytes: u64 },
     MemoryHigh { bytes: u64 },
