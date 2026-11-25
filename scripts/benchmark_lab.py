@@ -394,7 +394,11 @@ def run_single_trial(
             lease_proc.stdin.close()
         except OSError:
             pass
-        lease_proc.communicate(timeout=10)
+        try:
+            lease_proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            lease_proc.kill()
+            lease_proc.wait()
 
     fg_events = parse_cgroup_events(fg_cg)
     bg_events = parse_cgroup_events(bg_cg)
