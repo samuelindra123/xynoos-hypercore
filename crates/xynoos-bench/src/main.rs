@@ -7,11 +7,14 @@ use std::{
     time::Instant,
 };
 use xynoos_aura::{
-    AdaptiveTieringPolicy, AuraDaemon, AuraKernelCoordinator, AuraTieringCoordinator, DaemonConfig,
-    DaemonMode, ShadowPlayer, TraceRecord, WorkloadTrace,
+    AdaptiveCompressionConfig, AdaptiveTieringPolicy, AuraAdaptiveCoordinator, AuraDaemon,
+    AuraKernelCoordinator, AuraTieringCoordinator, DaemonConfig, DaemonMode, MultiResourceState,
+    PressureStabilizer, ShadowCalibrator, ShadowPlayer, TraceRecord, WorkloadTrace,
 };
-use xynoos_core::{MigrationBudget, StorageTier};
-use xynoos_hypermemory::{ClusterStore, PageId, PageStore};
+use xynoos_core::{
+    CodecId, EvictionPolicy, MemoryPressure, MigrationBudget, ResourcePressureLevel, StorageTier,
+};
+use xynoos_hypermemory::{ClusterStore, CodecScratch, PageId, PageStore};
 use xynoos_linux_control::transaction::{self, Backend, Identity};
 use xynoos_pressureiq::intelligence::Diagnosis;
 const N: usize = 256;
@@ -85,6 +88,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     }
     if args.len() == 2 && args[1] == "shadow" {
         return run_shadow_benchmark();
+    }
+    if args.len() == 2 && args[1] == "adaptive-campaign" {
+        return run_adaptive_campaign_benchmark();
+    }
+    if args.len() == 2 && args[1] == "clustering-g" {
+        return run_clustering_g_benchmark();
+    }
+    if args.len() == 2 && args[1] == "workload-eval" {
+        return run_workload_eval_benchmark();
+    }
+    if args.len() >= 2 && args[1] == "daemon-sustained" {
+        let cycles = args
+            .get(2)
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(500);
+        return run_daemon_sustained_benchmark(cycles);
     }
     if args.len() == 1 {
         println!("dataset,backend,run,insert_batch_ns_per_page,get_batch_ns_per_page,codec_compress_mib_s,codec_decompress_mib_s,payload_bytes,capacity_bytes,metadata_bytes,map_capacity,raw_pages,compressed_pages,rss_before_kib,rss_loaded_kib,peak_kib,cpu_ns");
@@ -957,7 +976,7 @@ fn run_daemon_benchmark() -> Result<(), Box<dyn Error>> {
             reliable: true,
         };
 
-        let rss_before = rss("VmRSS").unwrap_or(0);
+        let rss_before = rss("VmRSS:").unwrap_or(0);
         let cpu_start = cpu_ns();
         let cycles = 200;
         let mut latencies = Vec::with_capacity(cycles);
@@ -973,7 +992,7 @@ fn run_daemon_benchmark() -> Result<(), Box<dyn Error>> {
         let median = latencies[latencies.len() / 2];
         let p95 = latencies[(latencies.len() as f64 * 0.95) as usize];
         let p99 = latencies[(latencies.len() as f64 * 0.99) as usize];
-        let rss_after = rss("VmRSS").unwrap_or(0);
+        let rss_after = rss("VmRSS:").unwrap_or(0);
         let cpu = cpu_ns()
             .zip(cpu_start)
             .map(|(a, b)| a.saturating_sub(b))
@@ -1047,6 +1066,501 @@ fn run_shadow_benchmark() -> Result<(), Box<dyn Error>> {
         report.simulated_space_saved_bytes,
         report.simulated_compression_ratio,
         report.advisory_tuning_recommendations_count
+    );
+
+    Ok(())
+}
+
+fn generate_g_dataset(kind: &str, count: usize) -> Vec<Vec<u8>> {
+    let mut seed = 0x517c_c1b7_2722_0a95u64;
+    let mut next_u8 = || -> u8 {
+        seed ^= seed << 13;
+        seed ^= seed >> 7;
+        seed ^= seed << 17;
+        (seed >> 24) as u8
+    };
+    (0..count)
+        .map(|p| match kind {
+            "zero_pages" => vec![0u8; SIZE],
+            "repeated_text" => {
+                let phrase = b"XYNOOS-HYPERCORE-AURA-PAGE-PATTERN-REPEAT-0123456789ABCDEF ";
+                (0..SIZE).map(|i| phrase[(i + p) % phrase.len()]).collect()
+            }
+            "structured_logs" => {
+                let mut v = Vec::with_capacity(SIZE);
+                for row in 0..128 {
+                    let line = format!(
+                        "{{\"ts\":{},\"pid\":{},\"level\":\"INFO\",\"psi_mem\":{}.25,\"rss_kib\":{}}}\n",
+                        1700000000 + row,
+                        1024 + (p % 8),
+                        row % 10,
+                        12400 + (row * 13) % 512
+                    );
+                    v.extend_from_slice(line.as_bytes());
+                }
+                v.resize(SIZE, b' ');
+                v
+            }
+            "source_code" => {
+                let snippet = b"pub fn evaluate_cost(bytes: usize, pressure: u8) -> i64 {\n    if pressure > 2 { (bytes as i64) * 32 } else { bytes as i64 }\n}\n";
+                (0..SIZE).map(|i| snippet[(i + (p % 3) * 7) % snippet.len()]).collect()
+            }
+            "binary_like" => (0..SIZE)
+                .map(|i| {
+                    if i % 16 < 6 {
+                        0
+                    } else if i % 16 < 12 {
+                        ((i / 16 + p) % 64) as u8
+                    } else {
+                        next_u8()
+                    }
+                })
+                .collect(),
+            "high_entropy_random" => (0..SIZE).map(|_| next_u8()).collect(),
+            "synthetic_app_memory" => (0..SIZE)
+                .map(|i| {
+                    if i < 512 {
+                        ((i / 8 + p) % 16) as u8
+                    } else if i < 2048 {
+                        if i % 4 == 0 { 0 } else { ((i + p) % 97) as u8 }
+                    } else {
+                        next_u8() & 0x3F
+                    }
+                })
+                .collect(),
+            _ => {
+                // mixed_compressibility
+                match p % 4 {
+                    0 => vec![0u8; SIZE],
+                    1 => {
+                        let pat = b"{\"mixed\":true,\"seq\":12345,\"tier\":\"compressed\"}\n";
+                        (0..SIZE).map(|i| pat[i % pat.len()]).collect()
+                    }
+                    2 => (0..SIZE).map(|i| if i % 8 < 5 { (i % 32) as u8 } else { next_u8() }).collect(),
+                    _ => (0..SIZE).map(|_| next_u8()).collect(),
+                }
+            }
+        })
+        .collect()
+}
+
+fn run_adaptive_campaign_benchmark() -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE MILESTONE G ADAPTIVE COMPRESSION CAMPAIGN ===");
+    println!("dataset,regime,policy,pages,original_bytes,stored_bytes,compression_ratio,net_savings_bytes,metadata_bytes,allocated_capacity_bytes,scratch_bytes,compress_mib_s,decompress_mib_s,p50_ns,p95_ns,p99_ns,decision_latency_ns,policy_transitions,rejected_expensive_ops,peak_rss_kib,cpu_ns,wall_ns");
+
+    let datasets = [
+        "zero_pages",
+        "structured_logs",
+        "repeated_text",
+        "source_code",
+        "binary_like",
+        "mixed_compressibility",
+        "high_entropy_random",
+        "synthetic_app_memory",
+    ];
+    let regimes = ["cold_heavy", "cpu_constrained", "hot_random"];
+    let policies = [
+        "baseline_a_milestone_f",
+        "baseline_b_static_lz4",
+        "candidate_c_adaptive_g",
+        "candidate_d_lz4hc6",
+    ];
+    let page_count = 64usize;
+
+    for ds_name in datasets {
+        let pages = generate_g_dataset(ds_name, page_count);
+        for regime in regimes {
+            for policy_name in policies {
+                let cpu_start = cpu_ns();
+                let wall_start = Instant::now();
+                let mut store = PageStore::adaptive(SIZE, page_count, usize::MAX)?;
+                let mut ids = Vec::with_capacity(page_count);
+
+                let comp_start = Instant::now();
+                for p in &pages {
+                    let codec = match policy_name {
+                        "baseline_b_static_lz4" => CodecId::Lz4Standard,
+                        "candidate_d_lz4hc6" => CodecId::Lz4Hc { level: 6 },
+                        _ => CodecId::Raw,
+                    };
+                    ids.push(store.insert_with_codec(p, codec, EvictionPolicy::Reject)?);
+                }
+                let comp_elapsed = comp_start.elapsed();
+
+                // Advance ticks so cold pages age past cooldown
+                let mut buf = vec![0u8; SIZE];
+                let hot_count = (page_count / 5).max(1);
+                if regime == "hot_random" {
+                    for r in 0..40 {
+                        let _ = store.get_into(ids[r % hot_count], &mut buf)?;
+                    }
+                } else {
+                    for _ in 0..10 {
+                        let _ = store.get_into(ids[0], &mut buf)?;
+                    }
+                }
+
+                let mut transitions = 0usize;
+                let mut rejected = 0usize;
+                let mut decision_latency_ns = 0u64;
+
+                match policy_name {
+                    "baseline_a_milestone_f" => {
+                        let coord = AuraTieringCoordinator::new(AdaptiveTieringPolicy::default());
+                        let diag = Diagnosis {
+                            classes: vec![if regime == "hot_random" {
+                                "elevated_pressure"
+                            } else {
+                                "sustained_pressure"
+                            }
+                            .into()],
+                            evidence: vec![],
+                            limitations: vec![],
+                            available_pct: Some(if regime == "hot_random" { 22.0 } else { 10.0 }),
+                            rates_per_second: BTreeMap::new(),
+                            disk_bytes_per_second: BTreeMap::new(),
+                            zram_ratios: BTreeMap::new(),
+                            interval_seconds: Some(1.0),
+                            reliable: true,
+                        };
+                        let t0 = Instant::now();
+                        let rep = coord.step(&mut store, &diag)?;
+                        decision_latency_ns = t0.elapsed().as_nanos() as u64;
+                        transitions += rep.migrated_to_compressed + rep.migrated_to_memory;
+                    }
+                    "candidate_c_adaptive_g" => {
+                        let mut coord = AuraAdaptiveCoordinator::new(
+                            AdaptiveCompressionConfig::default(),
+                            PressureStabilizer::new(3, 0),
+                            MigrationBudget::UNLIMITED,
+                        );
+                        coord.cost_model.cooldown_ticks = 0;
+                        let res = MultiResourceState {
+                            memory_pressure: if regime == "hot_random" {
+                                MemoryPressure::Moderate
+                            } else {
+                                MemoryPressure::High
+                            },
+                            cpu_pressure: if regime == "cpu_constrained" {
+                                ResourcePressureLevel::High
+                            } else {
+                                ResourcePressureLevel::Low
+                            },
+                            io_pressure: ResourcePressureLevel::Low,
+                            available_ram_bytes: Some(256 * 1024 * 1024),
+                            telemetry_valid: true,
+                        };
+                        let rep = coord.step_adaptive(&mut store, &res)?;
+                        decision_latency_ns = rep.decision_latency_ns;
+                        transitions += rep.policy_transitions;
+                        rejected += rep.rejected_expensive_ops;
+                    }
+                    _ => {}
+                }
+
+                // Measure read access latencies (512 reads)
+                let read_ops = 512usize;
+                let mut lats = Vec::with_capacity(read_ops);
+                let decomp_start = Instant::now();
+                for op in 0..read_ops {
+                    let idx = if regime == "hot_random" && (op % 10) < 8 {
+                        (op * 7) % hot_count
+                    } else if regime == "hot_random" {
+                        (op * 17) % page_count
+                    } else {
+                        op % page_count
+                    };
+                    let t0 = Instant::now();
+                    let _ = store.get_into(ids[idx], &mut buf)?;
+                    lats.push(t0.elapsed().as_nanos() as u64);
+                }
+                let decomp_elapsed = decomp_start.elapsed();
+                lats.sort_unstable();
+
+                let p50 = lats[lats.len() / 2];
+                let p95 = lats[(lats.len() as f64 * 0.95) as usize];
+                let p99 = lats[(lats.len() as f64 * 0.99) as usize];
+
+                let acct = store.overhead_accounting();
+                let total_orig_mib = (page_count * SIZE) as f64 / (1024.0 * 1024.0);
+                let comp_mib_s = total_orig_mib / comp_elapsed.as_secs_f64().max(1e-9);
+                let read_mib = (read_ops * SIZE) as f64 / (1024.0 * 1024.0);
+                let decomp_mib_s = read_mib / decomp_elapsed.as_secs_f64().max(1e-9);
+                let ratio = if acct.original_logical_bytes > 0 {
+                    acct.stored_payload_bytes as f64 / acct.original_logical_bytes as f64
+                } else {
+                    1.0
+                };
+                let wall_ns = wall_start.elapsed().as_nanos();
+                let cpu = cpu_ns()
+                    .zip(cpu_start)
+                    .map(|(a, b)| a.saturating_sub(b))
+                    .unwrap_or(0);
+                let peak_rss = rss("VmHWM:").unwrap_or(0);
+
+                println!(
+                    "{},{},{},{},{},{},{:.4},{},{},{},{},{:.2},{:.2},{},{},{},{},{},{},{},{},{}",
+                    ds_name,
+                    regime,
+                    policy_name,
+                    page_count,
+                    acct.original_logical_bytes,
+                    acct.stored_payload_bytes,
+                    ratio,
+                    acct.net_savings_bytes,
+                    acct.metadata_bytes,
+                    acct.allocated_capacity_bytes,
+                    acct.scratch_buffer_bytes,
+                    comp_mib_s,
+                    decomp_mib_s,
+                    p50,
+                    p95,
+                    p99,
+                    decision_latency_ns,
+                    transitions,
+                    rejected,
+                    peak_rss,
+                    cpu,
+                    wall_ns
+                );
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn run_clustering_g_benchmark() -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE MILESTONE G CLUSTERING EVALUATION (1/2/4/8 PAGES) ===");
+    println!("workload,cluster_pages,cluster_kib,original_bytes,stored_bytes,metadata_bytes,scratch_bytes,net_savings_bytes,ratio,seq_mib_s,random_page_p50_ns,random_page_p99_ns,read_amplification");
+
+    let workloads = [
+        "structured_logs",
+        "source_code",
+        "mixed_compressibility",
+        "high_entropy_random",
+    ];
+    let cluster_sizes = [1usize, 2, 4, 8];
+    let total_pages = 64usize;
+
+    for workload in workloads {
+        let pages = generate_g_dataset(workload, total_pages);
+        for pages_per_cluster in cluster_sizes {
+            let cluster_count = total_pages / pages_per_cluster;
+            let mut store = ClusterStore::new(SIZE, pages_per_cluster, cluster_count, usize::MAX)?;
+            let mut cluster_ids = Vec::with_capacity(cluster_count);
+            for c in 0..cluster_count {
+                let start_idx = c * pages_per_cluster;
+                let slice_refs: Vec<&[u8]> = (0..pages_per_cluster)
+                    .map(|i| pages[start_idx + i].as_slice())
+                    .collect();
+                cluster_ids.push(store.insert_cluster(&slice_refs)?);
+            }
+
+            let mut seq_buf = vec![0u8; SIZE * pages_per_cluster];
+            let seq_start = Instant::now();
+            for &cid in &cluster_ids {
+                let _ = store.get_cluster_into(cid, &mut seq_buf)?;
+            }
+            let seq_elapsed = seq_start.elapsed();
+            let seq_mib_s = ((total_pages * SIZE) as f64 / (1024.0 * 1024.0))
+                / seq_elapsed.as_secs_f64().max(1e-9);
+
+            // Random sub-page extraction using reusable CodecScratch
+            let mut scratch = CodecScratch::with_limit(SIZE * pages_per_cluster);
+            let mut page_buf = vec![0u8; SIZE];
+            let rand_iters = 256usize;
+            let mut lats = Vec::with_capacity(rand_iters);
+            for i in 0..rand_iters {
+                let cid = cluster_ids[(i * 7) % cluster_ids.len()];
+                let pidx = (i * 3) % pages_per_cluster;
+                let t0 = Instant::now();
+                let _ = store.get_page_with_scratch(cid, pidx, &mut page_buf, &mut scratch)?;
+                lats.push(t0.elapsed().as_nanos() as u64);
+            }
+            lats.sort_unstable();
+            let p50 = lats[lats.len() / 2];
+            let p99 = lats[(lats.len() as f64 * 0.99) as usize];
+
+            let acct = store.overhead_accounting();
+            let ratio = if acct.original_logical_bytes > 0 {
+                acct.stored_payload_bytes as f64 / acct.original_logical_bytes as f64
+            } else {
+                1.0
+            };
+            // If cluster is compressed, extracting 1 sub-page decodes pages_per_cluster pages
+            let read_amp = if store.stats().compressed_clusters > 0 {
+                pages_per_cluster as f64
+            } else {
+                1.0
+            };
+
+            println!(
+                "{},{},{},{},{},{},{},{},{:.4},{:.2},{},{},{:.1}",
+                workload,
+                pages_per_cluster,
+                pages_per_cluster * 4,
+                acct.original_logical_bytes,
+                acct.stored_payload_bytes,
+                acct.metadata_bytes,
+                acct.scratch_buffer_bytes,
+                acct.net_savings_bytes,
+                ratio,
+                seq_mib_s,
+                p50,
+                p99,
+                read_amp
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn run_workload_eval_benchmark() -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE CONSTRAINED WORKLOAD EVALUATION (SEPARATED LAYERS) ===");
+    println!("layer,metric,value,unit,notes");
+
+    // Layer 1: HyperMemory internal storage under representative mixed workload
+    let pages = generate_g_dataset("mixed_compressibility", 128);
+    let mut store = PageStore::adaptive(SIZE, 128, usize::MAX)?;
+    let mut ids = Vec::with_capacity(128);
+    for p in &pages {
+        ids.push(store.insert_with_codec(p, CodecId::Raw, EvictionPolicy::Reject)?);
+    }
+    for _ in 0..10 {
+        let mut b = vec![0u8; SIZE];
+        let _ = store.get_into(ids[0], &mut b);
+    }
+    let mut coord = AuraAdaptiveCoordinator::new(
+        AdaptiveCompressionConfig::default(),
+        PressureStabilizer::new(3, 0),
+        MigrationBudget::bounded(32, 256 * 1024),
+    );
+    coord.cost_model.cooldown_ticks = 0;
+    let res = MultiResourceState {
+        memory_pressure: MemoryPressure::High,
+        cpu_pressure: ResourcePressureLevel::Low,
+        io_pressure: ResourcePressureLevel::Low,
+        available_ram_bytes: Some(256 * 1024 * 1024),
+        telemetry_valid: true,
+    };
+    let rep = coord.step_adaptive(&mut store, &res)?;
+    let acct = store.overhead_accounting();
+    println!(
+        "hypermemory_internal,net_savings_bytes,{},bytes,overhead_inclusive",
+        acct.net_savings_bytes
+    );
+    println!(
+        "hypermemory_internal,decision_latency_ns,{},ns,bounded_cycle",
+        rep.decision_latency_ns
+    );
+
+    // Layer 2: AURA counterfactual shadow calibration quality
+    let mut trace = WorkloadTrace::new("desktop_sim_multitask".into());
+    for step in 0..24u64 {
+        let high = step % 6 >= 4;
+        trace.append(TraceRecord {
+            step_index: step,
+            relative_timestamp_ms: step * 1000,
+            mem_total_bytes: 4 * 1024 * 1024 * 1024,
+            mem_available_bytes: if high {
+                320 * 1024 * 1024
+            } else {
+                2_400_000_000
+            },
+            available_pct: if high { 8.0 } else { 60.0 },
+            psi_some_avg10: if high { 18.0 } else { 0.8 },
+            psi_full_avg10: if high { 6.0 } else { 0.0 },
+            swap_thrashing: false,
+            severe_psi: high,
+            high_page_fault_rate: high,
+            cgroup_usage_bytes: 512 * 1024 * 1024,
+        });
+    }
+    let cal = ShadowCalibrator::calibrate(&trace, &pages[..16])?;
+    for cmp in &cal.evaluation_comparisons {
+        println!(
+            "aura_advisory_replay,{}_net_savings,{},bytes,counterfactual_replay_estimate",
+            cmp.policy_name, cmp.net_savings_bytes
+        );
+    }
+
+    // Layer 3: System telemetry availability & cgroup environment
+    let sys = xynoos_pressureiq::system::collect_system();
+    println!(
+        "linux_telemetry,logical_cpus,{},count,visible_proc_stat",
+        sys.cpu.as_ref().map(|c| c.logical_cpus).unwrap_or(0)
+    );
+    println!(
+        "linux_telemetry,cgroup_v2_observable,{},bool,read_only_check",
+        sys.cgroup.is_ok()
+    );
+    println!(
+        "whole_system_responsiveness,transparent_app_ram_compression,false,bool,not_implemented_userspace_only"
+    );
+
+    Ok(())
+}
+
+fn run_daemon_sustained_benchmark(cycles: u64) -> Result<(), Box<dyn Error>> {
+    println!("=== HYPERCORE DAEMON SUSTAINED RELIABILITY BENCHMARK ===");
+    println!("cycles,startup_us,rss_initial_kib,rss_final_kib,rss_peak_kib,wall_ms,cpu_ms,cycles_completed,cycles_failed,rss_within_budget");
+
+    let startup_start = Instant::now();
+    let mut daemon = AuraDaemon::new(DaemonConfig {
+        mode: DaemonMode::ObserveOnly,
+        interval_ms: 100,
+        ..Default::default()
+    })?;
+    let startup_us = startup_start.elapsed().as_micros();
+
+    let rss_initial = rss("VmRSS:").unwrap_or(0);
+    let cpu_start = cpu_ns();
+    let wall_start = Instant::now();
+
+    let diag_ok = Diagnosis {
+        classes: vec!["normal".into()],
+        evidence: Vec::new(),
+        limitations: Vec::new(),
+        available_pct: Some(55.0),
+        rates_per_second: BTreeMap::new(),
+        disk_bytes_per_second: BTreeMap::new(),
+        zram_ratios: BTreeMap::new(),
+        interval_seconds: Some(1.0),
+        reliable: true,
+    };
+
+    for c in 0..cycles {
+        if c % 50 == 49 {
+            // Exercise failure & recovery path periodically without leaving stale errors
+            daemon.record_failure("simulated transient telemetry timeout".into());
+        }
+        let _ = daemon
+            .step::<xynoos_linux_control::transaction::DisposableCgroup>(&diag_ok, None, None)?;
+    }
+
+    let wall_ms = wall_start.elapsed().as_millis();
+    let cpu_ms = cpu_ns()
+        .zip(cpu_start)
+        .map(|(a, b)| a.saturating_sub(b) / 1_000_000)
+        .unwrap_or(0);
+    let rss_final = rss("VmRSS:").unwrap_or(0);
+    let rss_peak = rss("VmHWM:").unwrap_or(0);
+    let d = daemon.diagnostics();
+
+    println!(
+        "{},{},{},{},{},{},{},{},{},{}",
+        cycles,
+        startup_us,
+        rss_initial,
+        rss_final,
+        rss_peak,
+        wall_ms,
+        cpu_ms,
+        d.cycles_completed,
+        d.cycles_failed,
+        d.rss_within_budget
     );
 
     Ok(())

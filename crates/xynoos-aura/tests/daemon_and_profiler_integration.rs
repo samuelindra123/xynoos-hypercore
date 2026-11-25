@@ -118,7 +118,11 @@ fn test_milestone_f_crash_recovery_and_rollback() {
 
     // Tulis jurnal simulasi crash
     let journal = TransactionJournal {
+        schema_version: 1,
         timestamp_epoch_secs: 1700000000,
+        boot_id: None,
+        process_pid: std::process::id(),
+        process_start_ticks: None,
         identity: target_id,
         action: Action::MemoryLow {
             bytes: 64 * 1024 * 1024,
@@ -126,6 +130,7 @@ fn test_milestone_f_crash_recovery_and_rollback() {
         original_value: 16 * 1024 * 1024, // baseline awal
         requested_value: 64 * 1024 * 1024,
         status: xynoos_aura::daemon::JournalStatus::Applied,
+        integrity_crc: 0,
     };
     journal.persist(&journal_file).unwrap();
 

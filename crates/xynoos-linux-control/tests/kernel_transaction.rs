@@ -57,3 +57,51 @@ fn kernel_apply_restore_and_cleanup() {
     assert_eq!(observations[1], (original, Ok(original)));
     assert_eq!(final_value, Ok(original));
 }
+
+#[test]
+#[ignore = "requires an isolated delegated cgroup v2 parent and explicit opt-in"]
+fn kernel_multi_action_high_max_unauthorized_and_cleanup() {
+    assert_eq!(
+        std::env::var("XYNOOS_KERNEL_TEST").as_deref(),
+        Ok("1"),
+        "explicit opt-in required"
+    );
+    let parent = std::env::var("XYNOOS_CGROUP_PARENT")
+        .expect("set XYNOOS_CGROUP_PARENT to an isolated delegated parent");
+    let mut target =
+        DisposableCgroup::create(Path::new(&parent), true).expect("create disposable child");
+    let sys = xynoos_pressureiq::system::collect_system();
+
+    // Unauthorized must decline without writing
+    let decl = run(
+        &mut target,
+        &sys,
+        Action::MemoryHigh { bytes: 8_388_608 },
+        false,
+    );
+    assert_eq!(decl.outcome, Outcome::Declined);
+
+    // MemoryHigh apply & restore
+    let orig_high = target.read_high().expect("read original memory.high");
+    let rep_high = run(
+        &mut target,
+        &sys,
+        Action::MemoryHigh { bytes: 8_388_608 },
+        true,
+    );
+    assert_eq!(rep_high.outcome, Outcome::Restored, "{rep_high:?}");
+    assert_eq!(target.read_high().unwrap(), orig_high);
+
+    // MemoryMax apply & restore
+    let orig_max = target.read_max().expect("read original memory.max");
+    let rep_max = run(
+        &mut target,
+        &sys,
+        Action::MemoryMax { bytes: 16_777_216 },
+        true,
+    );
+    assert_eq!(rep_max.outcome, Outcome::Restored, "{rep_max:?}");
+    assert_eq!(target.read_max().unwrap(), orig_max);
+
+    target.cleanup().expect("cleanup disposable cgroup");
+}

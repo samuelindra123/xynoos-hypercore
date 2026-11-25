@@ -50,10 +50,19 @@ pub mod memory;
 
 pub mod resource;
 
+pub mod cost_model;
+pub use cost_model::{CostBenefitBreakdown, PageTemperature, ResourceCostModel, RollingCostStats};
+
+pub mod compression_policy;
+pub use compression_policy::{
+    AdaptiveCompressionConfig, CompressionDecision, CompressionDecisionEngine, MultiResourceState,
+    ObjectCompressionInput,
+};
+
 pub mod tiering;
 pub use tiering::{
-    AdaptiveTieringPolicy, AuraTieringCoordinator, PressureBridge, PressureStabilizer,
-    TelemetryValidation,
+    AdaptiveTieringPolicy, AdaptiveTieringReport, AuraAdaptiveCoordinator, AuraTieringCoordinator,
+    PressureBridge, PressureStabilizer, TelemetryValidation,
 };
 
 pub mod interplay;
@@ -65,4 +74,7 @@ pub use daemon::{
 };
 
 pub mod profiler;
-pub use profiler::{ShadowEvaluationReport, ShadowPlayer, TraceRecord, WorkloadTrace};
+pub use profiler::{
+    CalibrationReport, PolicyBaselineComparison, PolicyConfig, ShadowCalibrator,
+    ShadowEvaluationReport, ShadowPlayer, TraceRecord, WorkloadTrace,
+};

@@ -6,12 +6,22 @@ use std::{
     mem::size_of,
 };
 pub use xynoos_core::{
-    ClusterId, CostEstimate, EvictionPolicy, MigrationBudget, PageId, PageLifecycleState,
-    StorageTier,
+    ClusterId, CodecId, CompressionConfig, CostEstimate, EvictionPolicy, MemoryAccounting,
+    MigrationBudget, PageId, PageLifecycleState, StorageTier,
 };
 
 pub mod cluster;
+pub mod codec;
 pub use cluster::*;
+pub use codec::{
+    compress_adaptive, compress_exact, compress_lz4hc_into, decompress_with_codec, CodecScratch,
+    CompressedObjectMeta,
+};
+
+/// Compute CRC32 IEEE checksum over arbitrary byte slice.
+pub fn crc32_ieee(data: &[u8]) -> u32 {
+    crc32fast::hash(data)
+}
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Error {
@@ -91,25 +101,52 @@ pub struct TieringReport {
     pub failed_migration: usize,
     pub net_accounted_delta: isize,
 }
+/// Snapshot profil halaman untuk keputusan adaptif berbasis biaya sumber daya.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PageProfile {
+    pub id: PageId,
+    pub codec: CodecId,
+    pub original_size: usize,
+    pub stored_bytes: usize,
+    pub allocated_capacity_bytes: usize,
+    pub metadata_bytes: usize,
+    pub access_count: u64,
+    pub inserted_tick: u64,
+    pub last_accessed_tick: u64,
+    pub last_transition_tick: u64,
+    pub current_tick: u64,
+    pub last_compress_ns: u64,
+    pub last_decompress_ns: u64,
+    pub incompressible_flagged: bool,
+}
+
 /// Batas ukuran simulasi untuk membatasi alokasi setiap pengambilan.
 pub const MAX_PAGE_SIZE: usize = 1024 * 1024;
 struct Entry {
     payload: Vec<u8>,
     payload_crc: u32,
     original_crc: u32,
-    raw: bool,
+    codec: CodecId,
     inserted_tick: u64,
     last_accessed_tick: Cell<u64>,
+    access_count: Cell<u64>,
+    last_compress_ns: u64,
+    last_decompress_ns: Cell<u64>,
+    incompressible_flagged: bool,
+    last_transition_tick: u64,
 }
 pub struct PageStore {
     page_size: usize,
     capacity: usize,
     next: u64,
     adaptive: bool,
+    default_codec: CodecId,
     budget: usize,
     accounted: usize,
+    peak_memory_bytes: usize,
     pages: HashMap<PageId, Entry>,
     evicted_history: VecDeque<PageId>,
+    scratch: CodecScratch,
     tick: Cell<u64>,
     hit_count: Cell<u64>,
     miss_count: Cell<u64>,
@@ -136,10 +173,13 @@ impl PageStore {
             capacity,
             next: 0,
             adaptive: false,
+            default_codec: CodecId::Lz4Standard,
             budget: usize::MAX,
             accounted: 0,
+            peak_memory_bytes: 0,
             pages: HashMap::new(),
             evicted_history: VecDeque::new(),
+            scratch: CodecScratch::default(),
             tick: Cell::new(0),
             hit_count: Cell::new(0),
             miss_count: Cell::new(0),
@@ -160,6 +200,35 @@ impl PageStore {
     /// Membuat store 4 KiB; konfigurasi berlebihan ditolak.
     pub fn with_capacity(capacity: usize) -> Result<Self, Error> {
         Self::new(4096, capacity)
+    }
+
+    pub fn set_default_codec(&mut self, codec: CodecId) {
+        self.default_codec = codec;
+    }
+
+    pub fn default_codec(&self) -> CodecId {
+        self.default_codec
+    }
+
+    pub fn current_tick(&self) -> u64 {
+        self.tick.get()
+    }
+
+    fn update_peak_memory(&mut self) {
+        let total = self.total_memory_with_overhead();
+        if total > self.peak_memory_bytes {
+            self.peak_memory_bytes = total;
+        }
+    }
+
+    fn total_memory_with_overhead(&self) -> usize {
+        self.accounted
+            .saturating_add(
+                self.evicted_history
+                    .capacity()
+                    .saturating_mul(size_of::<PageId>()),
+            )
+            .saturating_add(self.scratch.allocated_bytes())
     }
 
     fn advance_tick(&self) -> Result<u64, Error> {
@@ -187,12 +256,11 @@ impl PageStore {
         }
     }
 
-    /// Menyisipkan halaman dengan kebijakan penggusuran yang ditentukan.
-    /// Memiliki jaminan transaksi fail-closed: jika terjadi error (alokasi, kehabisan ID/tick,
-    /// atau budget tidak mencukupi), tidak ada halaman yang tergusur dan state tetap utuh.
-    pub fn insert_with_policy(
+    /// Menyisipkan halaman dengan codec dan kebijakan penggusuran eksplisit.
+    pub fn insert_with_codec(
         &mut self,
         data: &[u8],
+        codec: CodecId,
         policy: EvictionPolicy,
     ) -> Result<PageId, Error> {
         if data.len() != self.page_size {
@@ -211,22 +279,19 @@ impl PageStore {
         let tick = self.tick.get();
         let next_tick = tick.checked_add(1).ok_or(Error::IdExhausted)?;
 
-        // 2. Pre-kompresi dan evaluasi biaya
-        let compressed = lz4_flex::block::compress(data);
-        // Vec capacity tidak pernah lebih kecil dari len; lewati alokasi raw jika
-        // kompresi sudah pasti lebih kecil dari kandidat raw mana pun.
-        let (payload, raw) = if self.adaptive && compressed.capacity() >= data.len() {
-            let mut raw = Vec::new();
-            raw.try_reserve_exact(data.len())
-                .map_err(|_| Error::Allocation)?;
-            if raw.capacity() <= compressed.capacity() {
-                raw.extend_from_slice(data);
-                (raw, true)
-            } else {
-                (compressed, false)
-            }
+        // 2. Pre-kompresi via reusable scratch dan evaluasi biaya
+        let (payload, chosen_codec, compress_ns, incompressible_flagged) = if self.adaptive {
+            let cfg = CompressionConfig {
+                codec,
+                min_savings_bytes: 1,
+                max_scratch_bytes: self.scratch.max_scratch_bytes(),
+            };
+            let (p, chosen, ns) = compress_adaptive(data, cfg, &mut self.scratch)?;
+            let flagged = codec.is_compressed() && chosen == CodecId::Raw;
+            (p, chosen, ns, flagged)
         } else {
-            (compressed, false)
+            let (p, ns) = compress_exact(data, codec, &mut self.scratch)?;
+            (p, codec, ns, false)
         };
         let cost = payload
             .capacity()
@@ -273,9 +338,14 @@ impl PageStore {
             payload_crc: crc32fast::hash(&payload),
             original_crc: crc32fast::hash(data),
             payload,
-            raw,
+            codec: chosen_codec,
             inserted_tick: tick,
             last_accessed_tick: Cell::new(tick),
+            access_count: Cell::new(0),
+            last_compress_ns: compress_ns,
+            last_decompress_ns: Cell::new(0),
+            incompressible_flagged,
+            last_transition_tick: tick,
         };
         self.pages.insert(id, entry);
         self.next = next_id;
@@ -283,7 +353,19 @@ impl PageStore {
         self.accounted = self.accounted.checked_add(cost).expect("checked budget");
         self.insert_count
             .set(self.insert_count.get().saturating_add(1));
+        self.update_peak_memory();
         Ok(id)
+    }
+
+    /// Menyisipkan halaman dengan kebijakan penggusuran yang ditentukan.
+    /// Memiliki jaminan transaksi fail-closed: jika terjadi error (alokasi, kehabisan ID/tick,
+    /// atau budget tidak mencukupi), tidak ada halaman yang tergusur dan state tetap utuh.
+    pub fn insert_with_policy(
+        &mut self,
+        data: &[u8],
+        policy: EvictionPolicy,
+    ) -> Result<PageId, Error> {
+        self.insert_with_codec(data, self.default_codec, policy)
     }
 
     /// Menyisipkan halaman (kebijakan default: menolak bila kapasitas atau budget penuh).
@@ -312,20 +394,8 @@ impl PageStore {
                 .set(self.corruption_count.get().saturating_add(1));
             return Err(Error::PayloadChecksumMismatch);
         }
-        let written = if data.raw {
-            if data.payload.len() != self.page_size {
-                return Err(Error::Decompression);
-            }
-            out[..self.page_size].copy_from_slice(&data.payload);
-            self.page_size
-        } else {
-            let n = lz4_flex::block::decompress_into(&data.payload, &mut out[..self.page_size])
-                .map_err(|_| Error::Decompression)?;
-            if n != self.page_size {
-                return Err(Error::Decompression);
-            }
-            n
-        };
+        let (written, decompress_ns) =
+            decompress_with_codec(data.codec, &data.payload, &mut out[..self.page_size])?;
         if crc32fast::hash(&out[..self.page_size]) != data.original_crc {
             self.corruption_count
                 .set(self.corruption_count.get().saturating_add(1));
@@ -333,6 +403,9 @@ impl PageStore {
         }
         let tick = self.advance_tick()?;
         data.last_accessed_tick.set(tick);
+        data.access_count
+            .set(data.access_count.get().saturating_add(1));
+        data.last_decompress_ns.set(decompress_ns);
         self.hit_count.set(self.hit_count.get().saturating_add(1));
         Ok(written)
     }
@@ -360,16 +433,7 @@ impl PageStore {
             .try_reserve_exact(self.page_size)
             .map_err(|_| Error::Allocation)?;
         output.resize(self.page_size, 0);
-        let written = if data.raw {
-            if data.payload.len() != self.page_size {
-                return Err(Error::Decompression);
-            }
-            output.copy_from_slice(&data.payload);
-            self.page_size
-        } else {
-            lz4_flex::block::decompress_into(&data.payload, &mut output)
-                .map_err(|_| Error::Decompression)?
-        };
+        let (written, _) = decompress_with_codec(data.codec, &data.payload, &mut output)?;
         if written != self.page_size {
             return Err(Error::Decompression);
         }
@@ -388,37 +452,42 @@ impl PageStore {
                 actual: data.len(),
             });
         }
-        let old_cost = {
+        let (old_cost, target_codec) = {
             let old_entry = match self.pages.get(&id) {
                 Some(e) => e,
                 None => {
                     return Err(Error::NotFound);
                 }
             };
-            old_entry
+            let cost = old_entry
                 .payload
                 .capacity()
                 .checked_add(size_of::<(PageId, Entry)>())
-                .expect("validated cost")
+                .expect("validated cost");
+            let codec = if old_entry.codec == CodecId::Raw {
+                self.default_codec
+            } else {
+                old_entry.codec
+            };
+            (cost, codec)
         };
 
         // Pre-validasi kehabisan tick sebelum mutasi
         let tick = self.tick.get();
         let next_tick = tick.checked_add(1).ok_or(Error::IdExhausted)?;
 
-        let compressed = lz4_flex::block::compress(data);
-        let (payload, raw) = if self.adaptive && compressed.capacity() >= data.len() {
-            let mut raw = Vec::new();
-            raw.try_reserve_exact(data.len())
-                .map_err(|_| Error::Allocation)?;
-            if raw.capacity() <= compressed.capacity() {
-                raw.extend_from_slice(data);
-                (raw, true)
-            } else {
-                (compressed, false)
-            }
+        let (payload, chosen_codec, compress_ns, incompressible_flagged) = if self.adaptive {
+            let cfg = CompressionConfig {
+                codec: target_codec,
+                min_savings_bytes: 1,
+                max_scratch_bytes: self.scratch.max_scratch_bytes(),
+            };
+            let (p, chosen, ns) = compress_adaptive(data, cfg, &mut self.scratch)?;
+            let flagged = target_codec.is_compressed() && chosen == CodecId::Raw;
+            (p, chosen, ns, flagged)
         } else {
-            (compressed, false)
+            let (p, ns) = compress_exact(data, target_codec, &mut self.scratch)?;
+            (p, target_codec, ns, false)
         };
 
         let new_cost = payload
@@ -447,12 +516,16 @@ impl PageStore {
         entry.payload_crc = crc32fast::hash(&payload);
         entry.original_crc = crc32fast::hash(data);
         entry.payload = payload;
-        entry.raw = raw;
+        entry.codec = chosen_codec;
+        entry.last_compress_ns = compress_ns;
+        entry.incompressible_flagged = incompressible_flagged;
+        entry.last_transition_tick = tick;
         entry.last_accessed_tick.set(tick);
         self.tick.set(next_tick);
         self.accounted = new_accounted;
         self.update_count
             .set(self.update_count.get().saturating_add(1));
+        self.update_peak_memory();
         Ok(())
     }
 
@@ -527,15 +600,35 @@ impl PageStore {
     /// Mengetahui tingkat penyimpanan (tier) halaman saat ini: Memory (raw) atau Compressed.
     pub fn page_tier(&self, id: PageId) -> Result<StorageTier, Error> {
         match self.pages.get(&id) {
-            Some(entry) => {
-                if entry.raw {
-                    Ok(StorageTier::Memory)
-                } else {
-                    Ok(StorageTier::Compressed)
-                }
-            }
+            Some(entry) => Ok(entry.codec.tier()),
             None => Err(Error::NotFound),
         }
+    }
+
+    /// Mengetahui codec eksplisit yang digunakan untuk menyimpan halaman.
+    pub fn page_codec(&self, id: PageId) -> Result<CodecId, Error> {
+        self.pages.get(&id).map(|e| e.codec).ok_or(Error::NotFound)
+    }
+
+    /// Mengembalikan profil lengkap halaman untuk pengambilan keputusan adaptif berbasis biaya.
+    pub fn page_profile(&self, id: PageId) -> Result<PageProfile, Error> {
+        let entry = self.pages.get(&id).ok_or(Error::NotFound)?;
+        Ok(PageProfile {
+            id,
+            codec: entry.codec,
+            original_size: self.page_size,
+            stored_bytes: entry.payload.len(),
+            allocated_capacity_bytes: entry.payload.capacity(),
+            metadata_bytes: size_of::<(PageId, Entry)>(),
+            access_count: entry.access_count.get(),
+            inserted_tick: entry.inserted_tick,
+            last_accessed_tick: entry.last_accessed_tick.get(),
+            last_transition_tick: entry.last_transition_tick,
+            current_tick: self.tick.get(),
+            last_compress_ns: entry.last_compress_ns,
+            last_decompress_ns: entry.last_decompress_ns.get(),
+            incompressible_flagged: entry.incompressible_flagged,
+        })
     }
 
     /// Menghitung estimasi biaya halaman (latensi akses dan kapasitas memori).
@@ -551,22 +644,27 @@ impl PageStore {
             .get()
             .saturating_sub(entry.last_accessed_tick.get())
             .saturating_mul(150);
-        let base_latency: u64 = if entry.raw { 200 } else { 1200 };
+        let base_latency: u64 = match entry.codec {
+            CodecId::Raw => 200,
+            CodecId::Lz4Standard => 1200,
+            CodecId::Lz4Hc { .. } => 1200,
+        };
         let latency_ns = base_latency.saturating_add(recency_penalty);
         Ok(CostEstimate { latency_ns, bytes })
     }
 
-    /// Memigrasikan halaman secara in-place ke tingkatan penyimpanan target (Memory atau Compressed).
-    /// Mempertahankan jaminan konsistensi transaksional fail-closed: jika migrasi gagal
-    /// (misal karena alokasi atau pelampauan budget saat ekspansi ke raw), halaman tetap utuh.
-    pub fn migrate_page(&mut self, id: PageId, target: StorageTier) -> Result<bool, Error> {
+    /// Memigrasikan halaman secara in-place ke codec target (`Raw`, `Lz4Standard`, atau `Lz4Hc`).
+    /// Menjamin konsistensi transaksional fail-closed serta proteksi halaman inkompresibel.
+    pub fn migrate_page_with_codec(
+        &mut self,
+        id: PageId,
+        target_codec: CodecId,
+    ) -> Result<bool, Error> {
         let entry = self.pages.get(&id).ok_or(Error::NotFound)?;
-        let current_tier = if entry.raw {
-            StorageTier::Memory
-        } else {
-            StorageTier::Compressed
-        };
-        if current_tier == target {
+        if entry.codec == target_codec {
+            return Ok(false);
+        }
+        if target_codec.is_compressed() && entry.incompressible_flagged {
             return Ok(false);
         }
 
@@ -576,69 +674,28 @@ impl PageStore {
             .checked_add(size_of::<(PageId, Entry)>())
             .expect("validated cost");
 
-        match target {
-            StorageTier::Compressed => {
-                let decompressed = &entry.payload;
-                if crc32fast::hash(decompressed) != entry.payload_crc {
-                    self.corruption_count
-                        .set(self.corruption_count.get().saturating_add(1));
-                    return Err(Error::PayloadChecksumMismatch);
-                }
-                let compressed = lz4_flex::block::compress(decompressed);
-                // Perlindungan halaman inkompresibel (Phase E):
-                // Jika kompresi tidak menghemat ruang memori, pertahankan di tier raw
-                // agar tidak terjadi pembengkakan memori akibat header LZ4.
-                if compressed.capacity() >= decompressed.capacity() {
-                    return Ok(false);
-                }
-                let new_cost = compressed
-                    .capacity()
-                    .checked_add(size_of::<(PageId, Entry)>())
-                    .ok_or(Error::BudgetExceeded)?;
+        if crc32fast::hash(&entry.payload) != entry.payload_crc {
+            self.corruption_count
+                .set(self.corruption_count.get().saturating_add(1));
+            return Err(Error::PayloadChecksumMismatch);
+        }
 
-                let new_accounted = if new_cost >= old_cost {
-                    let diff = new_cost - old_cost;
-                    let acc = self
-                        .accounted
-                        .checked_add(diff)
-                        .ok_or(Error::BudgetExceeded)?;
-                    if acc > self.budget {
-                        return Err(Error::BudgetExceeded);
-                    }
-                    acc
-                } else {
-                    let diff = old_cost - new_cost;
-                    self.accounted
-                        .checked_sub(diff)
-                        .expect("accounting invariant")
-                };
+        let current_codec = entry.codec;
+        let original_crc = entry.original_crc;
 
-                let entry = self.pages.get_mut(&id).expect("checked existence");
-                entry.payload = compressed;
-                entry.raw = false;
-                entry.payload_crc = crc32fast::hash(&entry.payload);
-                self.accounted = new_accounted;
-                self.update_count
-                    .set(self.update_count.get().saturating_add(1));
-                Ok(true)
-            }
-            StorageTier::Memory => {
-                if crc32fast::hash(&entry.payload) != entry.payload_crc {
-                    self.corruption_count
-                        .set(self.corruption_count.get().saturating_add(1));
-                    return Err(Error::PayloadChecksumMismatch);
-                }
+        match target_codec {
+            CodecId::Raw => {
                 let mut raw_buf = Vec::new();
                 raw_buf
                     .try_reserve_exact(self.page_size)
                     .map_err(|_| Error::Allocation)?;
                 raw_buf.resize(self.page_size, 0);
-                let n = lz4_flex::block::decompress_into(&entry.payload, &mut raw_buf)
-                    .map_err(|_| Error::Decompression)?;
+                let (n, decompress_ns) =
+                    decompress_with_codec(current_codec, &entry.payload, &mut raw_buf)?;
                 if n != self.page_size {
                     return Err(Error::Decompression);
                 }
-                if crc32fast::hash(&raw_buf) != entry.original_crc {
+                if crc32fast::hash(&raw_buf) != original_crc {
                     self.corruption_count
                         .set(self.corruption_count.get().saturating_add(1));
                     return Err(Error::ChecksumMismatch);
@@ -649,33 +706,122 @@ impl PageStore {
                     .checked_add(size_of::<(PageId, Entry)>())
                     .ok_or(Error::BudgetExceeded)?;
 
-                let new_accounted = if new_cost >= old_cost {
-                    let diff = new_cost - old_cost;
-                    let acc = self
-                        .accounted
-                        .checked_add(diff)
-                        .ok_or(Error::BudgetExceeded)?;
-                    if acc > self.budget {
-                        return Err(Error::BudgetExceeded);
-                    }
-                    acc
-                } else {
-                    let diff = old_cost - new_cost;
-                    self.accounted
-                        .checked_sub(diff)
-                        .expect("accounting invariant")
-                };
-
+                let new_accounted = self.checked_recompute_accounted(old_cost, new_cost)?;
+                let tick = self.tick.get();
                 let entry = self.pages.get_mut(&id).expect("checked existence");
                 entry.payload = raw_buf;
-                entry.raw = true;
+                entry.codec = CodecId::Raw;
                 entry.payload_crc = crc32fast::hash(&entry.payload);
+                entry.last_decompress_ns.set(decompress_ns);
+                entry.last_transition_tick = tick;
                 self.accounted = new_accounted;
                 self.update_count
                     .set(self.update_count.get().saturating_add(1));
+                self.update_peak_memory();
+                Ok(true)
+            }
+            CodecId::Lz4Standard | CodecId::Lz4Hc { .. } => {
+                let (compressed, compress_ns, old_cap) = if current_codec == CodecId::Raw {
+                    let old_cap = entry.payload.capacity();
+                    let raw_slice = entry.payload.clone();
+                    let (comp, ns) = compress_exact(&raw_slice, target_codec, &mut self.scratch)?;
+                    (comp, ns, old_cap)
+                } else {
+                    let old_cap = entry.payload.capacity();
+                    let mut raw_buf = Vec::new();
+                    raw_buf
+                        .try_reserve_exact(self.page_size)
+                        .map_err(|_| Error::Allocation)?;
+                    raw_buf.resize(self.page_size, 0);
+                    let (n, _) =
+                        decompress_with_codec(current_codec, &entry.payload, &mut raw_buf)?;
+                    if n != self.page_size {
+                        return Err(Error::Decompression);
+                    }
+                    if crc32fast::hash(&raw_buf) != original_crc {
+                        self.corruption_count
+                            .set(self.corruption_count.get().saturating_add(1));
+                        return Err(Error::ChecksumMismatch);
+                    }
+                    let (comp, ns) = compress_exact(&raw_buf, target_codec, &mut self.scratch)?;
+                    (comp, ns, old_cap)
+                };
+
+                // Proteksi halaman inkompresibel dan pencegahan rekompresi tanpa penghematan
+                if compressed.capacity() >= old_cap {
+                    if current_codec == CodecId::Raw {
+                        if let Some(e) = self.pages.get_mut(&id) {
+                            e.incompressible_flagged = true;
+                        }
+                    }
+                    return Ok(false);
+                }
+
+                let new_cost = compressed
+                    .capacity()
+                    .checked_add(size_of::<(PageId, Entry)>())
+                    .ok_or(Error::BudgetExceeded)?;
+                let new_accounted = self.checked_recompute_accounted(old_cost, new_cost)?;
+
+                let tick = self.tick.get();
+                let entry = self.pages.get_mut(&id).expect("checked existence");
+                entry.payload = compressed;
+                entry.codec = target_codec;
+                entry.payload_crc = crc32fast::hash(&entry.payload);
+                entry.last_compress_ns = compress_ns;
+                entry.last_transition_tick = tick;
+                self.accounted = new_accounted;
+                self.update_count
+                    .set(self.update_count.get().saturating_add(1));
+                self.update_peak_memory();
                 Ok(true)
             }
         }
+    }
+
+    fn checked_recompute_accounted(
+        &self,
+        old_cost: usize,
+        new_cost: usize,
+    ) -> Result<usize, Error> {
+        if new_cost >= old_cost {
+            let diff = new_cost - old_cost;
+            let acc = self
+                .accounted
+                .checked_add(diff)
+                .ok_or(Error::BudgetExceeded)?;
+            if acc > self.budget {
+                return Err(Error::BudgetExceeded);
+            }
+            Ok(acc)
+        } else {
+            let diff = old_cost - new_cost;
+            Ok(self
+                .accounted
+                .checked_sub(diff)
+                .expect("accounting invariant"))
+        }
+    }
+
+    /// Memigrasikan halaman secara in-place ke tingkatan penyimpanan target (Memory atau Compressed).
+    /// Mempertahankan jaminan konsistensi transaksional fail-closed: jika migrasi gagal
+    /// (misal karena alokasi atau pelampauan budget saat ekspansi ke raw), halaman tetap utuh.
+    pub fn migrate_page(&mut self, id: PageId, target: StorageTier) -> Result<bool, Error> {
+        let target_codec = match target {
+            StorageTier::Memory => CodecId::Raw,
+            StorageTier::Compressed => {
+                let current = self.page_codec(id)?;
+                if current.is_compressed() {
+                    return Ok(false);
+                }
+                if self.default_codec.is_compressed() {
+                    self.default_codec
+                } else {
+                    CodecId::Lz4Standard
+                }
+            }
+        };
+        self.migrate_page_with_codec(id, target_codec)
     }
 
     /// Menerapkan fungsi keputusan tiering dengan batas anggaran migrasi per siklus evaluasi.
@@ -786,14 +932,60 @@ impl PageStore {
         self.remove_count.set(0);
         self.corruption_count.set(0);
     }
+    /// Mengembalikan daftar ID halaman aktif dalam urutan deterministik.
+    pub fn page_ids_sorted(&self) -> Vec<PageId> {
+        let mut ids: Vec<PageId> = self.pages.keys().copied().collect();
+        ids.sort_by_key(|id| id.0);
+        ids
+    }
+
+    /// Akuntansi memori ketat termasuk overhead metadata, kapasitas teralokasi,
+    /// buffer scratch sementara, dan puncak konsumsi memori.
+    pub fn overhead_accounting(&self) -> MemoryAccounting {
+        let st = self.stats();
+        let scratch_buffer_bytes = self.scratch.allocated_bytes();
+        let history_bytes = self
+            .evicted_history
+            .capacity()
+            .saturating_mul(size_of::<PageId>());
+        let metadata_bytes = st
+            .metadata_bytes_lower_bound
+            .saturating_add(history_bytes)
+            .saturating_add(size_of::<Self>());
+        let total_accounted_bytes = st
+            .buffer_capacity_bytes
+            .saturating_add(metadata_bytes)
+            .saturating_add(scratch_buffer_bytes);
+        let net_savings_bytes =
+            (st.original_bytes as isize).saturating_sub(total_accounted_bytes as isize);
+        MemoryAccounting {
+            original_logical_bytes: st.original_bytes,
+            stored_payload_bytes: st.stored_bytes,
+            metadata_bytes,
+            allocated_capacity_bytes: st.buffer_capacity_bytes,
+            scratch_buffer_bytes,
+            peak_memory_bytes: self.peak_memory_bytes.max(total_accounted_bytes),
+            total_accounted_bytes,
+            net_savings_bytes,
+        }
+    }
+
     pub fn stats(&self) -> Stats {
         Stats {
-            raw_pages: self.pages.values().filter(|e| e.raw).count(),
-            compressed_pages: self.pages.values().filter(|e| !e.raw).count(),
+            raw_pages: self
+                .pages
+                .values()
+                .filter(|e| e.codec == CodecId::Raw)
+                .count(),
+            compressed_pages: self
+                .pages
+                .values()
+                .filter(|e| e.codec != CodecId::Raw)
+                .count(),
             raw_bytes: self
                 .pages
                 .values()
-                .filter(|e| e.raw)
+                .filter(|e| e.codec == CodecId::Raw)
                 .map(|e| e.payload.len())
                 .fold(0usize, |a, b| {
                     a.checked_add(b).expect("accounting invariant")
@@ -826,7 +1018,7 @@ impl PageStore {
             compressed_bytes: self
                 .pages
                 .values()
-                .filter(|e| !e.raw)
+                .filter(|e| e.codec != CodecId::Raw)
                 .map(|e| e.payload.len())
                 .fold(0usize, |a, b| {
                     a.checked_add(b).expect("accounting invariant")
@@ -834,7 +1026,7 @@ impl PageStore {
             compressed_allocated_bytes: self
                 .pages
                 .values()
-                .filter(|e| !e.raw)
+                .filter(|e| e.codec != CodecId::Raw)
                 .map(|e| e.payload.capacity())
                 .fold(0usize, |a, b| {
                     a.checked_add(b).expect("accounting invariant")
@@ -1065,7 +1257,7 @@ mod adaptive_tests {
     fn raw_corruption_is_detected() {
         let mut s = PageStore::adaptive(1, 1, 100).unwrap();
         let id = s.insert(&[42]).unwrap();
-        assert!(s.pages[&id].raw);
+        assert_eq!(s.pages[&id].codec, CodecId::Raw);
         s.pages.get_mut(&id).unwrap().payload[0] ^= 1;
         assert_eq!(s.get(id), Err(Error::PayloadChecksumMismatch));
     }
@@ -1107,7 +1299,7 @@ mod budget_boundary_tests {
         ));
         let mut s = PageStore::adaptive(1, 1, usize::MAX).unwrap();
         let id = s.insert(&[42]).unwrap();
-        assert!(s.pages[&id].raw);
+        assert_eq!(s.pages[&id].codec, CodecId::Raw);
         s.pages.get_mut(&id).unwrap().original_crc ^= 1;
         assert_eq!(s.get(id), Err(Error::ChecksumMismatch));
         let e = s.pages.get_mut(&id).unwrap();
@@ -1819,5 +2011,39 @@ mod tiering_tests {
 
         // Verify data remains 100% intact
         assert_eq!(s.get(id).unwrap(), random_page);
+    }
+
+    #[test]
+    fn test_lz4hc_codec_and_overhead_accounting() {
+        let mut s = PageStore::adaptive(4096, 8, 256 * 1024).unwrap();
+        let mut page = Vec::with_capacity(4096);
+        for i in 0..128 {
+            let line = format!("{{\"page\":1,\"row\":{},\"tag\":\"xynoos_hc_test\"}}\n", i);
+            page.extend_from_slice(line.as_bytes());
+        }
+        page.resize(4096, b'x');
+
+        let id = s
+            .insert_with_codec(&page, CodecId::Lz4Standard, EvictionPolicy::Reject)
+            .unwrap();
+        assert_eq!(s.page_codec(id).unwrap(), CodecId::Lz4Standard);
+        let std_size = s.page_profile(id).unwrap().stored_bytes;
+
+        let changed = s
+            .migrate_page_with_codec(id, CodecId::Lz4Hc { level: 9 })
+            .unwrap();
+        assert!(changed);
+        assert_eq!(s.page_codec(id).unwrap(), CodecId::Lz4Hc { level: 9 });
+        let hc_size = s.page_profile(id).unwrap().stored_bytes;
+        assert!(hc_size < std_size);
+
+        assert_eq!(s.get(id).unwrap(), page);
+        let acct = s.overhead_accounting();
+        assert_eq!(acct.original_logical_bytes, 4096);
+        assert_eq!(
+            acct.total_accounted_bytes,
+            acct.allocated_capacity_bytes + acct.metadata_bytes + acct.scratch_buffer_bytes
+        );
+        assert!(acct.peak_memory_bytes >= acct.total_accounted_bytes);
     }
 }

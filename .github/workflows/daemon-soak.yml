@@ -1,0 +1,47 @@
+name: Sustained Daemon Soak Test
+on:
+  workflow_dispatch:
+    inputs:
+      duration_minutes:
+        description: "Bounded soak duration in minutes (15-60)"
+        required: false
+        default: "15"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  soak:
+    name: Sustained Daemon Reliability Soak
+    runs-on: ubuntu-24.04
+    timeout-minutes: 70
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Release Binaries
+        run: cargo build --release -p xynoos-bench -p xynoos-cli --locked
+      - name: Execute Bounded Sustained Daemon Soak
+        env:
+          SOAK_MINUTES: ${{ inputs.duration_minutes }}
+        run: |
+          set -euo pipefail
+          MINS=$(python3 -c 'import os; v=int(os.environ.get("SOAK_MINUTES","15")); print(max(1, min(60, v)))')
+          echo "Running sustained daemon soak for ${MINS} minute(s) in ObserveOnly mode..."
+          TMPDIR_S=$(mktemp -d)
+          PID_FILE="$TMPDIR_S/soak.pid"
+          target/release/xynoos daemon --mode observe-only --interval-ms 1000 --pid-file "$PID_FILE" > "$TMPDIR_S/final.json" &
+          DPID=$!
+          SECS=$((MINS * 60))
+          END=$(( $(date +%s) + SECS ))
+          echo "timestamp,rss_kib,cpu_ticks" > "$TMPDIR_S/soak.csv"
+          while [ "$(date +%s)" -lt "$END" ] && kill -0 "$DPID" 2>/dev/null; do
+            RSS=$(awk '/VmRSS:/ {print $2}' /proc/$DPID/status 2>/dev/null || echo 0)
+            echo "$(date +%s),$RSS" >> "$TMPDIR_S/soak.csv"
+            sleep 15
+          done
+          kill -TERM "$DPID" 2>/dev/null || true
+          wait "$DPID" || true
+          cat "$TMPDIR_S/soak.csv"
+          cat "$TMPDIR_S/final.json"
+          rm -rf "$TMPDIR_S"
