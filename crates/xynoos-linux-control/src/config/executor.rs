@@ -101,8 +101,12 @@ impl ConfigExecutor {
         now_ms: u64,
     ) -> Result<ExecutionSummary, String> {
         // 1. Authorization validation
-        auth.is_valid(AuthorizationScope::MemoryOptimization, plan_fingerprint, now_ms)
-            .map_err(|e| format!("Authorization error: {e}"))?;
+        auth.is_valid(
+            AuthorizationScope::MemoryOptimization,
+            plan_fingerprint,
+            now_ms,
+        )
+        .map_err(|e| format!("Authorization error: {e}"))?;
 
         // 2. Load or initialize durable ledger
         let mut ledger = self
@@ -128,7 +132,10 @@ impl ConfigExecutor {
                 results.push(ActionResult {
                     action_id: action.action_id.clone(),
                     success: true,
-                    message: format!("Preserved existing configuration: {}", action.target_setting),
+                    message: format!(
+                        "Preserved existing configuration: {}",
+                        action.target_setting
+                    ),
                 });
                 continue;
             }
@@ -399,9 +406,7 @@ impl ConfigExecutor {
                 mode,
                 original_mode,
             } => {
-                let thp_path = self
-                    .sys_root
-                    .join("kernel/mm/transparent_hugepage/enabled");
+                let thp_path = self.sys_root.join("kernel/mm/transparent_hugepage/enabled");
                 if thp_path.exists() {
                     let _ = fs::write(&thp_path, mode.as_bytes());
                 }

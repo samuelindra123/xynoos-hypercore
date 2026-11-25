@@ -250,5 +250,5 @@ pub fn execute(_prepared: &Audit, authorized: bool) -> Decision {
     }
 }
 
-pub mod planning;
 pub mod config;
+pub mod planning;

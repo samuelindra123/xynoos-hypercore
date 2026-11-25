@@ -97,7 +97,11 @@ impl OwnershipLedger {
     }
 
     /// Check the integrity of a specific managed entry on the filesystem.
-    pub fn check_entry_integrity(&self, entry: &ManagedEntry, root_prefix: &Path) -> IntegrityStatus {
+    pub fn check_entry_integrity(
+        &self,
+        entry: &ManagedEntry,
+        root_prefix: &Path,
+    ) -> IntegrityStatus {
         if let Some(rel_path) = &entry.target_file {
             let full_path = if rel_path.starts_with('/') {
                 root_prefix.join(rel_path.trim_start_matches('/'))

@@ -3,8 +3,8 @@
 
 use std::{error::Error, path::PathBuf};
 use xynoos_linux_control::config::{
-    ActionClassification, AuthorizationScope, ConfigExecutor, ConfigurationAction,
-    IntegrityStatus, MemoryPlanner, OwnershipLedger, SetupAuthorization,
+    ActionClassification, AuthorizationScope, ConfigExecutor, ConfigurationAction, IntegrityStatus,
+    MemoryPlanner, OwnershipLedger, SetupAuthorization,
 };
 use xynoos_pressureiq::{
     OptimizationPlan, ProposedActionType, SystemInventory, INVENTORY_SCHEMA_VERSION,
@@ -503,7 +503,10 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         if ledger.entries.is_empty() {
             println!("No active configurations currently owned by HyperCore.");
         } else {
-            println!("Active Managed Settings ({} entries):", ledger.entries.len());
+            println!(
+                "Active Managed Settings ({} entries):",
+                ledger.entries.len()
+            );
             for (key, entry) in &ledger.entries {
                 let integrity = ledger.check_entry_integrity(entry, &roots.etc_root);
                 println!("  - Setting Key    : {key}");
@@ -606,10 +609,22 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
 
         println!("Universal Memory Configuration Actions:");
         for (i, action) in actions.iter().enumerate() {
-            println!("{}. [{:?}] {}: {}", i + 1, action.classification, action.target_setting, action.desired_value);
-            println!("   Observed State: {} (Ownership: {:?})", action.current_observed_value, action.current_ownership);
+            println!(
+                "{}. [{:?}] {}: {}",
+                i + 1,
+                action.classification,
+                action.target_setting,
+                action.desired_value
+            );
+            println!(
+                "   Observed State: {} (Ownership: {:?})",
+                action.current_observed_value, action.current_ownership
+            );
             println!("   Rationale     : {}", action.expected_benefit);
-            println!("   Privileges    : {:?} (Reversibility: {:?})", action.required_privileges, action.reversibility);
+            println!(
+                "   Privileges    : {:?} (Reversibility: {:?})",
+                action.required_privileges, action.reversibility
+            );
             println!();
         }
 
@@ -617,7 +632,10 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    Err("usage: xynoos setup (--plan | --apply --authorized | --status | --rollback) [--json]".into())
+    Err(
+        "usage: xynoos setup (--plan | --apply --authorized | --status | --rollback) [--json]"
+            .into(),
+    )
 }
 
 /// Handle `xynoos doctor [--json]`

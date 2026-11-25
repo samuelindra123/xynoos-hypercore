@@ -6,8 +6,8 @@ use std::fs;
 use xynoos_linux_control::config::{
     ActionClassification, AuthorizationScope, ConfigExecutor, ConfigJournal, ConfigJournalItem,
     ConfigSubsystem, ConfigTxPhase, ConfigurationAction, IntegrityStatus, MemoryPlanner,
-    MemoryProfile, OwnershipLedger, PersistenceRequirement, ReversalProcedure,
-    SetupAuthorization, TypedMutation, VerificationProcedure, CONFIG_ACTION_SCHEMA_VERSION,
+    MemoryProfile, OwnershipLedger, PersistenceRequirement, ReversalProcedure, SetupAuthorization,
+    TypedMutation, VerificationProcedure, CONFIG_ACTION_SCHEMA_VERSION,
 };
 use xynoos_pressureiq::discovery::{
     inventory::SystemInventory,
@@ -257,7 +257,9 @@ fn test_executor_apply_and_rollback_lifecycle() {
     assert!(ledger.is_owned("dropin:vm.swappiness"));
 
     // Now test Rollback
-    let rollback_summary = executor.rollback_all(now + 1000).expect("Rollback must succeed");
+    let rollback_summary = executor
+        .rollback_all(now + 1000)
+        .expect("Rollback must succeed");
     assert_eq!(rollback_summary.failed_restorations.len(), 0);
 
     // Verify runtime value restored back to 60

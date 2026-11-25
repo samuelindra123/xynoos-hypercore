@@ -380,12 +380,18 @@ fn test_dormant_vs_active_oom_packages_regression() {
 
     // Must NOT flag ConfirmedConflict
     let hard_conf = inv.conflicts.iter().find(|c| c.rule_id == "CONF-003");
-    assert!(hard_conf.is_none(), "Dormant installed packages must not be flagged as ConfirmedConflict");
+    assert!(
+        hard_conf.is_none(),
+        "Dormant installed packages must not be flagged as ConfirmedConflict"
+    );
 
     // Instead flags advisory CompatibleCoexistence
     let adv_conf = inv.conflicts.iter().find(|c| c.rule_id == "CONF-003-ADV");
     assert!(adv_conf.is_some());
-    assert_eq!(adv_conf.unwrap().severity, ConflictSeverity::CompatibleCoexistence);
+    assert_eq!(
+        adv_conf.unwrap().severity,
+        ConflictSeverity::CompatibleCoexistence
+    );
 }
 
 #[test]

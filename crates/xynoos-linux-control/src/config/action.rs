@@ -60,10 +60,7 @@ pub enum AuthorizationScope {
 #[serde(tag = "type", content = "detail")]
 pub enum VerificationProcedure {
     /// Read back a sysctl parameter value from `/proc/sys/...`
-    SysctlReadback {
-        key: String,
-        expected_value: u64,
-    },
+    SysctlReadback { key: String, expected_value: u64 },
     /// Verify that a drop-in configuration file exists and matches expected SHA-256
     DropInFileExists {
         path: String,
@@ -83,10 +80,7 @@ pub enum VerificationProcedure {
 #[serde(tag = "type", content = "detail")]
 pub enum ReversalProcedure {
     /// Restore sysctl runtime parameter to original value
-    RestoreSysctl {
-        key: String,
-        original_value: u64,
-    },
+    RestoreSysctl { key: String, original_value: u64 },
     /// Delete a HyperCore-managed drop-in file if its SHA-256 matches the recorded hash
     DeleteDropIn {
         target_path: String,
@@ -98,9 +92,7 @@ pub enum ReversalProcedure {
         original_value: String,
     },
     /// Reset or unmount a zram block device
-    ResetZramDevice {
-        device_name: String,
-    },
+    ResetZramDevice { device_name: String },
     /// Preserved configuration requires no rollback mutation
     NoOpPreserved,
 }
