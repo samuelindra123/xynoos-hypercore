@@ -7,11 +7,23 @@ use std::{
 use xynoos_pressureiq::{
     collect, csv_row, sample, validate_sampling, Error as PressureError, CSV_HEADER,
 };
+mod intelligence_cli;
 mod product;
 mod signals;
 
+use intelligence_cli::{inspect_command, setup_command, tuning_command};
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("inspect") {
+        return inspect_command(&args[1..]);
+    }
+    if args.first().map(String::as_str) == Some("tuning") {
+        return tuning_command(&args[1..]);
+    }
+    if args.first().map(String::as_str) == Some("setup") {
+        return setup_command(&args[1..]);
+    }
     if args.first().map(String::as_str) == Some("transaction") {
         return transaction_command(&args[1..]);
     }
@@ -909,7 +921,7 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
 
     if args.is_empty() || args[0] != "qualify" {
         return Err(
-            "usage: transaction qualify [--parent PATH] [--journal PATH] [--workload-bytes N] [--json] [--human]"
+            "usage: transaction qualify [--parent PATH] [--journal PATH] [--workload-bytes N] [--lease-duration-ms N] [--json] [--human]"
                 .into(),
         );
     }
@@ -927,6 +939,7 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let mut parent_path: Option<PathBuf> = None;
     let mut journal_path: Option<PathBuf> = None;
     let mut workload_bytes = 16 * 1024 * 1024u64; // Default 16 MiB bounded workload
+    let mut target_lease_hold_ms = 50u64; // Default 50ms sustained lease hold
     let mut json_out = false;
     let mut human_out = false;
 
@@ -949,6 +962,18 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
                     .parse()?;
                 if workload_bytes > 32 * 1024 * 1024 {
                     return Err("workload-bytes exceeds safe qualification ceiling (32 MiB)".into());
+                }
+            }
+            "--lease-duration-ms" => {
+                i += 1;
+                target_lease_hold_ms = args
+                    .get(i)
+                    .ok_or("missing --lease-duration-ms value")?
+                    .parse()?;
+                if target_lease_hold_ms > 10000 {
+                    return Err(
+                        "lease-duration-ms exceeds safe qualification ceiling (10000 ms)".into(),
+                    );
                 }
             }
             "--json" => json_out = true,
@@ -1063,16 +1088,27 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         .map_err(|e| format!("Stage 2 read_high failed: {e}"))?;
 
     // Spawn bounded worker process using fork to preserve base libc6 compatibility (< 2.39)
-    let mut pipe_fds = [0i32; 2];
-    if unsafe { libc::pipe(pipe_fds.as_mut_ptr()) } != 0 {
-        return Err("Failed to create synchronization pipe for worker".into());
+    // Bidirectional pipes ensure memory page allocation is charged to the child cgroup
+    let mut p2c_fds = [0i32; 2];
+    let mut c2p_fds = [0i32; 2];
+    if unsafe { libc::pipe(p2c_fds.as_mut_ptr()) } != 0 {
+        return Err("Failed to create parent->child pipe for worker".into());
+    }
+    if unsafe { libc::pipe(c2p_fds.as_mut_ptr()) } != 0 {
+        unsafe {
+            libc::close(p2c_fds[0]);
+            libc::close(p2c_fds[1]);
+        }
+        return Err("Failed to create child->parent pipe for worker".into());
     }
 
     let child_pid = unsafe { libc::fork() };
     if child_pid < 0 {
         unsafe {
-            libc::close(pipe_fds[0]);
-            libc::close(pipe_fds[1]);
+            libc::close(p2c_fds[0]);
+            libc::close(p2c_fds[1]);
+            libc::close(c2p_fds[0]);
+            libc::close(c2p_fds[1]);
         }
         return Err("Failed to fork qualification worker".into());
     }
@@ -1080,9 +1116,24 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     if child_pid == 0 {
         // Child process
         unsafe {
-            libc::close(pipe_fds[0]);
+            libc::close(p2c_fds[1]);
+            libc::close(c2p_fds[0]);
         }
-        // Allocate bounded workload memory and touch pages to ensure resident memory
+        // Wait for parent to move this process to the child cgroup.procs
+        let mut start_token = [0u8; 1];
+        let n_start =
+            unsafe { libc::read(p2c_fds[0], start_token.as_mut_ptr() as *mut libc::c_void, 1) };
+        unsafe {
+            libc::close(p2c_fds[0]);
+        }
+        if n_start != 1 {
+            unsafe {
+                libc::_exit(1);
+            }
+        }
+
+        // Allocate bounded workload memory and touch pages *after* cgroup attachment
+        // so Linux cgroup v2 memory charging accounts for these resident pages.
         let mut buf = vec![0u8; workload_bytes as usize];
         for chunk in buf.chunks_mut(4096) {
             chunk[0] = 42;
@@ -1090,8 +1141,8 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         // Signal readiness to parent
         let ready = [1u8];
         unsafe {
-            let _ = libc::write(pipe_fds[1], ready.as_ptr() as *const libc::c_void, 1);
-            libc::close(pipe_fds[1]);
+            let _ = libc::write(c2p_fds[1], ready.as_ptr() as *const libc::c_void, 1);
+            libc::close(c2p_fds[1]);
         }
         // Sleep until terminated by parent
         loop {
@@ -1103,12 +1154,43 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
 
     // Parent process
     unsafe {
-        libc::close(pipe_fds[1]);
+        libc::close(p2c_fds[0]);
+        libc::close(c2p_fds[1]);
     }
-    let mut ready_buf = [0u8; 1];
-    let n = unsafe { libc::read(pipe_fds[0], ready_buf.as_mut_ptr() as *mut libc::c_void, 1) };
+
+    let worker_pid = child_pid as u32;
+
+    // Attach worker to workload cgroup BEFORE memory faulting begins
+    if let Err(e) = std::fs::write(child_path.join("cgroup.procs"), worker_pid.to_string()) {
+        unsafe {
+            libc::close(p2c_fds[1]);
+            libc::close(c2p_fds[0]);
+            libc::kill(child_pid, libc::SIGKILL);
+            libc::waitpid(child_pid, std::ptr::null_mut(), 0);
+        }
+        return Err(format!("Failed to move worker to cgroup: {e}").into());
+    }
+
+    // Signal worker that cgroup placement is complete
+    let start_signal = [1u8];
+    let n_sig = unsafe { libc::write(p2c_fds[1], start_signal.as_ptr() as *const libc::c_void, 1) };
     unsafe {
-        libc::close(pipe_fds[0]);
+        libc::close(p2c_fds[1]);
+    }
+    if n_sig != 1 {
+        unsafe {
+            libc::close(c2p_fds[0]);
+            libc::kill(child_pid, libc::SIGKILL);
+            libc::waitpid(child_pid, std::ptr::null_mut(), 0);
+        }
+        return Err("Failed to signal worker to begin memory allocation".into());
+    }
+
+    // Await worker allocation readiness
+    let mut ready_buf = [0u8; 1];
+    let n = unsafe { libc::read(c2p_fds[0], ready_buf.as_mut_ptr() as *mut libc::c_void, 1) };
+    unsafe {
+        libc::close(c2p_fds[0]);
     }
     if n != 1 {
         unsafe {
@@ -1117,17 +1199,6 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         }
         return Err("Qualification worker failed to signal readiness".into());
     }
-
-    let worker_pid = child_pid as u32;
-
-    // Attach worker to workload cgroup
-    std::fs::write(child_path.join("cgroup.procs"), worker_pid.to_string()).map_err(|e| {
-        unsafe {
-            libc::kill(child_pid, libc::SIGKILL);
-            libc::waitpid(child_pid, std::ptr::null_mut(), 0);
-        }
-        format!("Failed to move worker to cgroup: {e}")
-    })?;
 
     let resident_bytes = wl_backend.read_current_bytes().unwrap_or(0);
 
@@ -1160,6 +1231,11 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
 
     let lease_applied_low = wl_backend.read_low()?;
     let journal_persisted = journal.exists();
+
+    // Sustain lease hold for specified duration
+    if target_lease_hold_ms > 0 {
+        std::thread::sleep(Duration::from_millis(target_lease_hold_ms));
+    }
 
     // Release lease
     let release_rep = lease.release(&mut wl_backend);

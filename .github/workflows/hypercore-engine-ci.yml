@@ -30,6 +30,18 @@ jobs:
       - name: Strict Clippy Check
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+  msrv:
+    name: MSRV Check (Rust 1.82)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.82.0"
+      - name: MSRV Workspace Check
+        run: cargo check --workspace --all-targets --locked
+
   test:
     name: Unit, Integration & Property Tests
     runs-on: ubuntu-latest
@@ -139,6 +151,18 @@ jobs:
           t_end=$(date +%s%N)
           echo "daemon_signal_test_elapsed_ms=$(( (t_end - t_start) / 1000000 ))"
           rm -rf "$TMPDIR_D"
+      - name: Milestone K Universal Intelligence & Discovery Validation
+        run: |
+          set -euo pipefail
+          echo "=== Milestone K Inspect Output ==="
+          target/release/xynoos inspect
+          target/release/xynoos inspect --json > benchmark-results/milestone-k-inspect.json
+          echo "=== Milestone K Tuning Audit Output ==="
+          target/release/xynoos tuning audit
+          target/release/xynoos tuning audit --json > benchmark-results/milestone-k-tuning.json
+          echo "=== Milestone K Setup Plan Output ==="
+          target/release/xynoos setup --plan
+          target/release/xynoos setup --plan --json > benchmark-results/milestone-k-setup-plan.json
       - name: Archive Benchmark Artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -156,6 +180,7 @@ jobs:
       - name: Probe and Run Isolated Delegated Cgroup v2 Tests
         run: |
           set -euo pipefail
+          cargo build -p xynoos-cli --locked
           echo "=== Cgroup v2 Environment Probe ==="
           stat -fc %T /sys/fs/cgroup || true
           cat /proc/self/cgroup || true
@@ -183,6 +208,11 @@ jobs:
                   echo "STATUS: DELEGATED_MEMORY_CONTROLLER_AVAILABLE_VIA_SYSTEMD_USER"
                   XYNOOS_KERNEL_TEST=1 XYNOOS_CGROUP_PARENT="$PARENT/test-parent" \
                     cargo test -p xynoos-linux-control --test kernel_transaction --locked -- --ignored --nocapture
+                  echo "Running Milestone K Transactional Qualification Verification..."
+                  target/debug/xynoos transaction qualify --parent "$PARENT/test-parent" --lease-duration-ms 50 --json > /tmp/qual_evidence.json || true
+                  if [ -f /tmp/qual_evidence.json ]; then
+                    cat /tmp/qual_evidence.json
+                  fi
                 else
                   echo "STATUS: NOT_RUN_OR_BLOCKED (failed to enable +memory in test-parent subtree_control)"
                 fi
