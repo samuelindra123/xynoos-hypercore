@@ -4,7 +4,7 @@
 - **Target Device**: Intel Pentium Silver N5000 (4C/4T @ 1.10 GHz – 2.70 GHz)
 - **Target Memory**: 4 GB LPDDR4 / DDR4
 - **Target Graphics**: Intel UHD Graphics 605
-- **Operating System**: MX Linux 23 / Debian 12 (Bookworm) / Debian 13 (Trixie)
+- **Operating System**: Debian GNU/Linux 13 (Trixie) / MX Linux 25 (Trixie) / Debian 12 (Bookworm)
 - **Init Systems Supported**: SysVinit (default on MX Linux) or systemd
 - **Target Package**: `xynoos-hypercore` (`v0.1.0-rc.1` / `0.1.0-preview.3`)
 - **Execution Policy**: Operator-controlled only. DO NOT run without explicit operator authorization.
@@ -258,7 +258,7 @@ Generate a summary report of physical qualification execution.
 # Physical Hardware Qualification Evidence Report
 - **Date**: YYYY-MM-DD
 - **Operator**: [Name/Handle]
-- **Hardware**: Intel Pentium Silver N5000 / 4 GB RAM / MX Linux 23
+- **Hardware**: Intel Pentium Silver N5000 / 4 GB RAM / Debian 13 (Trixie) / MX Linux 25
 - **Kernel**: [uname -r]
 - **Stages Completed**: 1 through 10
 - **Daemon RSS**: [Measured KiB]

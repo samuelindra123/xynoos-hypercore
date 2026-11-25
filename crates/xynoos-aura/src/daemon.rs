@@ -617,9 +617,21 @@ impl AuraDaemon {
                 (aligned > 0).then_some(Action::MemoryLow { bytes: aligned })
             }
             KernelTuningRecommendation::ThrottleBackground { .. } => {
+                // ThrottleBackground is designed to allocate headroom (125% of working set) bounded by MAX_HIGH_BYTES.
+                // If current usage already exceeds or equals MAX_HIGH_BYTES, or if target <= current_usage_bytes,
+                // clamping to MAX_HIGH_BYTES would set memory.high below the active working set,
+                // inducing severe synchronous direct kernel reclaim and crippling the workload.
+                // In such cases, the recommendation must be safely declined (None).
+                if current_usage_bytes >= MAX_HIGH_BYTES {
+                    return None;
+                }
                 let target = ((usage.saturating_mul(125)) / 100).min(MAX_HIGH_BYTES as u128) as u64;
                 let aligned = target - (target % 4096);
-                (aligned > 0).then_some(Action::MemoryHigh { bytes: aligned })
+                if aligned <= current_usage_bytes {
+                    None
+                } else {
+                    Some(Action::MemoryHigh { bytes: aligned })
+                }
             }
             KernelTuningRecommendation::EmergencyLimit { .. } => {
                 let target =
@@ -1140,6 +1152,30 @@ mod tests {
             .compute_workload_aware_action(&rec_emerg, current_usage)
             .unwrap();
         assert_eq!(action_emerg.bytes(), 8 * 1024 * 1024);
+
+        let rec_throttle = KernelTuningRecommendation::ThrottleBackground {
+            bytes: 64 * 1024 * 1024,
+        };
+        // Workload with headroom available under MAX_HIGH_BYTES (512 MiB)
+        let action_throttle = daemon
+            .compute_workload_aware_action(&rec_throttle, 100 * 1024 * 1024)
+            .unwrap();
+        assert_eq!(action_throttle.bytes(), 125 * 1024 * 1024);
+
+        // Workload near ceiling: 450 MiB * 1.25 = 562.5 MiB, clamped to MAX_HIGH_BYTES (512 MiB)
+        let action_near_ceiling = daemon
+            .compute_workload_aware_action(&rec_throttle, 450 * 1024 * 1024)
+            .unwrap();
+        assert_eq!(action_near_ceiling.bytes(), MAX_HIGH_BYTES);
+
+        // Large workloads >= MAX_HIGH_BYTES (512 MiB, 600 MiB) must be safely declined (None)
+        // to prevent destructive synchronous direct page reclaim loops.
+        assert!(daemon
+            .compute_workload_aware_action(&rec_throttle, MAX_HIGH_BYTES)
+            .is_none());
+        assert!(daemon
+            .compute_workload_aware_action(&rec_throttle, 600 * 1024 * 1024)
+            .is_none());
 
         // u64::MAX must never panic or overflow
         assert!(daemon
