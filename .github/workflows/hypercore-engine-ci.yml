@@ -111,6 +111,7 @@ jobs:
       - name: Init System, Service Unit & HIL Dry-Run Compatibility Check
         run: |
           bash -n contrib/sysvinit/xynoos-hypercore.init
+          bash scripts/test_sysvinit_lifecycle.sh
           bash scripts/hil-validate.sh --dry-run benchmark-results/hil-dry
           if command -v systemd-analyze >/dev/null 2>&1; then
             systemd-analyze verify systemd/xynoos-hypercore.service || true

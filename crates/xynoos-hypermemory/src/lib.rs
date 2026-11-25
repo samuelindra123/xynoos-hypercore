@@ -18,7 +18,7 @@ pub use codec::{
     compress_adaptive, compress_exact, compress_lz4hc_into, decompress_with_codec, CodecScratch,
     CompressedObjectMeta,
 };
-pub use pool::{BufferHandle, HyperMemoryPool};
+pub use pool::{BufferHandle, BufferInfo, HyperMemoryPool, PoolAccounting};
 
 /// Compute CRC32 IEEE checksum over arbitrary byte slice.
 pub fn crc32_ieee(data: &[u8]) -> u32 {
@@ -42,7 +42,42 @@ pub enum Error {
 }
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{self:?}")
+        match self {
+            Self::InvalidPageSize => write!(
+                f,
+                "invalid page size: must be power of two between 512 and 65536"
+            ),
+            Self::InvalidCapacity => {
+                write!(f, "invalid capacity: page limit must be greater than zero")
+            }
+            Self::PayloadChecksumMismatch => write!(
+                f,
+                "payload checksum mismatch: data integrity verification failed"
+            ),
+            Self::ChecksumMismatch => write!(f, "checksum mismatch: page corruption detected"),
+            Self::Allocation => write!(
+                f,
+                "allocation failed: memory budget or host memory exhausted"
+            ),
+            Self::BudgetExceeded => write!(f, "memory pool budget exceeded"),
+            Self::InvalidLength { expected, actual } => write!(
+                f,
+                "invalid buffer length: expected {expected}, actual {actual}"
+            ),
+            Self::Full => write!(f, "page store is full: max capacity reached"),
+            Self::NotFound => write!(f, "buffer or page not found: invalid or stale handle"),
+            Self::IdExhausted => write!(f, "identifier space exhausted"),
+            Self::Decompression => write!(
+                f,
+                "decompression failed: corrupted or truncated compressed payload"
+            ),
+            Self::OutputBufferTooSmall {
+                min_required,
+                actual,
+            } => {
+                write!(f, "output buffer too small: required {min_required} bytes, provided {actual} bytes")
+            }
+        }
     }
 }
 impl std::error::Error for Error {}

@@ -75,6 +75,28 @@ fn detect_daemon_state() -> Value {
     }
 }
 
+fn detect_storage_free_bytes() -> Option<u64> {
+    #[cfg(unix)]
+    unsafe {
+        let mut st = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+        if libc::statvfs(c"/".as_ptr(), st.as_mut_ptr()) == 0 {
+            let s = st.assume_init();
+            return Some((s.f_bavail as u64).saturating_mul(s.f_frsize as u64));
+        }
+    }
+    None
+}
+
+fn detect_recovery_journal() -> Value {
+    let p = std::path::Path::new("/run/xynoos/hypercore_journal.json");
+    if p.exists() {
+        let size = fs::metadata(p).map(|m| m.len()).unwrap_or(0);
+        json!({"status": "pending_journal_present", "path": p.display().to_string(), "size_bytes": size})
+    } else {
+        json!({"status": "clean_no_journal", "path": p.display().to_string()})
+    }
+}
+
 fn detect_cgroup_support() -> Value {
     let controllers_path = std::path::Path::new("/sys/fs/cgroup/cgroup.controllers");
     let cgroup_v2_available = controllers_path.exists();
@@ -211,6 +233,9 @@ fn snapshot(s: &SystemSnapshot) -> Value {
         "swap_observation": read("/proc/swaps"), "zram_devices": zram,
         "cpu_psi_some_avg10_pct": psi(&s.cpu_psi), "memory_psi_some_avg10_pct": s.memory.psi.result.as_ref().ok().map(|p| p.some.avg10),
         "io_psi_some_avg10_pct": psi(&s.io_psi), "load_one": s.load_one.as_ref().ok(),
+        "storage_available_bytes": detect_storage_free_bytes(),
+        "recovery_journal": detect_recovery_journal(),
+        "default_config_valid": xynoos_aura::DaemonConfig::default().validate().is_ok(),
         "sequential": true, "collection_ns": s.elapsed_ns, "capabilities": capabilities(s)
     })
 }
@@ -304,6 +329,11 @@ fn render(command: &str, v: &Value, color: bool) {
             h["cgroup"]["cgroup_v2_available"],
             h["cgroup"]["delegated_writable"]
         );
+        println!(
+            "  Storage (/)   {}",
+            human_bytes(&h["storage_available_bytes"])
+        );
+        println!("  Journal       {}", text(&h["recovery_journal"]["status"]));
         println!("  Daemon state  {}", text(&h["daemon_state"]["state"]));
     }
     println!("  Engine        on-demand observation; no daemon");

@@ -29,7 +29,7 @@ REPORT_MD="$OUT_DIR/hil-qualification.md"
 TMP_LOG=$(mktemp)
 trap 'rm -f "$TMP_LOG"' EXIT
 
-# 1. Read-only environment inspection
+# 1. Read-only environment inspection (Stage A Preflight)
 KERNEL_REL=$(uname -r)
 ARCH=$(uname -m)
 DISTRO=$(grep -E '^PRETTY_NAME=' /etc/os-release 2>/dev/null | head -n1 | cut -d= -f2- | tr -d '"' || echo "unknown")
@@ -37,6 +37,7 @@ CPU_MODEL=$(awk -F: '/model name/ {print $2; exit}' /proc/cpuinfo 2>/dev/null | 
 LOGICAL_CPUS=$(nproc 2>/dev/null || echo 0)
 MEM_TOTAL_KB=$(awk '/MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
 MEM_AVAIL_KB=$(awk '/MemAvailable:/ {print $2}' /proc/meminfo 2>/dev/null || echo 0)
+DISK_AVAIL_KB=$(df -k / 2>/dev/null | awk 'NR==2 {print $4}' || echo 0)
 
 # 2. Init system detection (do not assume systemd is PID 1)
 if [ -d /run/systemd/system ]; then

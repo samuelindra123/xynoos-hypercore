@@ -8,8 +8,13 @@ use xynoos_pressureiq::{
     collect, csv_row, sample, validate_sampling, Error as PressureError, CSV_HEADER,
 };
 mod product;
+mod signals;
+
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("config") {
+        return config_command(&args[1..]);
+    }
     if args.first().map(String::as_str) == Some("daemon") {
         return daemon_command(&args[1..]);
     }
@@ -460,12 +465,83 @@ fn memory_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-static DAEMON_STOP_REQUESTED: std::sync::atomic::AtomicBool =
-    std::sync::atomic::AtomicBool::new(false);
+fn config_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    if args.is_empty() || args[0] != "validate" {
+        return Err("usage: xynoos config validate [--file PATH] [--json]".into());
+    }
+    let mut file: Option<PathBuf> = None;
+    let mut json_out = false;
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--file" => {
+                i += 1;
+                file = Some(PathBuf::from(args.get(i).ok_or("missing file path")?));
+            }
+            "--json" => json_out = true,
+            _ => return Err("usage: xynoos config validate [--file PATH] [--json]".into()),
+        }
+        i += 1;
+    }
 
-#[cfg(unix)]
-extern "C" fn daemon_sig_handler(_: libc::c_int) {
-    DAEMON_STOP_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+    let config_res = if let Some(path) = file {
+        xynoos_aura::DaemonConfig::from_file(&path)
+    } else {
+        let default_path = Path::new("/etc/xynoos/hypercore.json");
+        if default_path.exists() {
+            xynoos_aura::DaemonConfig::from_file(default_path)
+        } else {
+            let def = xynoos_aura::DaemonConfig::default();
+            def.validate().map(|_| def)
+        }
+    };
+
+    match config_res {
+        Ok(cfg) => {
+            if json_out {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "status": "valid",
+                        "schema_version": cfg.schema_version,
+                        "config": cfg
+                    }))?
+                );
+            } else {
+                println!(
+                    "✓ Configuration is valid (schema_version {})",
+                    cfg.schema_version
+                );
+                println!("  Mode: {:?}", cfg.mode);
+                println!(
+                    "  Interval: {} ms (max backoff {} ms)",
+                    cfg.interval_ms, cfg.max_backoff_ms
+                );
+                println!("  Adaptive polling: {}", cfg.adaptive_polling);
+                if let Some(ref p) = cfg.pid_file {
+                    println!("  PID file: {}", p.display());
+                }
+                if let Some(ref j) = cfg.journal_file {
+                    println!("  Recovery journal: {}", j.display());
+                }
+            }
+            Ok(())
+        }
+        Err(e) => {
+            if json_out {
+                eprintln!(
+                    "{}",
+                    serde_json::to_string_pretty(&serde_json::json!({
+                        "status": "invalid",
+                        "error": e.to_string()
+                    }))?
+                );
+            } else {
+                eprintln!("✗ Configuration invalid: {e}");
+            }
+            Err("configuration validation failed".into())
+        }
+    }
 }
 
 fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
@@ -568,24 +644,15 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         None => None,
     };
 
-    #[cfg(unix)]
-    unsafe {
-        libc::signal(
-            libc::SIGTERM,
-            daemon_sig_handler as *const () as libc::sighandler_t,
-        );
-        libc::signal(
-            libc::SIGINT,
-            daemon_sig_handler as *const () as libc::sighandler_t,
-        );
-    }
+    signals::install_daemon_signals()?;
+    signals::reset_stop_requested();
 
     let mut daemon = xynoos_aura::AuraDaemon::new(config)?;
     let stop_signal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     let stop_watcher = std::sync::Arc::clone(&stop_signal);
     let watcher_handle = std::thread::spawn(move || {
         while !stop_watcher.load(std::sync::atomic::Ordering::SeqCst) {
-            if DAEMON_STOP_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+            if signals::is_stop_requested() {
                 stop_watcher.store(true, std::sync::atomic::Ordering::SeqCst);
                 break;
             }
@@ -597,7 +664,7 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         .run_with_signal(stop_signal, max_cycles)
         .map_err(Box::<dyn Error>::from)?;
 
-    DAEMON_STOP_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+    signals::request_stop();
     let _ = watcher_handle.join();
 
     if human {

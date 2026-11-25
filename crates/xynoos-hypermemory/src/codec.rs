@@ -10,6 +10,9 @@ const MAX_DISTANCE: usize = 65_535;
 const MAX_HASH_BITS: u32 = 15;
 const CHAIN_SIZE: usize = 65_536;
 
+/// Maximum supported input block size (16 MiB) to strictly bound scratch allocation.
+pub const MAX_BLOCK_SIZE: usize = 16 * 1024 * 1024;
+
 /// Metadata stored alongside every compressed or raw object in HyperMemory.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CompressedObjectMeta {
@@ -250,9 +253,9 @@ pub fn compress_lz4hc_into(
     level: u8,
     scratch: &mut CodecScratch,
 ) -> Result<usize, Error> {
-    if input.len() > i32::MAX as usize {
+    if input.len() > MAX_BLOCK_SIZE {
         return Err(Error::InvalidLength {
-            expected: i32::MAX as usize,
+            expected: MAX_BLOCK_SIZE,
             actual: input.len(),
         });
     }
@@ -366,6 +369,12 @@ pub fn compress_adaptive(
     config: CompressionConfig,
     scratch: &mut CodecScratch,
 ) -> Result<(Vec<u8>, CodecId, u64), Error> {
+    if input.len() > MAX_BLOCK_SIZE {
+        return Err(Error::InvalidLength {
+            expected: MAX_BLOCK_SIZE,
+            actual: input.len(),
+        });
+    }
     let start = Instant::now();
     match config.codec {
         CodecId::Raw => {
@@ -411,6 +420,12 @@ pub fn compress_exact(
     codec: CodecId,
     scratch: &mut CodecScratch,
 ) -> Result<(Vec<u8>, u64), Error> {
+    if input.len() > MAX_BLOCK_SIZE {
+        return Err(Error::InvalidLength {
+            expected: MAX_BLOCK_SIZE,
+            actual: input.len(),
+        });
+    }
     let start = Instant::now();
     match codec {
         CodecId::Raw => {

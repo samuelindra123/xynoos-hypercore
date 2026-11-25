@@ -54,10 +54,10 @@ do_status() {
 case "${1:-}" in
     start) do_start ;;
     stop) do_stop ;;
-    restart) do_stop || true; do_start ;;
+    restart|force-reload) do_stop || true; do_start ;;
     status) do_status ;;
     *)
-        echo "Usage: $0 {start|stop|restart|status}" >&2
+        echo "Usage: $0 {start|stop|restart|force-reload|status}" >&2
         exit 2
         ;;
 esac
