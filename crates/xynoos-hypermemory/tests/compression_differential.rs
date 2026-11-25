@@ -103,13 +103,18 @@ fn differential_boundary_offsets_lengths_and_max_blocks() {
     for gap in [1usize, 64, 4094, 4095, 4096, 65_500, 65_535, 65_536, 70_000] {
         let mut data = vec![0xAAu8; gap + 128];
         let mut rng = Xorshift64(0xABCD_0001 + gap as u64);
-        for b in &mut data[32..gap] {
-            *b = rng.next() as u8;
+        if gap > 32 {
+            for b in &mut data[32..gap] {
+                *b = rng.next() as u8;
+            }
         }
         // Duplicate 32-byte anchor at start and after gap
         let anchor = b"XYNOOS_OFFSET_BOUNDARY_ANCHOR_32";
         data[..32].copy_from_slice(anchor);
-        data[gap..gap + 32].copy_from_slice(anchor);
+        let end_idx = gap + 32;
+        if end_idx <= data.len() {
+            data[gap..end_idx].copy_from_slice(anchor);
+        }
         for level in [1u8, 6, 12] {
             verify_roundtrip_both_codecs(&data, level, &mut scratch);
         }

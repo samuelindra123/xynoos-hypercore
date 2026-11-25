@@ -233,9 +233,12 @@ def run_single_trial(
     elif candidate == "candidate_e_transactional":
         # Explicitly authorized bounded policy via Rust WorkloadCgroup + SustainedLease:
         # protect foreground memory.low; only apply background memory.high when contended (not unpressured Profile C)
-        fg_low = int(profile_cfg["session_mem_bytes"] * 0.45) // 4096 * 4096
+        # Note: xynoos-linux-control enforces MAX_LOW_BYTES = 64 MiB, MAX_HIGH_BYTES = 512 MiB
+        target_fg_low = min(int(profile_cfg["session_mem_bytes"] * 0.45), 64 * 1024 * 1024)
+        fg_low = target_fg_low // 4096 * 4096
         contended = profile_cfg["bg_alloc_mib"] * 1024 * 1024 >= int(profile_cfg["session_mem_bytes"] * 0.85)
-        bg_high = (int(profile_cfg["session_mem_bytes"] * 0.55) // 4096 * 4096) if contended else 0
+        target_bg_high = min(int(profile_cfg["session_mem_bytes"] * 0.55), 512 * 1024 * 1024)
+        bg_high = (target_bg_high // 4096 * 4096) if contended else 0
         lease_proc = subprocess.Popen(
             [bench_bin, "workload-lease", str(fg_cg), str(fg_low), str(bg_cg), str(bg_high)],
             stdin=subprocess.PIPE,

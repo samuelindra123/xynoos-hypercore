@@ -460,6 +460,14 @@ fn memory_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+static DAEMON_STOP_REQUESTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(unix)]
+extern "C" fn daemon_sig_handler(_: libc::c_int) {
+    DAEMON_STOP_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let mut mode = xynoos_aura::DaemonMode::ObserveOnly;
     let mut interval_ms = 5000u64;
@@ -560,11 +568,37 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         None => None,
     };
 
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(
+            libc::SIGTERM,
+            daemon_sig_handler as *const () as libc::sighandler_t,
+        );
+        libc::signal(
+            libc::SIGINT,
+            daemon_sig_handler as *const () as libc::sighandler_t,
+        );
+    }
+
     let mut daemon = xynoos_aura::AuraDaemon::new(config)?;
     let stop_signal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_watcher = std::sync::Arc::clone(&stop_signal);
+    let watcher_handle = std::thread::spawn(move || {
+        while !stop_watcher.load(std::sync::atomic::Ordering::SeqCst) {
+            if DAEMON_STOP_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+                stop_watcher.store(true, std::sync::atomic::Ordering::SeqCst);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    });
+
     let diag = daemon
         .run_with_signal(stop_signal, max_cycles)
         .map_err(Box::<dyn Error>::from)?;
+
+    DAEMON_STOP_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+    let _ = watcher_handle.join();
 
     if human {
         println!("AURA Daemon Status: {:?}", diag.mode);
