@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    io::{self, Write},
+    io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -924,10 +924,10 @@ fn internal_workload_worker(args: &[String]) -> Result<(), Box<dyn Error>> {
 fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
-    use xynoos_linux_control::transaction::{
+    use xynoos_aura::xynoos_linux_control::transaction::{
         DisposableCgroup, Outcome, SustainedLease, WorkloadCgroup,
     };
-    use xynoos_linux_control::Action;
+    use xynoos_aura::xynoos_linux_control::Action;
 
     if args.is_empty() || args[0] != "qualify" {
         return Err(
@@ -1028,8 +1028,12 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let probe_action = Action::MemoryLow {
         bytes: 8 * 1024 * 1024,
     };
-    let probe_rep =
-        xynoos_linux_control::transaction::run(&mut probe_cg, &snap, probe_action, true);
+    let probe_rep = xynoos_aura::xynoos_linux_control::transaction::run(
+        &mut probe_cg,
+        &snap,
+        probe_action,
+        true,
+    );
     if probe_rep.outcome != Outcome::Restored {
         return Err(format!(
             "Stage 1 probe transaction failed: outcome={:?}, events={:?}",

@@ -10,7 +10,7 @@ use xynoos_aura::{
     AdaptiveTieringPolicy, DaemonConfig, DaemonMode,
 };
 use xynoos_core::MemoryPressure;
-use xynoos_linux_control::{Action, MAX_HIGH_BYTES};
+use xynoos_linux_control::MAX_HIGH_BYTES;
 use xynoos_pressureiq::intelligence::{diagnose, Diagnosis, Observation};
 
 fn make_diag(classes: Vec<&str>, avail_pct: Option<f64>, reliable: bool) -> Diagnosis {
@@ -199,7 +199,7 @@ fn test_stale_telemetry_fails_closed() {
 
 #[test]
 fn test_transient_spikes_and_recovery_hysteresis() {
-    let mut stabilizer = PressureStabilizer::new(3);
+    let mut stabilizer = PressureStabilizer::new(3, 1);
 
     // Initial low pressure
     assert_eq!(stabilizer.step(MemoryPressure::Low), MemoryPressure::Low);
