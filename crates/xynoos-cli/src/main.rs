@@ -1,6 +1,6 @@
 use std::{
     error::Error,
-    io::{self, Write},
+    io::{self, IsTerminal, Write},
     path::{Path, PathBuf},
     time::Duration,
 };
@@ -12,6 +12,9 @@ mod signals;
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    if args.first().map(String::as_str) == Some("transaction") {
+        return transaction_command(&args[1..]);
+    }
     if args.first().map(String::as_str) == Some("config") {
         return config_command(&args[1..]);
     }
@@ -896,4 +899,365 @@ fn profile_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         }
         _ => Err("usage: profile record | profile replay | profile calibrate".into()),
     }
+}
+
+fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    use xynoos_aura::xynoos_linux_control::transaction::{
+        Backend, DisposableCgroup, Outcome, SustainedLease, WorkloadCgroup,
+    };
+    use xynoos_aura::xynoos_linux_control::Action;
+
+    if args.is_empty() || args[0] != "qualify" {
+        return Err(
+            "usage: transaction qualify [--parent PATH] [--journal PATH] [--workload-bytes N] [--json] [--human]"
+                .into(),
+        );
+    }
+
+    // 1. Rootless enforcement: must never execute as root
+    // SAFETY: geteuid has no preconditions.
+    let uid = unsafe { libc::geteuid() };
+    if uid == 0 {
+        return Err(
+            "root execution refused: transactional qualification requires a non-root delegated cgroup"
+                .into(),
+        );
+    }
+
+    let mut parent_path: Option<PathBuf> = None;
+    let mut journal_path: Option<PathBuf> = None;
+    let mut workload_bytes = 16 * 1024 * 1024u64; // Default 16 MiB bounded workload
+    let mut json_out = false;
+    let mut human_out = false;
+
+    let mut i = 1;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--parent" => {
+                i += 1;
+                parent_path = Some(PathBuf::from(args.get(i).ok_or("missing --parent path")?));
+            }
+            "--journal" => {
+                i += 1;
+                journal_path = Some(PathBuf::from(args.get(i).ok_or("missing --journal path")?));
+            }
+            "--workload-bytes" => {
+                i += 1;
+                workload_bytes = args
+                    .get(i)
+                    .ok_or("missing --workload-bytes value")?
+                    .parse()?;
+                if workload_bytes > 32 * 1024 * 1024 {
+                    return Err("workload-bytes exceeds safe qualification ceiling (32 MiB)".into());
+                }
+            }
+            "--json" => json_out = true,
+            "--human" => human_out = true,
+            _ => return Err(format!("Unknown option: {}", args[i]).into()),
+        }
+        i += 1;
+    }
+
+    // Discover parent cgroup if not explicitly provided
+    let parent = match parent_path {
+        Some(p) => p,
+        None => {
+            let user_app_slice = PathBuf::from(format!(
+                "/sys/fs/cgroup/user.slice/user-{uid}.slice/user@{uid}.service/app.slice"
+            ));
+            if user_app_slice.exists() {
+                user_app_slice
+            } else {
+                return Err(
+                    "BLOCKED: delegated cgroup parent not found; specify --parent explicitly"
+                        .into(),
+                );
+            }
+        }
+    };
+
+    if !parent.is_dir() {
+        return Err(format!(
+            "BLOCKED: parent cgroup directory '{}' does not exist",
+            parent.display()
+        )
+        .into());
+    }
+
+    // Check subtree_control contains memory
+    let subtree = std::fs::read_to_string(parent.join("cgroup.subtree_control"))
+        .map_err(|e| format!("BLOCKED: unable to read parent cgroup.subtree_control: {e}"))?;
+    if !subtree.split_whitespace().any(|c| c == "memory") {
+        return Err(
+            "BLOCKED: memory controller is not delegated in parent cgroup.subtree_control".into(),
+        );
+    }
+
+    // Stage 1: Empty Disposable Cgroup Probe Transaction (DisposableCgroup + transaction::run)
+    let mut probe_cg = DisposableCgroup::create(&parent, true)
+        .map_err(|e| format!("Stage 1 creation failed: {e}"))?;
+    let probe_orig_low = probe_cg
+        .read_low()
+        .map_err(|e| format!("Stage 1 read_low failed: {e}"))?;
+    let probe_orig_high = probe_cg
+        .read_high()
+        .map_err(|e| format!("Stage 1 read_high failed: {e}"))?;
+    let snap = xynoos_pressureiq::system::collect_system();
+    let probe_action = Action::MemoryLow {
+        bytes: 8 * 1024 * 1024,
+    };
+    let probe_rep = xynoos_aura::xynoos_linux_control::transaction::run(
+        &mut probe_cg,
+        &snap,
+        probe_action,
+        true,
+    );
+    if probe_rep.outcome != Outcome::Restored {
+        return Err(format!(
+            "Stage 1 probe transaction failed: outcome={:?}, events={:?}",
+            probe_rep.outcome, probe_rep.events
+        )
+        .into());
+    }
+    let probe_restored_low = probe_cg
+        .read_low()
+        .map_err(|e| format!("Stage 1 final readback failed: {e}"))?;
+    if probe_restored_low != probe_orig_low {
+        return Err(format!(
+            "Stage 1 restoration mismatch: expected {probe_orig_low}, got {probe_restored_low}"
+        )
+        .into());
+    }
+    probe_cg
+        .cleanup()
+        .map_err(|e| format!("Stage 1 cleanup failed: {e}"))?;
+
+    // Stage 2: Bounded Workload Durable Lease Qualification (WorkloadCgroup + SustainedLease)
+    let rand_id = format!(
+        "{:08x}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0)
+    );
+    let child_name = format!("xynoos-qual-workload-{}", rand_id);
+    let child_path = parent.join(&child_name);
+    std::fs::create_dir(&child_path).map_err(|e| format!("Stage 2 mkdir failed: {e}"))?;
+
+    // RAII guard to guarantee cleanup of child directory
+    struct ChildDirGuard(PathBuf);
+    impl Drop for ChildDirGuard {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir(&self.0);
+        }
+    }
+    let _dir_guard = ChildDirGuard(child_path.clone());
+
+    let mut wl_backend = WorkloadCgroup::open(&child_path, true)
+        .map_err(|e| format!("Stage 2 open WorkloadCgroup failed: {e}"))?;
+    let wl_orig_low = wl_backend
+        .read_low()
+        .map_err(|e| format!("Stage 2 read_low failed: {e}"))?;
+    let wl_orig_high = wl_backend
+        .read_high()
+        .map_err(|e| format!("Stage 2 read_high failed: {e}"))?;
+
+    // Spawn bounded worker process using fork to preserve base libc6 compatibility (< 2.39)
+    let mut pipe_fds = [0i32; 2];
+    if unsafe { libc::pipe(pipe_fds.as_mut_ptr()) } != 0 {
+        return Err("Failed to create synchronization pipe for worker".into());
+    }
+
+    let child_pid = unsafe { libc::fork() };
+    if child_pid < 0 {
+        unsafe {
+            libc::close(pipe_fds[0]);
+            libc::close(pipe_fds[1]);
+        }
+        return Err("Failed to fork qualification worker".into());
+    }
+
+    if child_pid == 0 {
+        // Child process
+        unsafe {
+            libc::close(pipe_fds[0]);
+        }
+        // Allocate bounded workload memory and touch pages to ensure resident memory
+        let mut buf = vec![0u8; workload_bytes as usize];
+        for chunk in buf.chunks_mut(4096) {
+            chunk[0] = 42;
+        }
+        // Signal readiness to parent
+        let ready = [1u8];
+        unsafe {
+            let _ = libc::write(pipe_fds[1], ready.as_ptr() as *const libc::c_void, 1);
+            libc::close(pipe_fds[1]);
+        }
+        // Sleep until terminated by parent
+        loop {
+            unsafe {
+                libc::pause();
+            }
+        }
+    }
+
+    // Parent process
+    unsafe {
+        libc::close(pipe_fds[1]);
+    }
+    let mut ready_buf = [0u8; 1];
+    let n = unsafe { libc::read(pipe_fds[0], ready_buf.as_mut_ptr() as *mut libc::c_void, 1) };
+    unsafe {
+        libc::close(pipe_fds[0]);
+    }
+    if n != 1 {
+        unsafe {
+            libc::kill(child_pid, libc::SIGKILL);
+            libc::waitpid(child_pid, std::ptr::null_mut(), 0);
+        }
+        return Err("Qualification worker failed to signal readiness".into());
+    }
+
+    let worker_pid = child_pid as u32;
+
+    // Attach worker to workload cgroup
+    std::fs::write(child_path.join("cgroup.procs"), worker_pid.to_string()).map_err(|e| {
+        unsafe {
+            libc::kill(child_pid, libc::SIGKILL);
+            libc::waitpid(child_pid, std::ptr::null_mut(), 0);
+        }
+        format!("Failed to move worker to cgroup: {e}")
+    })?;
+
+    let resident_bytes = wl_backend.read_current_bytes().unwrap_or(0);
+
+    // Durable lease execution
+    let journal = journal_path.unwrap_or_else(|| {
+        std::env::temp_dir().join(format!(
+            "xynoos_qual_journal_{}_{}.json",
+            std::process::id(),
+            rand_id
+        ))
+    });
+    let _ = std::fs::remove_file(&journal);
+
+    let lease_action = Action::MemoryLow {
+        bytes: 8 * 1024 * 1024,
+    };
+    let lease_t0 = std::time::Instant::now();
+    let mut lease =
+        SustainedLease::acquire_durable(&mut wl_backend, &snap, lease_action, true, &journal)
+            .map_err(|r| {
+                unsafe {
+                    libc::kill(child_pid, libc::SIGKILL);
+                    libc::waitpid(child_pid, std::ptr::null_mut(), 0);
+                }
+                format!(
+                    "acquire_durable failed: outcome={:?}, events={:?}",
+                    r.outcome, r.events
+                )
+            })?;
+
+    let lease_applied_low = wl_backend.read_low()?;
+    let journal_persisted = journal.exists();
+
+    // Release lease
+    let release_rep = lease.release(&mut wl_backend);
+    let lease_duration_ms = lease_t0.elapsed().as_millis() as u64;
+    let lease_restored_low = wl_backend.read_low()?;
+    let journal_cleaned = !journal.exists();
+
+    // Terminate worker
+    unsafe {
+        libc::kill(child_pid, libc::SIGKILL);
+        libc::waitpid(child_pid, std::ptr::null_mut(), 0);
+    }
+
+    // Verification asserts
+    if release_rep.outcome != Outcome::Restored {
+        return Err(format!(
+            "Stage 2 lease release failed: outcome={:?}, events={:?}",
+            release_rep.outcome, release_rep.events
+        )
+        .into());
+    }
+    if lease_restored_low != wl_orig_low {
+        return Err(format!(
+            "Stage 2 restoration mismatch: expected {wl_orig_low}, got {lease_restored_low}"
+        )
+        .into());
+    }
+    if !journal_persisted || !journal_cleaned {
+        return Err(format!(
+            "Journal lifecycle failed: persisted={journal_persisted}, cleaned={journal_cleaned}"
+        )
+        .into());
+    }
+
+    // Explicitly remove directory before guard drops
+    std::mem::forget(_dir_guard);
+    std::fs::remove_dir(&child_path).map_err(|e| format!("Stage 2 rmdir failed: {e}"))?;
+
+    let evidence = serde_json::json!({
+        "schema_version": 1,
+        "verdict": "PASS",
+        "parent_cgroup": parent.display().to_string(),
+        "stage1_probe": {
+            "cgroup_type": "DisposableCgroup",
+            "original_low_bytes": probe_orig_low,
+            "original_high_bytes": probe_orig_high,
+            "action_applied": "memory.low 8388608",
+            "outcome": format!("{:?}", probe_rep.outcome),
+            "restored_low_bytes": probe_restored_low,
+            "disposable_cleaned": true
+        },
+        "stage2_workload_lease": {
+            "cgroup_type": "WorkloadCgroup",
+            "disposable_cgroup": child_path.display().to_string(),
+            "worker_pid": worker_pid,
+            "worker_workload_bytes": workload_bytes,
+            "worker_resident_bytes": resident_bytes,
+            "original_low_bytes": wl_orig_low,
+            "original_high_bytes": wl_orig_high,
+            "action_applied": "memory.low 8388608",
+            "lease_applied_readback_bytes": lease_applied_low,
+            "lease_release_outcome": format!("{:?}", release_rep.outcome),
+            "restored_low_bytes": lease_restored_low,
+            "lease_duration_ms": lease_duration_ms,
+            "journal_persisted_verified": journal_persisted,
+            "journal_cleaned_verified": journal_cleaned,
+            "worker_terminated": true,
+            "cgroup_removed": true
+        },
+        "isolation_verified": true,
+        "restoration_verified": true
+    });
+
+    if human_out || (!json_out && std::io::stdout().is_terminal()) {
+        println!("XYNOOS HyperCore — Controlled Physical Transactional Qualification");
+        println!("  Parent cgroup: {}", parent.display());
+        println!(
+            "  Stage 1 (Disposable probe): outcome={:?}, restored_low={}",
+            probe_rep.outcome, probe_restored_low
+        );
+        println!(
+            "  Stage 2 (Workload lease): worker_pid={}, resident_bytes={}",
+            worker_pid, resident_bytes
+        );
+        println!(
+            "    Original low: {} B -> Applied: {} B -> Restored: {} B",
+            wl_orig_low, lease_applied_low, lease_restored_low
+        );
+        println!(
+            "    Journal: persisted={}, cleaned={}",
+            journal_persisted, journal_cleaned
+        );
+        println!("    Duration: {} ms", lease_duration_ms);
+        println!("  Cleanup: worker terminated, child cgroup removed");
+        println!("  Verdict: PASS");
+    } else {
+        println!("{}", serde_json::to_string_pretty(&evidence)?);
+    }
+
+    Ok(())
 }

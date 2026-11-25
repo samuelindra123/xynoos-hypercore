@@ -84,3 +84,5 @@ pub use profiler::{
     CalibrationReport, PolicyBaselineComparison, PolicyConfig, ShadowCalibrator,
     ShadowEvaluationReport, ShadowPlayer, TraceRecord, WorkloadTrace,
 };
+
+pub use xynoos_linux_control;
