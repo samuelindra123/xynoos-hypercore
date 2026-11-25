@@ -526,7 +526,7 @@ impl AuraAdaptiveCoordinator {
 
         for id in ids {
             let profile = store.page_profile(id)?;
-            let est_ratio_permille = if profile.original_size > 0 {
+            let est_ratio_permille = if profile.codec.is_compressed() && profile.original_size > 0 {
                 Some(
                     ((profile.stored_bytes as u128).saturating_mul(1000)
                         / profile.original_size as u128) as u64,

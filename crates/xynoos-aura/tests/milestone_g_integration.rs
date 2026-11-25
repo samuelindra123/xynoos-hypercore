@@ -1,10 +1,7 @@
 #![forbid(unsafe_code)]
 
 use std::fs;
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Arc,
-};
+use std::sync::{atomic::AtomicBool, Arc};
 use xynoos_aura::{
     daemon::{JournalStatus, PidLock, TransactionJournal},
     AdaptiveCompressionConfig, AuraAdaptiveCoordinator, AuraDaemon, DaemonConfig, DaemonMode,

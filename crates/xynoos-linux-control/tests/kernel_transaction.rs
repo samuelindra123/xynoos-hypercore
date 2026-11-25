@@ -105,3 +105,32 @@ fn kernel_multi_action_high_max_unauthorized_and_cleanup() {
 
     target.cleanup().expect("cleanup disposable cgroup");
 }
+
+#[test]
+#[ignore = "requires an isolated delegated cgroup v2 parent and explicit opt-in"]
+fn kernel_real_cgroup_conflict_and_restoration() {
+    assert_eq!(
+        std::env::var("XYNOOS_KERNEL_TEST").as_deref(),
+        Ok("1"),
+        "explicit opt-in required"
+    );
+    let parent = std::env::var("XYNOOS_CGROUP_PARENT")
+        .expect("set XYNOOS_CGROUP_PARENT to an isolated delegated parent");
+    let mut target =
+        DisposableCgroup::create(Path::new(&parent), true).expect("create disposable child");
+
+    let original_low = target.read_low().expect("read original memory.low");
+    // Simulate an interrupted write leaving memory.low at 8192 instead of original_low
+    let modified = if original_low == 8192 { 16384 } else { 8192 };
+    target
+        .write_low(modified)
+        .expect("write modified memory.low");
+    assert_eq!(target.read_low().unwrap(), modified);
+
+    // Restore back to original_low and verify identity + readback
+    let _id = target.identity().expect("verify cgroup identity");
+    target.write_low(original_low).expect("restore memory.low");
+    assert_eq!(target.read_low().unwrap(), original_low);
+
+    target.cleanup().expect("cleanup disposable cgroup");
+}
