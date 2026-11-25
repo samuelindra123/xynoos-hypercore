@@ -6,9 +6,7 @@ use xynoos_linux_control::config::{
     ActionClassification, AuthorizationScope, ConfigExecutor, ConfigurationAction, IntegrityStatus,
     MemoryPlanner, OwnershipLedger, SetupAuthorization,
 };
-use xynoos_pressureiq::{
-    OptimizationPlan, ProposedActionType, SystemInventory, INVENTORY_SCHEMA_VERSION,
-};
+use xynoos_pressureiq::{OptimizationPlan, SystemInventory, INVENTORY_SCHEMA_VERSION};
 
 fn human_bytes(b: u64) -> String {
     if b >= 1024 * 1024 * 1024 {
@@ -533,9 +531,7 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         let actions = MemoryPlanner::plan(&inv);
 
         let plan_str = serde_json::to_string(&actions)?;
-        let mut hasher = crc32fast::Hasher::new();
-        hasher.update(plan_str.as_bytes());
-        let plan_fingerprint = format!("{:08x}", hasher.finalize());
+        let plan_fingerprint = OwnershipLedger::compute_checksum(plan_str.as_bytes());
 
         let auth = SetupAuthorization::new(
             "operator",
