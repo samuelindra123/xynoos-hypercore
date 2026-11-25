@@ -60,8 +60,8 @@ PSI_MEM=$([ -r /proc/pressure/memory ] && echo "true" || echo "false")
 PSI_IO=$([ -r /proc/pressure/io ] && echo "true" || echo "false")
 
 # 4. Existing swap and zram inspection (read-only)
-SWAPS_SUMMARY=$(awk 'NR>1 {printf "%s(%s,%s) ", $1, $2, $3}' /proc/swaps 2>/dev/null || echo "none")
-ZRAM_COUNT=$(ls -d /sys/block/zram* 2>/dev/null | wc -l || echo 0)
+SWAPS_SUMMARY=$(awk 'NR>1 {printf "%s(%s,%s) ", $1, $2, $3}' /proc/swaps 2>/dev/null || true)
+ZRAM_COUNT=$(find /sys/block -maxdepth 1 -name 'zram*' 2>/dev/null | wc -l)
 
 echo "1-4. Environment: distro='$DISTRO' kernel='$KERNEL_REL' init='$INIT_SYS' cpu='$CPU_MODEL' ($LOGICAL_CPUS CPUs)"
 echo "     RAM avail=${MEM_AVAIL_KB} KiB / ${MEM_TOTAL_KB} KiB | cgroup_v2=$CGROUP_V2 | PSI(cpu=$PSI_CPU mem=$PSI_MEM io=$PSI_IO)"
@@ -117,7 +117,7 @@ LEFTOVER_PID=$(pgrep -x xynoos || true)
 CLEANUP_VERIFIED=$([ -z "$LEFTOVER_PID" ] && echo "true" || echo "false")
 
 # 10. Lightweight report generation
-python3 - <<PY "$REPORT_JSON" "$REPORT_MD" "$MODE" "$DISTRO" "$KERNEL_REL" "$ARCH" "$INIT_SYS" "$CPU_MODEL" "$LOGICAL_CPUS" "$MEM_TOTAL_KB" "$MEM_AVAIL_KB" "$CGROUP_V2" "$PSI_CPU" "$PSI_MEM" "$PSI_IO" "$ZRAM_COUNT" "$DAEMON_STATUS" "$DAEMON_RSS_KIB" "$DIAG_STATUS" "$CGROUP_TEST_STATUS" "$CLEANUP_VERIFIED"
+python3 - <<'PY' "$REPORT_JSON" "$REPORT_MD" "$MODE" "$DISTRO" "$KERNEL_REL" "$ARCH" "$INIT_SYS" "$CPU_MODEL" "$LOGICAL_CPUS" "$MEM_TOTAL_KB" "$MEM_AVAIL_KB" "$CGROUP_V2" "$PSI_CPU" "$PSI_MEM" "$PSI_IO" "$ZRAM_COUNT" "$DAEMON_STATUS" "$DAEMON_RSS_KIB" "$DIAG_STATUS" "$CGROUP_TEST_STATUS" "$CLEANUP_VERIFIED"
 import json, sys, time
 (
     _, out_json, out_md, mode, distro, kernel, arch, init_sys, cpu_model,

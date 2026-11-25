@@ -241,11 +241,13 @@ fn bounded_fuzz_roundtrips_and_store_invariants() {
                     assert_eq!(page_store.get(id).unwrap(), active_pages[idx].1);
                 }
             }
-            _ if !active_pages.is_empty() => {
-                let idx = (rng.next() as usize) % active_pages.len();
-                let (id, _) = active_pages.swap_remove(idx);
-                if page_store.contains(id) {
-                    page_store.remove(id).unwrap();
+            _ => {
+                if !active_pages.is_empty() {
+                    let idx = (rng.next() as usize) % active_pages.len();
+                    let (id, _) = active_pages.swap_remove(idx);
+                    if page_store.contains(id) {
+                        page_store.remove(id).unwrap();
+                    }
                 }
             }
         }
