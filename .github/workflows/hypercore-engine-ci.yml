@@ -100,6 +100,21 @@ jobs:
         run: |
           target/release/xynoos-bench daemon-sustained 2000 > benchmark-results/daemon-sustained.csv
           cat benchmark-results/daemon-sustained.csv
+      - name: Run Candidate F HyperMemory Application Benchmark
+        run: |
+          target/release/xynoos-bench hypermemory-app-bench 5 > benchmark-results/candidate-f-app.csv
+          cat benchmark-results/candidate-f-app.csv
+      - name: Independent Reference C liblz4 Interoperability & Fuzz Verification
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends liblz4-1
+          python3 scripts/lz4_interop_test.py target/release/xynoos-bench | tee benchmark-results/lz4-interop.json
+      - name: Init System, Service Unit & HIL Dry-Run Compatibility Check
+        run: |
+          bash -n contrib/sysvinit/xynoos-hypercore.init
+          bash scripts/hil-validate.sh --dry-run benchmark-results/hil-dry
+          if command -v systemd-analyze >/dev/null 2>&1; then
+            systemd-analyze verify systemd/xynoos-hypercore.service || true
+          fi
       - name: Real Daemon CLI Resource & Signal Test (ObserveOnly)
         run: |
           set -euo pipefail
@@ -111,7 +126,9 @@ jobs:
           sleep 1
           if kill -0 "$DPID" 2>/dev/null; then
             RSS_KB=$(awk '/VmRSS:/ {print $2}' /proc/$DPID/status || echo 0)
-            echo "daemon_live_rss_kib=$RSS_KB"
+            PSS_KB=$(awk '/Pss:/ {print $2}' /proc/$DPID/smaps_rollup || echo 0)
+            FDS=$(ls /proc/$DPID/fd | wc -l || echo 0)
+            echo "daemon_live_rss_kib=$RSS_KB daemon_live_pss_kib=$PSS_KB daemon_fds=$FDS"
             kill -KILL "$DPID"
             wait "$DPID" || true
           fi

@@ -30,18 +30,43 @@ jobs:
           echo "Running sustained daemon soak for ${MINS} minute(s) in ObserveOnly mode..."
           TMPDIR_S=$(mktemp -d)
           PID_FILE="$TMPDIR_S/soak.pid"
+          t_start=$(date +%s%N)
           target/release/xynoos daemon --mode observe-only --interval-ms 1000 --pid-file "$PID_FILE" > "$TMPDIR_S/final.json" &
           DPID=$!
+          for _ in $(seq 1 50); do
+            [ -f "$PID_FILE" ] && break
+            sleep 0.02
+          done
+          t_ready=$(date +%s%N)
+          STARTUP_MS=$(( (t_ready - t_start) / 1000000 ))
+          echo "startup_to_pid_ready_ms=$STARTUP_MS"
           SECS=$((MINS * 60))
           END=$(( $(date +%s) + SECS ))
-          echo "timestamp,rss_kib,cpu_ticks" > "$TMPDIR_S/soak.csv"
+          echo "timestamp,rss_kib,pss_kib,vol_ctx,nonvol_ctx,fd_count,utime_ticks,stime_ticks" > "$TMPDIR_S/soak.csv"
           while [ "$(date +%s)" -lt "$END" ] && kill -0 "$DPID" 2>/dev/null; do
             RSS=$(awk '/VmRSS:/ {print $2}' /proc/$DPID/status 2>/dev/null || echo 0)
-            echo "$(date +%s),$RSS" >> "$TMPDIR_S/soak.csv"
+            PSS=$(awk '/Pss:/ {print $2}' /proc/$DPID/smaps_rollup 2>/dev/null || echo 0)
+            VCTX=$(awk '/voluntary_ctxt_switches:/ {print $2}' /proc/$DPID/status 2>/dev/null || echo 0)
+            NVCTX=$(awk '/nonvoluntary_ctxt_switches:/ {print $2}' /proc/$DPID/status 2>/dev/null || echo 0)
+            FDS=$(ls /proc/$DPID/fd 2>/dev/null | wc -l || echo 0)
+            TICKS=$(awk '{print $14","$15}' /proc/$DPID/stat 2>/dev/null || echo "0,0")
+            echo "$(date +%s),$RSS,$PSS,$VCTX,$NVCTX,$FDS,$TICKS" >> "$TMPDIR_S/soak.csv"
             sleep 15
           done
           kill -TERM "$DPID" 2>/dev/null || true
           wait "$DPID" || true
-          cat "$TMPDIR_S/soak.csv"
+          echo "=== SOAK SUMMARY ==="
+          head -n 5 "$TMPDIR_S/soak.csv"
+          echo "..."
+          tail -n 10 "$TMPDIR_S/soak.csv"
           cat "$TMPDIR_S/final.json"
+          test ! -f "$PID_FILE"
+          mkdir -p soak-results
+          cp "$TMPDIR_S/soak.csv" "$TMPDIR_S/final.json" soak-results/
           rm -rf "$TMPDIR_S"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: daemon-soak-results
+          path: soak-results/
+          retention-days: 14

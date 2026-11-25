@@ -20,6 +20,13 @@ fn product_json_and_read_only_contract() {
         let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
         assert_eq!(v["product"], "Xynoos HyperCore");
         assert_eq!(v["physical_kernel_mutation"], false);
+        if matches!(command, "status" | "doctor") {
+            assert!(v["host"]["init"]["init_system"].is_string());
+            assert!(v["host"]["cgroup"]["cgroup_v2_available"].is_boolean());
+            assert!(v["host"]["psi_availability"]["memory"].is_boolean());
+            assert!(v["host"]["daemon_state"]["state"].is_string());
+            assert!(v["host"]["active_limitations"].is_array());
+        }
     }
 }
 

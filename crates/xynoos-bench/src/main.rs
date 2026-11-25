@@ -14,7 +14,10 @@ use xynoos_aura::{
 use xynoos_core::{
     CodecId, EvictionPolicy, MemoryPressure, MigrationBudget, ResourcePressureLevel, StorageTier,
 };
-use xynoos_hypermemory::{ClusterStore, CodecScratch, PageId, PageStore};
+use xynoos_hypermemory::{
+    compress_exact, decompress_with_codec, ClusterStore, CodecScratch, HyperMemoryPool, PageId,
+    PageStore,
+};
 use xynoos_linux_control::transaction::{self, Backend, Identity};
 use xynoos_pressureiq::intelligence::Diagnosis;
 const N: usize = 256;
@@ -104,6 +107,16 @@ fn main() -> Result<(), Box<dyn Error>> {
             .and_then(|s| s.parse::<u64>().ok())
             .unwrap_or(500);
         return run_daemon_sustained_benchmark(cycles);
+    }
+    if args.len() == 4 && args[1] == "codec-op" {
+        return run_codec_op(&args[2], &args[3]);
+    }
+    if args.len() >= 2 && args[1] == "hypermemory-app-bench" {
+        let trials = args
+            .get(2)
+            .and_then(|s| s.parse::<usize>().ok())
+            .unwrap_or(5);
+        return run_hypermemory_app_benchmark(trials);
     }
     if args.len() == 1 {
         println!("dataset,backend,run,insert_batch_ns_per_page,get_batch_ns_per_page,codec_compress_mib_s,codec_decompress_mib_s,payload_bytes,capacity_bytes,metadata_bytes,map_capacity,raw_pages,compressed_pages,rss_before_kib,rss_loaded_kib,peak_kib,cpu_ns");
@@ -1563,5 +1576,189 @@ fn run_daemon_sustained_benchmark(cycles: u64) -> Result<(), Box<dyn Error>> {
         d.rss_within_budget
     );
 
+    Ok(())
+}
+
+fn run_codec_op(op: &str, arg: &str) -> Result<(), Box<dyn Error>> {
+    use std::io::{Read, Write};
+    let mut input = Vec::new();
+    std::io::stdin().read_to_end(&mut input)?;
+    match op {
+        "encode-hc" => {
+            let level: u8 = arg.parse()?;
+            let mut scratch = CodecScratch::with_limit(4 * 1024 * 1024);
+            let (out, _) = compress_exact(&input, CodecId::Lz4Hc { level }, &mut scratch)?;
+            std::io::stdout().write_all(&out)?;
+            Ok(())
+        }
+        "decode-lz4" => {
+            let orig_len: usize = arg.parse()?;
+            let mut out = vec![0u8; orig_len];
+            let (n, _) = decompress_with_codec(CodecId::Lz4Standard, &input, &mut out)?;
+            std::io::stdout().write_all(&out[..n])?;
+            Ok(())
+        }
+        _ => Err("usage: codec-op <encode-hc|decode-lz4> <arg>".into()),
+    }
+}
+
+fn run_hypermemory_app_benchmark(trials: usize) -> Result<(), Box<dyn Error>> {
+    println!("=== CANDIDATE F: HYPERMEMORY APPLICATION-OWNED STORAGE BENCHMARK ===");
+    println!("trial,variant,buffers,logical_bytes,accounted_bytes,net_savings_bytes,ratio,put_ms,read_p50_ns,read_p95_ns,read_p99_ns,cpu_ms,integrity_ok");
+
+    let count = 256usize;
+    let payloads: Vec<Vec<u8>> = (0..count)
+        .map(|i| {
+            let len = 3072 + ((i * 521) % 6144);
+            match i % 4 {
+                0 => {
+                    let s = format!("{{\"session\":{i},\"state\":\"cached\",\"tab\":\"docs\"}}\n");
+                    (0..len).map(|k| s.as_bytes()[k % s.len()]).collect()
+                }
+                1 => {
+                    let line = b"fn process_event(id: u64) -> Result<(), Error> { Ok(()) }\n";
+                    (0..len).map(|k| line[k % line.len()]).collect()
+                }
+                2 => (0..len)
+                    .map(|k| if k % 4 == 0 { 0 } else { ((k + i) % 64) as u8 })
+                    .collect(),
+                _ => {
+                    let mut seed = 0x9E37_79B9_7F4A_7C15u64 ^ (i as u64);
+                    (0..len)
+                        .map(|_| {
+                            seed ^= seed << 13;
+                            seed ^= seed >> 7;
+                            seed ^= seed << 17;
+                            seed as u8
+                        })
+                        .collect()
+                }
+            }
+        })
+        .collect();
+    let total_logical: usize = payloads.iter().map(Vec::len).sum();
+
+    for trial in 0..trials.max(1) {
+        let variants = if trial % 2 == 0 {
+            ["raw_hashmap", "hypermemory_pool_adaptive"]
+        } else {
+            ["hypermemory_pool_adaptive", "raw_hashmap"]
+        };
+        for variant in variants {
+            let cpu0 = cpu_ns();
+            if variant == "raw_hashmap" {
+                let t_put = Instant::now();
+                let mut map: HashMap<usize, Vec<u8>> = HashMap::with_capacity(count);
+                for (i, p) in payloads.iter().enumerate() {
+                    map.insert(i, p.clone());
+                }
+                let put_ms = t_put.elapsed().as_secs_f64() * 1000.0;
+                let cap_bytes: usize = map.values().map(Vec::capacity).sum();
+                let meta_bytes = map.capacity() * std::mem::size_of::<(usize, Vec<u8>)>();
+                let accounted = cap_bytes + meta_bytes;
+
+                let mut lats = Vec::with_capacity(512);
+                let mut integrity_ok = true;
+                for op in 0..512usize {
+                    let idx = if op % 10 < 8 {
+                        (op * 7) % 32
+                    } else {
+                        (op * 17) % count
+                    };
+                    let t0 = Instant::now();
+                    let got = black_box(map.get(&idx).unwrap()).clone();
+                    lats.push(t0.elapsed().as_nanos() as u64);
+                    if got != payloads[idx] {
+                        integrity_ok = false;
+                    }
+                }
+                lats.sort_unstable();
+                let cpu_ms = cpu_ns()
+                    .zip(cpu0)
+                    .map(|(a, b)| a.saturating_sub(b) as f64 / 1e6)
+                    .unwrap_or(0.0);
+                println!(
+                    "{},{},{},{},{},{},{:.4},{:.3},{},{},{},{:.3},{}",
+                    trial,
+                    variant,
+                    count,
+                    total_logical,
+                    accounted,
+                    (total_logical as isize) - (accounted as isize),
+                    accounted as f64 / total_logical as f64,
+                    put_ms,
+                    lats[lats.len() / 2],
+                    lats[(lats.len() as f64 * 0.95) as usize],
+                    lats[(lats.len() as f64 * 0.99) as usize],
+                    cpu_ms,
+                    integrity_ok
+                );
+            } else {
+                let t_put = Instant::now();
+                let mut pool = HyperMemoryPool::new(4096, 1024, usize::MAX)?;
+                let mut handles = Vec::with_capacity(count);
+                for p in &payloads {
+                    handles.push(pool.put_with_codec(p, CodecId::Raw)?);
+                }
+                // Warm first 32 hot buffers, then run adaptive tiering under High memory pressure
+                for r in 0..96 {
+                    let _ = pool.get(handles[r % 32])?;
+                }
+                let mut coord = AuraAdaptiveCoordinator::new(
+                    AdaptiveCompressionConfig::default(),
+                    PressureStabilizer::new(3, 0),
+                    MigrationBudget::UNLIMITED,
+                );
+                coord.cost_model.cooldown_ticks = 0;
+                let res = MultiResourceState {
+                    memory_pressure: MemoryPressure::High,
+                    cpu_pressure: ResourcePressureLevel::Low,
+                    io_pressure: ResourcePressureLevel::Low,
+                    available_ram_bytes: Some(256 * 1024 * 1024),
+                    telemetry_valid: true,
+                };
+                let _ = coord.step_adaptive(pool.page_store_mut(), &res)?;
+                let put_ms = t_put.elapsed().as_secs_f64() * 1000.0;
+                let acct = pool.overhead_accounting();
+
+                let mut lats = Vec::with_capacity(512);
+                let mut integrity_ok = true;
+                for op in 0..512usize {
+                    let idx = if op % 10 < 8 {
+                        (op * 7) % 32
+                    } else {
+                        (op * 17) % count
+                    };
+                    let t0 = Instant::now();
+                    let got = pool.get(handles[idx])?;
+                    lats.push(t0.elapsed().as_nanos() as u64);
+                    if got != payloads[idx] {
+                        integrity_ok = false;
+                    }
+                }
+                lats.sort_unstable();
+                let cpu_ms = cpu_ns()
+                    .zip(cpu0)
+                    .map(|(a, b)| a.saturating_sub(b) as f64 / 1e6)
+                    .unwrap_or(0.0);
+                println!(
+                    "{},{},{},{},{},{},{:.4},{:.3},{},{},{},{:.3},{}",
+                    trial,
+                    variant,
+                    count,
+                    total_logical,
+                    acct.total_accounted_bytes,
+                    (total_logical as isize) - (acct.total_accounted_bytes as isize),
+                    acct.total_accounted_bytes as f64 / total_logical as f64,
+                    put_ms,
+                    lats[lats.len() / 2],
+                    lats[(lats.len() as f64 * 0.95) as usize],
+                    lats[(lats.len() as f64 * 0.99) as usize],
+                    cpu_ms,
+                    integrity_ok
+                );
+            }
+        }
+    }
     Ok(())
 }

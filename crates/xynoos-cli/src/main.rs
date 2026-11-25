@@ -522,15 +522,34 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     };
 
     if status {
+        let init_system = if std::path::Path::new("/run/systemd/system").is_dir() {
+            "systemd".to_string()
+        } else {
+            std::fs::read_to_string("/proc/1/comm")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "unknown".to_string())
+        };
+        let cgroup_v2_available =
+            std::path::Path::new("/sys/fs/cgroup/cgroup.controllers").exists();
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "status": "configured",
                 "mode": config.mode,
+                "supported_modes": ["observe-only", "advisory", "transactional"],
                 "interval_ms": config.interval_ms,
                 "pid_file": config.pid_file,
                 "journal_file": config.journal_file,
                 "adaptive_polling": config.adaptive_polling,
+                "init_system": init_system,
+                "cgroup_v2_available": cgroup_v2_available,
+                "psi_available": {
+                    "cpu": std::path::Path::new("/proc/pressure/cpu").exists(),
+                    "memory": std::path::Path::new("/proc/pressure/memory").exists(),
+                    "io": std::path::Path::new("/proc/pressure/io").exists(),
+                },
             }))?
         );
         return Ok(());

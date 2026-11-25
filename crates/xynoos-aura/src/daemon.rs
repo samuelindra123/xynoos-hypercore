@@ -1,6 +1,10 @@
 #![forbid(unsafe_code)]
+use crate::compression_policy::{AdaptiveCompressionConfig, MultiResourceState};
 use crate::interplay::{AuraKernelCoordinator, KernelTuningRecommendation};
-use crate::tiering::{AdaptiveTieringPolicy, AuraTieringCoordinator};
+use crate::tiering::{
+    AdaptiveTieringPolicy, AdaptiveTieringReport, AuraAdaptiveCoordinator, AuraTieringCoordinator,
+    PressureStabilizer,
+};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
@@ -13,14 +17,18 @@ use std::{
     },
     time::{Duration, Instant},
 };
-use xynoos_core::MemoryPressure;
+use xynoos_core::{MemoryPressure, MigrationBudget, ResourcePressureLevel};
 use xynoos_hypermemory::{crc32_ieee, ClusterStore, PageStore};
 use xynoos_linux_control::{
     transaction::{self, Backend, Identity, Outcome},
     Action, MAX_HIGH_BYTES, MAX_LOW_BYTES,
 };
 use xynoos_pressureiq::{
-    intelligence::{collect as collect_mem_obs, diagnose, Diagnosis, Observation},
+    intelligence::Diagnosis,
+    multi_resource::{
+        collect_multi_resource, diagnose_multi_resource, MultiResourceDiagnosis,
+        MultiResourceSnapshot,
+    },
     system::SystemSnapshot,
 };
 
@@ -336,7 +344,7 @@ impl Drop for PidLock {
 struct PressureHistoryEntry {
     raw: MemoryPressure,
     stabilized: MemoryPressure,
-    available_pct_permille: u16,
+    available_pct_permille: Option<u16>,
 }
 
 /// Diagnostik kesehatan runtime daemon untuk pemantauan terstruktur.
@@ -350,6 +358,12 @@ pub struct DaemonDiagnostics {
     pub effective_interval_ms: u64,
     pub last_raw_pressure: Option<MemoryPressure>,
     pub last_stabilized_pressure: Option<MemoryPressure>,
+    #[serde(default)]
+    pub last_cpu_pressure: Option<ResourcePressureLevel>,
+    #[serde(default)]
+    pub last_io_pressure: Option<ResourcePressureLevel>,
+    #[serde(default)]
+    pub adaptive_transitions_total: u64,
     pub last_recommendation: Option<KernelTuningRecommendation>,
     pub last_error: Option<String>,
     pub recovered_crashes_count: u64,
@@ -364,6 +378,7 @@ pub struct DaemonDiagnostics {
 pub struct AuraDaemon {
     pub config: DaemonConfig,
     pub coordinator: AuraKernelCoordinator,
+    pub adaptive_coordinator: AuraAdaptiveCoordinator,
     pub cluster_store: ClusterStore,
     pub page_store: PageStore,
     start_time: Instant,
@@ -376,6 +391,9 @@ pub struct AuraDaemon {
     telemetry_history: VecDeque<PressureHistoryEntry>,
     last_raw_pressure: Option<MemoryPressure>,
     last_stabilized_pressure: Option<MemoryPressure>,
+    last_cpu_pressure: Option<ResourcePressureLevel>,
+    last_io_pressure: Option<ResourcePressureLevel>,
+    adaptive_transitions_total: u64,
     last_recommendation: Option<KernelTuningRecommendation>,
     last_error: Option<String>,
     recovered_crashes: u64,
@@ -388,6 +406,12 @@ impl AuraDaemon {
         kernel_coord.default_protection_bytes = config.default_protection_bytes;
         kernel_coord.default_throttle_bytes = config.default_throttle_bytes;
 
+        let adaptive_coordinator = AuraAdaptiveCoordinator::new(
+            AdaptiveCompressionConfig::default(),
+            PressureStabilizer::new(3, 0),
+            MigrationBudget::bounded(32, 256 * 1024),
+        );
+
         // Keep initial empty stores lightweight to minimize idle daemon RSS
         let cluster_store = ClusterStore::with_default_clustering(16)?;
         let page_store = PageStore::with_capacity(32)?;
@@ -395,6 +419,7 @@ impl AuraDaemon {
         Ok(Self {
             config,
             coordinator: kernel_coord,
+            adaptive_coordinator,
             cluster_store,
             page_store,
             start_time: Instant::now(),
@@ -407,6 +432,9 @@ impl AuraDaemon {
             telemetry_history: VecDeque::with_capacity(MAX_TELEMETRY_HISTORY),
             last_raw_pressure: None,
             last_stabilized_pressure: None,
+            last_cpu_pressure: None,
+            last_io_pressure: None,
+            adaptive_transitions_total: 0,
             last_recommendation: None,
             last_error: None,
             recovered_crashes: 0,
@@ -565,8 +593,7 @@ impl AuraDaemon {
         let avail_permille = diag
             .available_pct
             .filter(|v| v.is_finite() && (0.0..=100.0).contains(v))
-            .map(|v| (v * 10.0) as u16)
-            .unwrap_or(500);
+            .map(|v| (v * 10.0) as u16);
         self.telemetry_history.push_back(PressureHistoryEntry {
             raw,
             stabilized,
@@ -574,10 +601,72 @@ impl AuraDaemon {
         });
     }
 
+    fn execute_advisory_or_adaptive_tiering(
+        &mut self,
+        stabilized_pressure: MemoryPressure,
+        multi_state: Option<&MultiResourceState>,
+    ) -> Result<Option<AdaptiveTieringReport>, String> {
+        if self.page_store.stats().page_count == 0 {
+            return Ok(None);
+        }
+        if let Some(state) = multi_state {
+            let report = self
+                .adaptive_coordinator
+                .step_adaptive(&mut self.page_store, state)
+                .map_err(|e| format!("Adaptive tiering error: {e}"))?;
+            self.adaptive_transitions_total = self
+                .adaptive_transitions_total
+                .saturating_add(report.policy_transitions as u64);
+            Ok(Some(report))
+        } else {
+            self.coordinator
+                .tiering_coordinator
+                .step_with_pressure(&mut self.page_store, stabilized_pressure)
+                .map_err(|e| format!("Tiering error: {e}"))?;
+            Ok(None)
+        }
+    }
+
+    /// Menjalankan satu siklus evaluasi daemon dengan konteks multi-sumber penuh (CPU/Memory/IO PSI + cgroup).
+    pub fn step_multi_resource<B: Backend + ?Sized>(
+        &mut self,
+        multi: &MultiResourceDiagnosis,
+        system_snapshot: Option<&SystemSnapshot>,
+        backend: Option<&mut B>,
+    ) -> Result<DaemonDiagnostics, String> {
+        let raw_pressure =
+            crate::tiering::PressureBridge::evaluate_pressure(&multi.memory_diagnosis);
+        let multi_state = MultiResourceState::from_psi_percentages(
+            raw_pressure,
+            multi.cpu_psi_some_10,
+            multi.io_psi_some_10,
+            multi.mem_available_bytes,
+            multi.memory_pressure_reliable,
+        );
+        self.last_cpu_pressure = Some(multi_state.cpu_pressure);
+        self.last_io_pressure = Some(multi_state.io_pressure);
+        self.step_inner(
+            &multi.memory_diagnosis,
+            Some(&multi_state),
+            system_snapshot,
+            backend,
+        )
+    }
+
     /// Menjalankan satu siklus evaluasi daemon.
     pub fn step<B: Backend + ?Sized>(
         &mut self,
         diagnosis: &Diagnosis,
+        system_snapshot: Option<&SystemSnapshot>,
+        backend: Option<&mut B>,
+    ) -> Result<DaemonDiagnostics, String> {
+        self.step_inner(diagnosis, None, system_snapshot, backend)
+    }
+
+    fn step_inner<B: Backend + ?Sized>(
+        &mut self,
+        diagnosis: &Diagnosis,
+        multi_state: Option<&MultiResourceState>,
         system_snapshot: Option<&SystemSnapshot>,
         backend: Option<&mut B>,
     ) -> Result<DaemonDiagnostics, String> {
@@ -599,29 +688,24 @@ impl AuraDaemon {
 
         let recommendation = self.coordinator.recommend(stabilized_pressure);
         self.last_recommendation = Some(recommendation.clone());
+        let mut step_had_error = false;
 
         match self.config.mode {
             DaemonMode::ObserveOnly => {
                 // Tidak melakukan kompresi memori userspace dan tidak memutasi kernel
             }
             DaemonMode::Advisory => {
-                if let Err(e) = self
-                    .coordinator
-                    .tiering_coordinator
-                    .step_with_pressure(&mut self.page_store, stabilized_pressure)
+                if let Err(msg) =
+                    self.execute_advisory_or_adaptive_tiering(stabilized_pressure, multi_state)
                 {
-                    let msg = format!("Advisory tiering error: {e}");
                     self.record_failure(msg.clone());
                     return Err(msg);
                 }
             }
             DaemonMode::Transactional => {
-                if let Err(e) = self
-                    .coordinator
-                    .tiering_coordinator
-                    .step_with_pressure(&mut self.page_store, stabilized_pressure)
+                if let Err(msg) =
+                    self.execute_advisory_or_adaptive_tiering(stabilized_pressure, multi_state)
                 {
-                    let msg = format!("Transactional tiering error: {e}");
                     self.record_failure(msg.clone());
                     return Err(msg);
                 }
@@ -685,6 +769,7 @@ impl AuraDaemon {
                                             report.outcome, report.events
                                         );
                                         self.record_failure(msg);
+                                        step_had_error = true;
                                     }
                                 }
                             }
@@ -694,9 +779,11 @@ impl AuraDaemon {
             }
         }
 
-        self.cycles_completed = self.cycles_completed.saturating_add(1);
-        self.current_backoff_ms = 0;
-        self.last_error = None;
+        if !step_had_error {
+            self.cycles_completed = self.cycles_completed.saturating_add(1);
+            self.current_backoff_ms = 0;
+            self.last_error = None;
+        }
 
         Ok(self.diagnostics())
     }
@@ -715,6 +802,9 @@ impl AuraDaemon {
             effective_interval_ms: self.effective_interval_ms(),
             last_raw_pressure: self.last_raw_pressure,
             last_stabilized_pressure: self.last_stabilized_pressure,
+            last_cpu_pressure: self.last_cpu_pressure,
+            last_io_pressure: self.last_io_pressure,
+            adaptive_transitions_total: self.adaptive_transitions_total,
             last_recommendation: self.last_recommendation.clone(),
             last_error: self.last_error.clone(),
             recovered_crashes_count: self.recovered_crashes,
@@ -749,14 +839,14 @@ impl AuraDaemon {
         }
     }
 
-    /// Menjalankan loop daemon terikat sampai sinyal stop diterima menggunakan telemetri PressureIQ nyata.
+    /// Menjalankan loop daemon terikat sampai sinyal stop diterima menggunakan telemetri multi-sumber PressureIQ nyata.
     pub fn run_with_signal(
         &mut self,
         stop_signal: Arc<AtomicBool>,
         max_cycles: Option<u64>,
     ) -> Result<DaemonDiagnostics, String> {
         let mut executed = 0u64;
-        let mut prev_obs: Option<(Observation, Instant)> = None;
+        let mut prev_snap: Option<MultiResourceSnapshot> = None;
 
         while !stop_signal.load(Ordering::SeqCst) {
             if let Some(max) = max_cycles {
@@ -765,21 +855,32 @@ impl AuraDaemon {
                 }
             }
 
-            let obs_now = collect_mem_obs();
+            let snap_now = collect_multi_resource(None);
             let now_inst = Instant::now();
-            let diagnosis = if let Some((ref prev, prev_inst)) = prev_obs {
-                let interval = now_inst
-                    .checked_duration_since(prev_inst)
-                    .unwrap_or(Duration::from_millis(100))
-                    .max(Duration::from_millis(100));
-                diagnose(prev, &obs_now, interval, Duration::ZERO)
+            if let Some(ref prev) = prev_snap {
+                let multi_diag = diagnose_multi_resource(
+                    prev,
+                    &snap_now,
+                    now_inst,
+                    Duration::from_millis(self.config.interval_ms.saturating_mul(2).max(5000)),
+                );
+                if let Err(err) = self.step_multi_resource::<transaction::DisposableCgroup>(
+                    &multi_diag,
+                    None,
+                    None,
+                ) {
+                    self.record_failure(err);
+                }
             } else {
                 // First cycle has no delta yet; emit conservative non-fabricated reliable=false diagnosis
-                let avail_pct = match (obs_now.mem_total, obs_now.mem_available) {
+                let avail_pct = match (
+                    snap_now.memory_obs.mem_total,
+                    snap_now.memory_obs.mem_available,
+                ) {
                     (Some(t), Some(a)) if t > 0 && a <= t => Some(a as f64 * 100.0 / t as f64),
                     _ => None,
                 };
-                Diagnosis {
+                let initial_diag = Diagnosis {
                     classes: vec!["incomplete_or_unreliable".into()],
                     evidence: Vec::new(),
                     limitations: vec!["initial daemon observation cycle awaiting delta".into()],
@@ -789,13 +890,44 @@ impl AuraDaemon {
                     zram_ratios: std::collections::BTreeMap::new(),
                     interval_seconds: Some((self.config.interval_ms.max(100) as f64) / 1000.0),
                     reliable: false,
+                };
+                let multi_initial = MultiResourceDiagnosis {
+                    memory_diagnosis: initial_diag,
+                    cpu_psi_some_10: snap_now.cpu_psi.as_ref().ok().map(|p| p.some.avg10),
+                    cpu_psi_full_10: snap_now
+                        .cpu_psi
+                        .as_ref()
+                        .ok()
+                        .and_then(|p| p.full.as_ref().map(|f| f.avg10)),
+                    cpu_utilization_pct: None,
+                    io_psi_some_10: snap_now.io_psi.as_ref().ok().map(|p| p.some.avg10),
+                    io_psi_full_10: snap_now
+                        .io_psi
+                        .as_ref()
+                        .ok()
+                        .and_then(|p| p.full.as_ref().map(|f| f.avg10)),
+                    mem_available_bytes: snap_now.memory_obs.mem_available,
+                    mem_total_bytes: snap_now.memory_obs.mem_total,
+                    cgroup_memory_current_bytes: snap_now
+                        .cgroup_memory_current
+                        .as_ref()
+                        .ok()
+                        .copied(),
+                    cpu_pressure_reliable: false,
+                    io_pressure_reliable: false,
+                    memory_pressure_reliable: false,
+                    telemetry_age_ms: 0,
+                    limitations: vec!["initial daemon observation cycle awaiting delta".into()],
+                };
+                if let Err(err) = self.step_multi_resource::<transaction::DisposableCgroup>(
+                    &multi_initial,
+                    None,
+                    None,
+                ) {
+                    self.record_failure(err);
                 }
-            };
-            prev_obs = Some((obs_now, now_inst));
-
-            if let Err(err) = self.step::<transaction::DisposableCgroup>(&diagnosis, None, None) {
-                self.record_failure(err);
             }
+            prev_snap = Some(snap_now);
             executed = executed.saturating_add(1);
 
             if let Some(max) = max_cycles {
@@ -1039,5 +1171,120 @@ mod tests {
         let stop = Arc::new(AtomicBool::new(false));
         let diag = daemon.run_with_signal(stop, Some(2)).unwrap();
         assert_eq!(diag.cycles_completed, 2);
+    }
+
+    #[test]
+    fn test_transactional_conflict_preserves_backoff_and_error() {
+        struct ConflictBackend {
+            id: Identity,
+        }
+        impl Backend for ConflictBackend {
+            fn identity(&mut self) -> Result<Identity, String> {
+                Ok(self.id)
+            }
+            fn read_low(&mut self) -> Result<u64, String> {
+                // First read returns 10 MiB, subsequent reads change unexpectedly -> Conflict
+                static CALLS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+                let n = CALLS.fetch_add(1, Ordering::SeqCst);
+                if n <= 1 {
+                    Ok(10 * 1024 * 1024)
+                } else {
+                    Ok(12 * 1024 * 1024)
+                }
+            }
+            fn write_low(&mut self, _v: u64) -> Result<(), String> {
+                Ok(())
+            }
+        }
+
+        let mut daemon = AuraDaemon::new(DaemonConfig {
+            mode: DaemonMode::Transactional,
+            journal_file: None,
+            ..Default::default()
+        })
+        .unwrap();
+        let diag = Diagnosis {
+            classes: vec!["elevated_pressure".into()],
+            evidence: Vec::new(),
+            limitations: Vec::new(),
+            available_pct: Some(20.0),
+            rates_per_second: std::collections::BTreeMap::new(),
+            disk_bytes_per_second: std::collections::BTreeMap::new(),
+            zram_ratios: std::collections::BTreeMap::new(),
+            interval_seconds: Some(1.0),
+            reliable: true,
+        };
+        let mut snap = xynoos_pressureiq::system::collect_system();
+        snap.memory.psi.result = Ok(xynoos_pressureiq::parse_psi(
+            "some avg10=5.0 avg60=1.0 avg300=0.0 total=100\n",
+        )
+        .unwrap());
+        snap.memory.mem.result = Ok(xynoos_pressureiq::parse_meminfo(
+            "MemTotal: 4096000 kB\nMemAvailable: 1024000 kB\n",
+        )
+        .unwrap());
+        let mut backend = ConflictBackend {
+            id: Identity {
+                device: 1,
+                inode: 2,
+                control_inode: 3,
+            },
+        };
+
+        let out = daemon.step(&diag, Some(&snap), Some(&mut backend)).unwrap();
+        assert_eq!(out.cycles_failed, 1);
+        assert!(out.current_backoff_ms >= 1000);
+        assert!(out.last_error.is_some());
+    }
+
+    #[test]
+    fn test_step_multi_resource_drives_adaptive_coordinator() {
+        let mut daemon = AuraDaemon::new(DaemonConfig {
+            mode: DaemonMode::Advisory,
+            ..Default::default()
+        })
+        .unwrap();
+        daemon.page_store = PageStore::adaptive(4096, 8, usize::MAX).unwrap();
+        daemon
+            .page_store
+            .insert_with_codec(
+                &[b'A'; 4096],
+                xynoos_core::CodecId::Raw,
+                xynoos_core::EvictionPolicy::Reject,
+            )
+            .unwrap();
+        let multi = MultiResourceDiagnosis {
+            memory_diagnosis: Diagnosis {
+                classes: vec!["sustained_pressure".into()],
+                evidence: Vec::new(),
+                limitations: Vec::new(),
+                available_pct: Some(10.0),
+                rates_per_second: std::collections::BTreeMap::new(),
+                disk_bytes_per_second: std::collections::BTreeMap::new(),
+                zram_ratios: std::collections::BTreeMap::new(),
+                interval_seconds: Some(1.0),
+                reliable: true,
+            },
+            cpu_psi_some_10: Some(2.0),
+            cpu_psi_full_10: None,
+            cpu_utilization_pct: Some(15.0),
+            io_psi_some_10: Some(1.0),
+            io_psi_full_10: None,
+            mem_available_bytes: Some(256 * 1024 * 1024),
+            mem_total_bytes: Some(4 * 1024 * 1024 * 1024),
+            cgroup_memory_current_bytes: None,
+            cpu_pressure_reliable: true,
+            io_pressure_reliable: true,
+            memory_pressure_reliable: true,
+            telemetry_age_ms: 10,
+            limitations: Vec::new(),
+        };
+
+        let out = daemon
+            .step_multi_resource::<MockBackend>(&multi, None, None)
+            .unwrap();
+        assert_eq!(out.last_cpu_pressure, Some(ResourcePressureLevel::Low));
+        assert_eq!(out.last_io_pressure, Some(ResourcePressureLevel::Low));
+        assert!(out.adaptive_transitions_total >= 1);
     }
 }
