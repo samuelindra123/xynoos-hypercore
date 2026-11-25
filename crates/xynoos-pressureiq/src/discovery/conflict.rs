@@ -85,40 +85,74 @@ pub fn analyze_conflicts(
         });
     }
 
-    // 3. Multiple Userspace OOM Managers
-    let mut oom_daemons = Vec::new();
-    if memory.oom_managers.earlyoom_present {
-        oom_daemons.push("earlyoom");
+    // 3. Multiple Userspace OOM Managers (Distinguish actively running from dormant packages)
+    let mut running_oom_daemons = Vec::new();
+    if memory.oom_managers.earlyoom_active {
+        running_oom_daemons.push("earlyoom");
     }
-    if memory.oom_managers.systemd_oomd_present {
-        oom_daemons.push("systemd-oomd");
+    if memory.oom_managers.systemd_oomd_active {
+        running_oom_daemons.push("systemd-oomd");
     }
-    if memory.oom_managers.nohang_present {
-        oom_daemons.push("nohang");
+    if memory.oom_managers.nohang_active {
+        running_oom_daemons.push("nohang");
     }
-    if memory.oom_managers.oomd_present {
-        oom_daemons.push("oomd");
+    if memory.oom_managers.oomd_active {
+        running_oom_daemons.push("oomd");
     }
 
-    if oom_daemons.len() > 1 {
+    if running_oom_daemons.len() > 1 {
         findings.push(ConflictFinding {
             rule_id: "CONF-003".into(),
-            title: "Multiple Userspace OOM Killer Daemons Detected".into(),
+            title: "Multiple Active Userspace OOM Killer Daemons Detected".into(),
             severity: ConflictSeverity::ConfirmedConflict,
             primary_subsystem: "oom_management".into(),
-            conflicting_entities: oom_daemons.iter().map(|s| s.to_string()).collect(),
+            conflicting_entities: running_oom_daemons.iter().map(|s| s.to_string()).collect(),
             explanation: format!(
-                "Multiple out-of-memory daemons ({}) are active or configured. When memory pressure spikes, both may kill processes simultaneously, leading to unnecessary application loss.",
-                oom_daemons.join(", ")
+                "Multiple out-of-memory daemons ({}) are actively running simultaneously. When memory pressure spikes, both may kill processes simultaneously, leading to unnecessary application loss.",
+                running_oom_daemons.join(", ")
             ),
-            recommendation: "Standardize on a single OOM daemon (e.g. systemd-oomd or earlyoom) to avoid double-killing workloads.".into(),
-            evidence: oom_daemons.iter().map(|s| format!("oom_service:{s}")).collect(),
+            recommendation: "Standardize on a single active OOM daemon to avoid double-killing workloads.".into(),
+            evidence: running_oom_daemons.iter().map(|s| format!("active_oom_process:{s}")).collect(),
         });
+    } else {
+        let mut installed_oom = Vec::new();
+        if memory.oom_managers.earlyoom_present {
+            installed_oom.push("earlyoom");
+        }
+        if memory.oom_managers.systemd_oomd_present {
+            installed_oom.push("systemd-oomd");
+        }
+        if memory.oom_managers.nohang_present {
+            installed_oom.push("nohang");
+        }
+        if memory.oom_managers.oomd_present {
+            installed_oom.push("oomd");
+        }
+        if installed_oom.len() > 1 && running_oom_daemons.len() <= 1 {
+            findings.push(ConflictFinding {
+                rule_id: "CONF-003-ADV".into(),
+                title: "Multiple OOM Management Packages Installed (Dormant)".into(),
+                severity: ConflictSeverity::CompatibleCoexistence,
+                primary_subsystem: "oom_management".into(),
+                conflicting_entities: installed_oom.iter().map(|s| s.to_string()).collect(),
+                explanation: format!(
+                    "Multiple OOM packages ({}) are installed, but only {} are actively running. Inactive packages do not conflict with running workloads.",
+                    installed_oom.join(", "),
+                    running_oom_daemons.len()
+                ),
+                recommendation: "Retain current active manager; no remediation required unless inactive services are started.".into(),
+                evidence: installed_oom.iter().map(|s| format!("installed_package:{s}")).collect(),
+            });
+        }
     }
 
-    // 4. Zswap and Zram Coexistence Analysis
+    // 4. Zswap and Zram Coexistence Analysis (Context-aware swap tiering)
     let zram_active = !memory.zram_devices.is_empty();
     let zswap_active = memory.zswap.available && memory.zswap.enabled;
+    let has_disk_swap = memory
+        .swap_devices
+        .iter()
+        .any(|s| !s.is_zram && s.total_bytes > 0);
 
     if zram_active && zswap_active {
         let zram_algo = memory
@@ -128,26 +162,52 @@ pub fn analyze_conflicts(
             .unwrap_or("unknown");
         let zswap_algo = memory.zswap.compressor.as_deref().unwrap_or("unknown");
 
-        findings.push(ConflictFinding {
-            rule_id: "CONF-004".into(),
-            title: "Simultaneous ZSWAP and ZRAM Coexistence".into(),
-            severity: ConflictSeverity::PotentialConflict,
-            primary_subsystem: "memory_compression".into(),
-            conflicting_entities: vec![
-                format!("zram(algo={zram_algo})"),
-                format!("zswap(algo={zswap_algo})"),
-            ],
-            explanation: format!(
-                "Both kernel ZSWAP (compressor: {zswap_algo}) and ZRAM swap devices (algorithm: {zram_algo}) are active. While safe and non-fatal, pages may be compressed twice when evicted, increasing CPU overhead unless zswap is intentionally fronting disk swap.",
-                zswap_algo = zswap_algo,
-                zram_algo = zram_algo,
-            ),
-            recommendation: "If ZRAM is your primary swap mechanism, consider disabling zswap (`echo 0 > /sys/module/zswap/parameters/enabled`) to eliminate double compression overhead.".into(),
-            evidence: vec![
-                format!("zram_devices_count:{}", memory.zram_devices.len()),
-                format!("zswap_enabled:{}", memory.zswap.enabled),
-            ],
-        });
+        if has_disk_swap {
+            findings.push(ConflictFinding {
+                rule_id: "CONF-004".into(),
+                title: "Tiered ZRAM and ZSWAP Coordination Detected".into(),
+                severity: ConflictSeverity::CompatibleCoexistence,
+                primary_subsystem: "memory_compression".into(),
+                conflicting_entities: vec![
+                    format!("zram(algo={zram_algo})"),
+                    format!("zswap(algo={zswap_algo})"),
+                    "disk_backed_swap".into(),
+                ],
+                explanation: format!(
+                    "System features active ZRAM swap alongside disk-backed swap and kernel ZSWAP. ZSWAP accelerates cold page evictions to disk storage while ZRAM absorbs transient memory pressure.",
+                    zswap_algo = zswap_algo,
+                    zram_algo = zram_algo,
+                ),
+                recommendation: "Preserve tiered hierarchy; ensure ZRAM swap priority exceeds disk swap priority.".into(),
+                evidence: vec![
+                    format!("zram_devices_count:{}", memory.zram_devices.len()),
+                    format!("zswap_enabled:{}", memory.zswap.enabled),
+                    "disk_swap_present:true".into(),
+                ],
+            });
+        } else {
+            findings.push(ConflictFinding {
+                rule_id: "CONF-004".into(),
+                title: "Redundant ZSWAP with Exclusive ZRAM Swap".into(),
+                severity: ConflictSeverity::PotentialConflict,
+                primary_subsystem: "memory_compression".into(),
+                conflicting_entities: vec![
+                    format!("zram(algo={zram_algo})"),
+                    format!("zswap(algo={zswap_algo})"),
+                ],
+                explanation: format!(
+                    "Both kernel ZSWAP and ZRAM are active without a disk swap partition. ZSWAP may compress pages before handing them to ZRAM, adding redundant CPU compression overhead.",
+                    zswap_algo = zswap_algo,
+                    zram_algo = zram_algo,
+                ),
+                recommendation: "When ZRAM is the sole swap device, consider disabling zswap (`echo 0 > /sys/module/zswap/parameters/enabled`) to eliminate double compression overhead.".into(),
+                evidence: vec![
+                    format!("zram_devices_count:{}", memory.zram_devices.len()),
+                    format!("zswap_enabled:{}", memory.zswap.enabled),
+                    "disk_swap_present:false".into(),
+                ],
+            });
+        }
     }
 
     // 5. Runtime vs Persistent Sysctl Discrepancies

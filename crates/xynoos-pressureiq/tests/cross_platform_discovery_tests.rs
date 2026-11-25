@@ -363,3 +363,58 @@ fn test_cached_system_inventory_behavior() {
     // Invalidation resets expiration
     cached.invalidate();
 }
+
+#[test]
+fn test_dormant_vs_active_oom_packages_regression() {
+    let fix = TestFixture::new("dormant-oom");
+    fix.write_file("etc/os-release", "ID=debian\nPRETTY_NAME=\"Debian\"\n");
+    fix.write_file("proc/sys/kernel/osrelease", "6.12.0\n");
+    fix.write_file("proc/version", "Linux version 6.12.0\n");
+
+    // Both earlyoom and systemd-oomd service definitions installed on disk
+    fix.write_file("etc/systemd/system/earlyoom.service", "[Service]\n");
+    fix.write_file("etc/systemd/system/systemd-oomd.service", "[Service]\n");
+
+    // But NO process in /proc for either!
+    let inv = SystemInventory::collect_from(&fix.sys_path(), &fix.proc_path(), &fix.etc_path());
+
+    // Must NOT flag ConfirmedConflict
+    let hard_conf = inv.conflicts.iter().find(|c| c.rule_id == "CONF-003");
+    assert!(hard_conf.is_none(), "Dormant installed packages must not be flagged as ConfirmedConflict");
+
+    // Instead flags advisory CompatibleCoexistence
+    let adv_conf = inv.conflicts.iter().find(|c| c.rule_id == "CONF-003-ADV");
+    assert!(adv_conf.is_some());
+    assert_eq!(adv_conf.unwrap().severity, ConflictSeverity::CompatibleCoexistence);
+}
+
+#[test]
+fn test_zram_and_zswap_tiering_with_disk_swap_regression() {
+    let fix = TestFixture::new("tiered-swap");
+    fix.write_file("etc/os-release", "ID=debian\nPRETTY_NAME=\"Debian\"\n");
+    fix.write_file("proc/sys/kernel/osrelease", "6.12.0\n");
+    fix.write_file("proc/version", "Linux version 6.12.0\n");
+
+    // Active ZRAM swap device AND active disk swap partition
+    fix.write_file(
+        "proc/swaps",
+        "Filename\t\t\t\tType\t\tSize\t\tUsed\t\tPriority\n/dev/zram0                              partition\t2097152\t\t0\t\t100\n/dev/sda2                               partition\t4194304\t\t0\t\t-2\n",
+    );
+    fix.write_file("sys/block/zram0/disksize", "2147483648\n");
+    fix.write_file("sys/block/zram0/comp_algorithm", "[lz4] lzo\n");
+
+    // ZSWAP enabled
+    fix.write_file("sys/module/zswap/parameters/enabled", "Y\n");
+    fix.write_file("sys/module/zswap/parameters/compressor", "zstd\n");
+
+    let inv = SystemInventory::collect_from(&fix.sys_path(), &fix.proc_path(), &fix.etc_path());
+
+    // When disk swap is present, coexistence is tiered and compatible
+    let conf_zswap = inv.conflicts.iter().find(|c| c.rule_id == "CONF-004");
+    assert!(conf_zswap.is_some());
+    assert_eq!(
+        conf_zswap.unwrap().severity,
+        ConflictSeverity::CompatibleCoexistence,
+        "ZRAM + ZSWAP with disk swap must be recognized as compatible tiering"
+    );
+}

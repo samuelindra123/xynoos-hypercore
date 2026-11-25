@@ -1,7 +1,11 @@
-//! CLI integration for Milestone K universal hardware intelligence, configuration audit, and setup planning.
+//! CLI integration for Milestone L reversible memory optimization, configuration engine, and doctor.
 #![forbid(unsafe_code)]
 
 use std::{error::Error, path::PathBuf};
+use xynoos_linux_control::config::{
+    ActionClassification, AuthorizationScope, ConfigExecutor, ConfigurationAction,
+    IntegrityStatus, MemoryPlanner, OwnershipLedger, SetupAuthorization,
+};
 use xynoos_pressureiq::{
     OptimizationPlan, ProposedActionType, SystemInventory, INVENTORY_SCHEMA_VERSION,
 };
@@ -18,17 +22,19 @@ fn human_bytes(b: u64) -> String {
     }
 }
 
-struct CliRoots {
-    sys_root: PathBuf,
-    proc_root: PathBuf,
-    etc_root: PathBuf,
-    json: bool,
+pub struct CliRoots {
+    pub sys_root: PathBuf,
+    pub proc_root: PathBuf,
+    pub etc_root: PathBuf,
+    pub state_dir: PathBuf,
+    pub json: bool,
 }
 
-fn parse_roots(args: &[String]) -> Result<CliRoots, Box<dyn Error>> {
+pub fn parse_roots(args: &[String]) -> Result<CliRoots, Box<dyn Error>> {
     let mut sys_root = PathBuf::from("/sys");
     let mut proc_root = PathBuf::from("/proc");
     let mut etc_root = PathBuf::from("/etc");
+    let mut state_dir = PathBuf::from("/var/lib/xynoos");
     let mut json = false;
 
     let mut i = 0;
@@ -48,6 +54,10 @@ fn parse_roots(args: &[String]) -> Result<CliRoots, Box<dyn Error>> {
                 i += 1;
                 etc_root = PathBuf::from(args.get(i).ok_or("missing --etc-root path")?);
             }
+            "--state-dir" => {
+                i += 1;
+                state_dir = PathBuf::from(args.get(i).ok_or("missing --state-dir path")?);
+            }
             _ => {}
         }
         i += 1;
@@ -57,6 +67,7 @@ fn parse_roots(args: &[String]) -> Result<CliRoots, Box<dyn Error>> {
         sys_root,
         proc_root,
         etc_root,
+        state_dir,
         json,
     })
 }
@@ -412,80 +423,306 @@ pub fn tuning_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Handle `xynoos setup --plan [--json]`
+/// Handle `xynoos setup (--plan | --apply | --status | --rollback) [--authorized] [--json]`
 pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let has_plan = args.iter().any(|a| a == "--plan");
     let has_apply = args.iter().any(|a| a == "--apply" || a == "--auto");
-
-    if has_apply {
-        return Err(
-            "ABORTED: 'setup --apply' is not permitted during Milestone K.\nMilestone K establishes the read-only discovery and planning foundation.\nUse 'xynoos setup --plan' or 'xynoos setup --plan --json'."
-                .into(),
-        );
-    }
-
-    if !has_plan {
-        return Err("usage: xynoos setup --plan [--json] [--human]".into());
-    }
+    let has_status = args.iter().any(|a| a == "--status");
+    let has_rollback = args.iter().any(|a| a == "--rollback");
+    let has_authorized = args.iter().any(|a| a == "--authorized");
 
     let roots = parse_roots(args)?;
-    let inv = SystemInventory::collect_from(&roots.sys_root, &roots.proc_root, &roots.etc_root);
-    let plan = OptimizationPlan::generate(&inv);
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0);
 
-    if roots.json {
-        println!("{}", serde_json::to_string_pretty(&plan)?);
+    let executor = ConfigExecutor::new(
+        roots.sys_root.clone(),
+        roots.proc_root.clone(),
+        roots.etc_root.clone(),
+        roots.state_dir.clone(),
+    );
+
+    if has_rollback {
+        let summary = executor
+            .rollback_all(now_ms)
+            .map_err(|e| format!("Rollback failed: {e}"))?;
+
+        if roots.json {
+            let out = serde_json::json!({
+                "operation": "rollback",
+                "restored_keys": summary.restored_keys,
+                "removed_files": summary.removed_files,
+                "skipped_due_to_tampering": summary.skipped_due_to_tampering,
+                "failed_restorations": summary.failed_restorations,
+            });
+            println!("{}", serde_json::to_string_pretty(&out)?);
+            return Ok(());
+        }
+
+        println!("XYNOOS HyperCore — Configuration Rollback (Milestone L)");
+        println!("=====================================================");
+        println!("Restored Parameters   : {}", summary.restored_keys.len());
+        for k in &summary.restored_keys {
+            println!("  - {k}");
+        }
+        println!("Removed Drop-in Files : {}", summary.removed_files.len());
+        for f in &summary.removed_files {
+            println!("  - {f}");
+        }
+        if !summary.skipped_due_to_tampering.is_empty() {
+            println!("Skipped (Tampering / External Modifications Detected):");
+            for t in &summary.skipped_due_to_tampering {
+                println!("  [WARN] {t}");
+            }
+        }
+        if !summary.failed_restorations.is_empty() {
+            println!("Failed Restorations:");
+            for f in &summary.failed_restorations {
+                println!("  [FAIL] {f}");
+            }
+        }
         return Ok(());
     }
 
-    println!("XYNOOS HyperCore — Read-Only Optimization Plan (Milestone K)");
-    println!("===========================================================");
-    println!("Notice: Strictly read-only planning foundation. No host modifications applied.\n");
-
-    println!("Optimization Actions Summary:");
-    println!("  Preserve Actions : {}", plan.summary_preserve_count);
-    println!("  Configure Actions: {}", plan.summary_configure_count);
-    println!("  Improve Actions  : {}", plan.summary_improve_count);
-    println!("  Conflict Actions : {}", plan.summary_conflict_count);
-    println!("  Unsupported      : {}", plan.summary_unsupported_count);
-    println!("  Total Actions    : {}\n", plan.actions.len());
-
-    println!("Proposed Actions:");
-    for (i, action) in plan.actions.iter().enumerate() {
-        let tag = match action.action_type {
-            ProposedActionType::Preserve => "[PRESERVE]",
-            ProposedActionType::Configure => "[CONFIGURE]",
-            ProposedActionType::Improve => "[IMPROVE]",
-            ProposedActionType::Defer => "[DEFER]",
-            ProposedActionType::Unsupported => "[UNSUPPORTED]",
-            ProposedActionType::Conflict => "[CONFLICT]",
-            ProposedActionType::RequiresAuthorization => "[AUTH NEEDED]",
-            ProposedActionType::InsufficientEvidence => "[INSUFFICIENT]",
-        };
-
-        println!(
-            "{}. {} {:?}: {}",
-            i + 1,
-            tag,
-            action.subsystem,
-            action.target_parameter
-        );
-        println!(
-            "   Current State : {} (Ownership: {:?})",
-            action.current_state, action.detected_ownership
-        );
-        if let Some(prop) = &action.proposed_setting {
-            println!("   Proposed Setting: {prop}");
+    if has_status {
+        let ledger = executor.load_ledger()?;
+        if roots.json {
+            let out = serde_json::json!({
+                "schema_version": ledger.schema_version,
+                "updated_at_unix_ms": ledger.updated_at_unix_ms,
+                "managed_entries": ledger.entries,
+            });
+            println!("{}", serde_json::to_string_pretty(&out)?);
+            return Ok(());
         }
-        println!("   Rationale     : {}", action.rationale);
-        println!("   Expected Gain : {}", action.expected_benefit);
-        println!(
-            "   Privileges    : {:?} (Reversibility: {:?}, Confidence: {:?})",
-            action.required_privileges, action.reversibility, action.confidence
-        );
-        println!();
+
+        println!("XYNOOS HyperCore — Configuration Ownership Status (Milestone L)");
+        println!("===============================================================");
+        if ledger.entries.is_empty() {
+            println!("No active configurations currently owned by HyperCore.");
+        } else {
+            println!("Active Managed Settings ({} entries):", ledger.entries.len());
+            for (key, entry) in &ledger.entries {
+                let integrity = ledger.check_entry_integrity(entry, &roots.etc_root);
+                println!("  - Setting Key    : {key}");
+                println!("    Applied Value  : {}", entry.applied_value);
+                if let Some(orig) = &entry.original_value {
+                    println!("    Original Value : {orig}");
+                }
+                if let Some(f) = &entry.target_file {
+                    println!("    Drop-in Path   : {f}");
+                }
+                println!("    Integrity State: {:?}", integrity);
+                println!("    Transaction ID : {}", entry.transaction_id);
+            }
+        }
+        return Ok(());
     }
 
-    println!("Notice: To execute actions in future milestones, explicit authorization and an operational milestone release will be required.");
+    if has_apply {
+        if !has_authorized {
+            return Err("AUTHORIZATION REQUIRED: 'setup --apply' modifies system configuration.\nAn explicit operator authorization flag '--authorized' is mandatory.\nA proposed plan must not be executed without operator approval.".into());
+        }
+
+        let inv = SystemInventory::collect_from(&roots.sys_root, &roots.proc_root, &roots.etc_root);
+        let actions = MemoryPlanner::plan(&inv);
+
+        let plan_str = serde_json::to_string(&actions)?;
+        let mut hasher = crc32fast::Hasher::new();
+        hasher.update(plan_str.as_bytes());
+        let plan_fingerprint = format!("{:08x}", hasher.finalize());
+
+        let auth = SetupAuthorization::new(
+            "operator",
+            AuthorizationScope::MemoryOptimization,
+            &plan_fingerprint,
+            now_ms,
+            300_000,
+        );
+
+        let summary = executor
+            .execute_plan(&actions, &auth, &plan_fingerprint, now_ms)
+            .map_err(|e| format!("Setup apply error: {e}"))?;
+
+        if roots.json {
+            let out = serde_json::json!({
+                "operation": "apply",
+                "transaction_id": summary.transaction_id,
+                "total_actions": summary.total_actions,
+                "applied_actions": summary.applied_actions,
+                "skipped_actions": summary.skipped_actions,
+                "failed_actions": summary.failed_actions,
+                "results": summary.action_results.iter().map(|r| {
+                    serde_json::json!({
+                        "action_id": r.action_id,
+                        "success": r.success,
+                        "message": r.message
+                    })
+                }).collect::<Vec<_>>(),
+            });
+            println!("{}", serde_json::to_string_pretty(&out)?);
+            return Ok(());
+        }
+
+        println!("XYNOOS HyperCore — Authorized Configuration Execution (Milestone L)");
+        println!("==================================================================");
+        println!("Transaction ID   : {}", summary.transaction_id);
+        println!("Applied Actions  : {}", summary.applied_actions);
+        println!("Skipped Actions  : {}", summary.skipped_actions);
+        println!("Failed Actions   : {}\n", summary.failed_actions);
+
+        for res in &summary.action_results {
+            let status_tag = if res.success { "[OK]" } else { "[FAIL]" };
+            println!("  {} {}: {}", status_tag, res.action_id, res.message);
+        }
+
+        if summary.failed_actions == 0 {
+            println!("\nConfiguration successfully applied, verified, and committed to ownership ledger.");
+            println!("To revert changes safely at any time, run: xynoos setup --rollback");
+        } else {
+            println!("\nExecution encountered one or more errors. Check diagnostics or run: xynoos setup --rollback");
+        }
+
+        return Ok(());
+    }
+
+    if has_plan {
+        let inv = SystemInventory::collect_from(&roots.sys_root, &roots.proc_root, &roots.etc_root);
+        let plan = OptimizationPlan::generate(&inv);
+        let actions = MemoryPlanner::plan(&inv);
+
+        if roots.json {
+            let mut out = serde_json::to_value(&plan)?;
+            out["configuration_actions"] = serde_json::to_value(&actions)?;
+            println!("{}", serde_json::to_string_pretty(&out)?);
+            return Ok(());
+        }
+
+        println!("XYNOOS HyperCore — Read-Only Optimization Plan (Milestone L)");
+        println!("===========================================================");
+        println!("Notice: Strictly read-only preview. Zero host modifications applied.\n");
+
+        println!("Universal Memory Configuration Actions:");
+        for (i, action) in actions.iter().enumerate() {
+            println!("{}. [{:?}] {}: {}", i + 1, action.classification, action.target_setting, action.desired_value);
+            println!("   Observed State: {} (Ownership: {:?})", action.current_observed_value, action.current_ownership);
+            println!("   Rationale     : {}", action.expected_benefit);
+            println!("   Privileges    : {:?} (Reversibility: {:?})", action.required_privileges, action.reversibility);
+            println!();
+        }
+
+        println!("Notice: To execute these optimizations, run: xynoos setup --apply --authorized");
+        return Ok(());
+    }
+
+    Err("usage: xynoos setup (--plan | --apply --authorized | --status | --rollback) [--json]".into())
+}
+
+/// Handle `xynoos doctor [--json]`
+pub fn doctor_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    let roots = parse_roots(args)?;
+    let inv = SystemInventory::collect_from(&roots.sys_root, &roots.proc_root, &roots.etc_root);
+    let executor = ConfigExecutor::new(
+        roots.sys_root.clone(),
+        roots.proc_root.clone(),
+        roots.etc_root.clone(),
+        roots.state_dir.clone(),
+    );
+    let ledger = executor.load_ledger().unwrap_or_default();
+
+    let mut checks = Vec::new();
+
+    // Check 1: Linux Cgroup v2
+    let cgroup_ok = inv.platform.cgroup_hierarchy
+        == xynoos_pressureiq::discovery::platform::CgroupHierarchy::V2Unified;
+    checks.push((
+        "Cgroup v2 Unified",
+        cgroup_ok,
+        if cgroup_ok {
+            "Unified hierarchy active"
+        } else {
+            "Legacy or Hybrid cgroups (limited isolation)"
+        },
+    ));
+
+    // Check 2: Pressure Stall Information (PSI)
+    let psi_ok = inv.platform.psi_available;
+    checks.push((
+        "Pressure Stall Information (PSI)",
+        psi_ok,
+        if psi_ok {
+            "PSI controllers available"
+        } else {
+            "PSI unavailable in kernel"
+        },
+    ));
+
+    // Check 3: Active OOM Manager Coexistence
+    let active_oom_count = (inv.memory.oom_managers.earlyoom_active as usize)
+        + (inv.memory.oom_managers.systemd_oomd_active as usize)
+        + (inv.memory.oom_managers.nohang_active as usize)
+        + (inv.memory.oom_managers.oomd_active as usize);
+    checks.push((
+        "OOM Manager Coexistence",
+        active_oom_count <= 1,
+        if active_oom_count == 0 {
+            "Kernel default OOM killer active"
+        } else if active_oom_count == 1 {
+            "Single active userspace manager (cooperative)"
+        } else {
+            "Multiple competing userspace OOM killers running"
+        },
+    ));
+
+    // Check 4: HyperCore Configuration Ownership Ledger
+    let mut ledger_tampered = false;
+    for entry in ledger.entries.values() {
+        if ledger.check_entry_integrity(entry, &roots.etc_root)
+            == IntegrityStatus::ModifiedExternally
+        {
+            ledger_tampered = true;
+            break;
+        }
+    }
+    checks.push((
+        "Configuration Ownership Ledger",
+        !ledger_tampered,
+        if ledger_tampered {
+            "External file tampering detected"
+        } else {
+            "Clean and synchronized"
+        },
+    ));
+
+    if roots.json {
+        let out = serde_json::json!({
+            "checks": checks.iter().map(|(name, pass, msg)| {
+                serde_json::json!({
+                    "name": name,
+                    "pass": pass,
+                    "message": msg
+                })
+            }).collect::<Vec<_>>(),
+            "ledger_entries_count": ledger.entries.len(),
+            "active_conflicts_count": inv.conflicts.len(),
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+
+    println!("XYNOOS HyperCore — System Diagnostics & Doctor (Milestone L)");
+    println!("============================================================");
+    for (name, pass, msg) in &checks {
+        let tag = if *pass { "[PASS]" } else { "[WARN]" };
+        println!("  {tag} {:<36}: {msg}", name);
+    }
+    println!(
+        "\nSummary: {} active conflict(s), {} managed configuration(s).",
+        inv.conflicts.len(),
+        ledger.entries.len()
+    );
 
     Ok(())
 }

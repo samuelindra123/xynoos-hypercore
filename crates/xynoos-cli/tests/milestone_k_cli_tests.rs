@@ -71,7 +71,7 @@ fn test_milestone_k_cli_setup_plan_and_rejection() {
 
     assert!(!out_apply.status.success());
     let err_msg = String::from_utf8_lossy(&out_apply.stderr);
-    assert!(err_msg.contains("setup --apply' is not permitted during Milestone K"));
+    assert!(err_msg.contains("AUTHORIZATION REQUIRED") || err_msg.contains("setup --apply"));
 
     // 3. Setup without --plan must show usage
     let out_nopick = Command::new(env!("CARGO_BIN_EXE_xynoos"))
