@@ -387,3 +387,36 @@ fn test_memory_planner_profile_and_actions() {
     assert_eq!(zaction.classification, ActionClassification::Configure);
     assert!(zaction.desired_value.contains("lz4"));
 }
+
+#[test]
+fn test_config_journal_lifecycle() {
+    let root = std::env::temp_dir().join(format!("xynoos-journal-test-{}", std::process::id()));
+    fs::create_dir_all(&root).unwrap();
+    let journal_path = root.join("journal.json");
+
+    let mut journal = ConfigJournal::new("tx-12345".into());
+    assert_eq!(journal.phase, ConfigTxPhase::Prepared);
+
+    journal.record_item(ConfigJournalItem {
+        action_id: "test-act".into(),
+        target_key: "vm.swappiness".into(),
+        target_file: None,
+        original_value: Some("60".into()),
+        applied_value: "100".into(),
+        is_applied: true,
+    });
+    journal.phase = ConfigTxPhase::Applying;
+    journal.persist(&journal_path, 1_000_000).unwrap();
+
+    let loaded = ConfigJournal::load_from(&journal_path).unwrap();
+    assert!(loaded.is_some());
+    let j = loaded.unwrap();
+    assert_eq!(j.transaction_id, "tx-12345");
+    assert_eq!(j.phase, ConfigTxPhase::Applying);
+    assert_eq!(j.items.len(), 1);
+
+    ConfigJournal::cleanup(&journal_path).unwrap();
+    assert!(!journal_path.exists());
+
+    let _ = fs::remove_dir_all(&root);
+}
