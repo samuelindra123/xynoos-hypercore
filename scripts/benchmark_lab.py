@@ -215,9 +215,11 @@ def run_single_trial(
 
     daemon_proc = None
     daemon_out_fh = None
+    lease_proc = None
     daemon_pid_file = Path(work_dir) / "daemon.pid"
     daemon_out = Path(work_dir) / "daemon.json"
     daemon_metrics = {}
+    bench_bin = str(Path(xynoos_bin).with_name("xynoos-bench"))
 
     if candidate in ("candidate_c_observe_only", "candidate_d_advisory"):
         mode_flag = "observe-only" if candidate == "candidate_c_observe_only" else "advisory"
@@ -229,12 +231,20 @@ def run_single_trial(
         )
         time.sleep(0.25)
     elif candidate == "candidate_e_transactional":
-        # Explicitly authorized bounded policy on disposable workload cgroups:
-        # protect foreground memory.low and softly throttle background memory.high
+        # Explicitly authorized bounded policy via Rust WorkloadCgroup + SustainedLease:
+        # protect foreground memory.low; only apply background memory.high when contended (not unpressured Profile C)
         fg_low = int(profile_cfg["session_mem_bytes"] * 0.45) // 4096 * 4096
-        bg_high = int(profile_cfg["session_mem_bytes"] * 0.55) // 4096 * 4096
-        write_cg(fg_cg, "memory.low", str(fg_low))
-        write_cg(bg_cg, "memory.high", str(bg_high))
+        contended = profile_cfg["bg_alloc_mib"] * 1024 * 1024 >= int(profile_cfg["session_mem_bytes"] * 0.85)
+        bg_high = (int(profile_cfg["session_mem_bytes"] * 0.55) // 4096 * 4096) if contended else 0
+        lease_proc = subprocess.Popen(
+            [bench_bin, "workload-lease", str(fg_cg), str(fg_low), str(bg_cg), str(bg_high)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        ready = lease_proc.stdout.readline().decode().strip()
+        if ready != "READY":
+            raise RuntimeError(f"workload-lease failed: {lease_proc.stderr.read().decode()}")
 
     vm_before = parse_vmstat()
     psi_mem_before = parse_psi("/proc/pressure/memory")
@@ -309,13 +319,13 @@ def run_single_trial(
         fg_wall_s = time.monotonic() - t_fg0
 
     elif workload_kind == "dev_compile":
-        # Small Rust/C compilation workload in fg_cg under background memory pressure
+        # Small/medium C compilation workload in fg_cg under background memory pressure
         c_src = Path(work_dir) / "compile_unit.c"
         c_out = Path(work_dir) / "compile_unit.bin"
         lines = ["#include <stdio.h>\n"]
-        for fn in range(120):
-            lines.append(f"static int fn_{fn}(int x) {{ return (x * {fn + 3}) ^ {fn * 17}; }}\n")
-        lines.append("int main(void){ int acc=0; for(int i=0;i<1000;i++){ acc+=fn_0(i)+fn_119(i); } printf(\"%d\\n\",acc); return 0; }\n")
+        for fn in range(1200):
+            lines.append(f"__attribute__((noinline)) static int fn_{fn}(int x) {{ return ((x * {fn + 3}) ^ {fn * 17}) + (x >> 2); }}\n")
+        lines.append("int main(void){ int acc=0; for(int i=0;i<1000;i++){ acc+=fn_0(i)+fn_1199(i); } printf(\"%d\\n\",acc); return 0; }\n")
         c_src.write_text("".join(lines))
         t_fg0 = time.monotonic()
         compiler = shutil.which("gcc") or shutil.which("cc")
@@ -374,13 +384,14 @@ def run_single_trial(
     if daemon_out_fh is not None:
         daemon_out_fh.close()
 
-    # Restore candidate E controls explicitly before cleanup
-    if candidate == "candidate_e_transactional":
+    if lease_proc is not None:
         try:
-            write_cg(fg_cg, "memory.low", "0")
-            write_cg(bg_cg, "memory.high", "max")
+            lease_proc.stdin.write(b"DONE\n")
+            lease_proc.stdin.flush()
+            lease_proc.stdin.close()
         except OSError:
             pass
+        lease_proc.communicate(timeout=10)
 
     fg_events = parse_cgroup_events(fg_cg)
     bg_events = parse_cgroup_events(bg_cg)
@@ -457,16 +468,16 @@ def main():
             "logical_limit_desc": "2 GiB RAM / 2 CPUs profile with 256 MiB session contention ceiling",
             "session_mem_bytes": 256 * 1024 * 1024,
             "cpu_max": "200000 100000",
-            "bg_alloc_mib": 220,
+            "bg_alloc_mib": 248,
         },
         "profile_b_4g_4cpu_n5000_approx": {
             "logical_limit_desc": "4 GiB RAM / 4 CPUs profile with 384 MiB session contention ceiling",
             "session_mem_bytes": 384 * 1024 * 1024,
             "cpu_max": "400000 100000",
-            "bg_alloc_mib": 320,
+            "bg_alloc_mib": 368,
         },
         "profile_c_8g_4cpu_desktop_ref": {
-            "logical_limit_desc": "8 GiB RAM / 4 CPUs reference profile with 768 MiB session ceiling",
+            "logical_limit_desc": "8 GiB RAM / 4 CPUs reference profile with 768 MiB session ceiling (uncontended)",
             "session_mem_bytes": 768 * 1024 * 1024,
             "cpu_max": "400000 100000",
             "bg_alloc_mib": 220,

@@ -18,7 +18,10 @@ use xynoos_hypermemory::{
     compress_exact, decompress_with_codec, ClusterStore, CodecScratch, HyperMemoryPool, PageId,
     PageStore,
 };
-use xynoos_linux_control::transaction::{self, Backend, Identity};
+use xynoos_linux_control::{
+    transaction::{self, Backend, Identity, SustainedLease, WorkloadCgroup},
+    Action,
+};
 use xynoos_pressureiq::intelligence::Diagnosis;
 const N: usize = 256;
 const SIZE: usize = 4096;
@@ -117,6 +120,9 @@ fn main() -> Result<(), Box<dyn Error>> {
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(5);
         return run_hypermemory_app_benchmark(trials);
+    }
+    if args.len() == 6 && args[1] == "workload-lease" {
+        return run_workload_lease(&args[2], &args[3], &args[4], &args[5]);
     }
     if args.len() == 1 {
         println!("dataset,backend,run,insert_batch_ns_per_page,get_batch_ns_per_page,codec_compress_mib_s,codec_decompress_mib_s,payload_bytes,capacity_bytes,metadata_bytes,map_capacity,raw_pages,compressed_pages,rss_before_kib,rss_loaded_kib,peak_kib,cpu_ns");
@@ -1760,5 +1766,61 @@ fn run_hypermemory_app_benchmark(trials: usize) -> Result<(), Box<dyn Error>> {
             }
         }
     }
+    Ok(())
+}
+
+fn run_workload_lease(
+    fg_cg: &str,
+    fg_low_str: &str,
+    bg_cg: &str,
+    bg_high_str: &str,
+) -> Result<(), Box<dyn Error>> {
+    use std::io::{Read, Write};
+    let fg_low: u64 = fg_low_str.parse()?;
+    let bg_high: u64 = bg_high_str.parse()?;
+    let mut fg_backend = WorkloadCgroup::open(std::path::Path::new(fg_cg), true)
+        .map_err(|e| format!("open fg cgroup failed: {e}"))?;
+    let mut bg_backend = WorkloadCgroup::open(std::path::Path::new(bg_cg), true)
+        .map_err(|e| format!("open bg cgroup failed: {e}"))?;
+    let snap = xynoos_pressureiq::system::collect_system();
+
+    let mut fg_lease = SustainedLease::acquire(
+        &mut fg_backend,
+        &snap,
+        Action::MemoryLow { bytes: fg_low },
+        true,
+    )
+    .map_err(|r| format!("fg lease acquire failed: {:?}", r.events))?;
+
+    let mut bg_lease_opt = if bg_high > 0 {
+        Some(
+            SustainedLease::acquire(
+                &mut bg_backend,
+                &snap,
+                Action::MemoryHigh { bytes: bg_high },
+                true,
+            )
+            .map_err(|r| {
+                let _ = fg_lease.release(&mut fg_backend);
+                format!("bg lease acquire failed: {:?}", r.events)
+            })?,
+        )
+    } else {
+        None
+    };
+
+    println!("READY");
+    std::io::stdout().flush()?;
+    let mut buf = [0u8; 16];
+    let _ = std::io::stdin().read(&mut buf);
+
+    let bg_res = bg_lease_opt
+        .as_mut()
+        .map(|l| l.release(&mut bg_backend).outcome);
+    let fg_res = fg_lease.release(&mut fg_backend).outcome;
+    println!(
+        "{{\"fg_outcome\":\"{:?}\",\"bg_outcome\":\"{:?}\"}}",
+        fg_res, bg_res
+    );
     Ok(())
 }

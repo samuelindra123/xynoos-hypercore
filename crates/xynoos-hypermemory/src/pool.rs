@@ -241,14 +241,17 @@ mod tests {
 
     #[test]
     fn pool_supports_codec_migration_without_corruption() {
-        let mut pool = HyperMemoryPool::with_budget(16, usize::MAX).unwrap();
-        let payload = vec![b'X'; 12_288];
+        let mut pool = HyperMemoryPool::with_budget(32, usize::MAX).unwrap();
+        // 16 pages (64 KiB) so net savings exceed even the 32 KiB scaled LZ4HC scratch
+        let payload = vec![b'X'; 16 * 4096];
         let h = pool.put_with_codec(&payload, CodecId::Raw).unwrap();
         let moved = pool
             .set_buffer_codec(h, CodecId::Lz4Hc { level: 6 })
             .unwrap();
-        assert_eq!(moved, 3);
+        assert_eq!(moved, 16);
         assert_eq!(pool.get(h).unwrap(), payload);
-        assert!(pool.overhead_accounting().net_savings_bytes > 0);
+        let acct = pool.overhead_accounting();
+        assert!(acct.stored_payload_bytes < acct.original_logical_bytes);
+        assert!(acct.net_savings_bytes > 0);
     }
 }
