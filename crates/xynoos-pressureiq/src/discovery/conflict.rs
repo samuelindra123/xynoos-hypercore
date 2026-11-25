@@ -174,9 +174,7 @@ pub fn analyze_conflicts(
                     "disk_backed_swap".into(),
                 ],
                 explanation: format!(
-                    "System features active ZRAM swap alongside disk-backed swap and kernel ZSWAP. ZSWAP accelerates cold page evictions to disk storage while ZRAM absorbs transient memory pressure.",
-                    zswap_algo = zswap_algo,
-                    zram_algo = zram_algo,
+                    "System features active ZRAM swap (algorithm: {zram_algo}) alongside disk-backed swap and kernel ZSWAP (compressor: {zswap_algo}). ZSWAP accelerates cold page evictions to disk storage while ZRAM absorbs transient memory pressure."
                 ),
                 recommendation: "Preserve tiered hierarchy; ensure ZRAM swap priority exceeds disk swap priority.".into(),
                 evidence: vec![
@@ -196,9 +194,7 @@ pub fn analyze_conflicts(
                     format!("zswap(algo={zswap_algo})"),
                 ],
                 explanation: format!(
-                    "Both kernel ZSWAP and ZRAM are active without a disk swap partition. ZSWAP may compress pages before handing them to ZRAM, adding redundant CPU compression overhead.",
-                    zswap_algo = zswap_algo,
-                    zram_algo = zram_algo,
+                    "Both kernel ZSWAP (compressor: {zswap_algo}) and ZRAM (algorithm: {zram_algo}) are active without a disk swap partition. ZSWAP may compress pages before handing them to ZRAM, adding redundant CPU compression overhead."
                 ),
                 recommendation: "When ZRAM is the sole swap device, consider disabling zswap (`echo 0 > /sys/module/zswap/parameters/enabled`) to eliminate double compression overhead.".into(),
                 evidence: vec![
