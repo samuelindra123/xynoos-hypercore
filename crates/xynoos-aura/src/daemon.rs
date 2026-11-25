@@ -1245,14 +1245,16 @@ mod tests {
         })
         .unwrap();
         daemon.page_store = PageStore::adaptive(4096, 8, usize::MAX).unwrap();
-        daemon
-            .page_store
-            .insert_with_codec(
-                &[b'A'; 4096],
-                xynoos_core::CodecId::Raw,
-                xynoos_core::EvictionPolicy::Reject,
-            )
-            .unwrap();
+        for i in 0..6u8 {
+            daemon
+                .page_store
+                .insert_with_codec(
+                    &[b'A' + i; 4096],
+                    xynoos_core::CodecId::Raw,
+                    xynoos_core::EvictionPolicy::Reject,
+                )
+                .unwrap();
+        }
         let multi = MultiResourceDiagnosis {
             memory_diagnosis: Diagnosis {
                 classes: vec!["sustained_pressure".into()],
