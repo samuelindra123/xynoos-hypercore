@@ -16,7 +16,7 @@ pub mod pool;
 pub use cluster::*;
 pub use codec::{
     compress_adaptive, compress_exact, compress_lz4hc_into, decompress_with_codec, CodecScratch,
-    CompressedObjectMeta,
+    CompressedObjectMeta, MAX_BLOCK_SIZE,
 };
 pub use pool::{BufferHandle, BufferInfo, HyperMemoryPool, PoolAccounting};
 

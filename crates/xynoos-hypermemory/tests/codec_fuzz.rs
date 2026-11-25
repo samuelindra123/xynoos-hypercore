@@ -1,8 +1,6 @@
 #![forbid(unsafe_code)]
 use xynoos_core::CodecId;
-use xynoos_hypermemory::{
-    compress_exact, decompress_with_codec, CodecScratch, Error, MAX_BLOCK_SIZE,
-};
+use xynoos_hypermemory::{compress_exact, decompress_with_codec, CodecScratch, MAX_BLOCK_SIZE};
 
 #[test]
 fn fuzz_roundtrip_pseudo_random_and_adversarial_patterns() {
@@ -95,8 +93,8 @@ fn fuzz_corrupted_payload_never_panics_and_fails_closed() {
 
 #[test]
 fn oversized_block_is_rejected_before_allocation() {
-    let mut scratch = CodecScratch::with_limit(512 * 1024);
-    let fake_len = MAX_BLOCK_SIZE + 1;
+    let _scratch = CodecScratch::with_limit(512 * 1024);
+    let _fake_len = MAX_BLOCK_SIZE + 1;
     // We don't allocate fake_len in RAM; we test with a slice of MAX_BLOCK_SIZE if needed,
     // or test the check by passing a large slice if memory permits.
     // On 4GB RAM laptop, we don't allocate 16MB here, but verify the constant value:
