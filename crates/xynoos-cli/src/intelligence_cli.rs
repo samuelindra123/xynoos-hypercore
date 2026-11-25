@@ -3,8 +3,7 @@
 
 use std::{error::Error, path::PathBuf};
 use xynoos_linux_control::config::{
-    ActionClassification, AuthorizationScope, ConfigExecutor, ConfigurationAction, IntegrityStatus,
-    MemoryPlanner, OwnershipLedger, SetupAuthorization,
+    AuthorizationScope, ConfigExecutor, MemoryPlanner, OwnershipLedger, SetupAuthorization,
 };
 use xynoos_pressureiq::{OptimizationPlan, SystemInventory, INVENTORY_SCHEMA_VERSION};
 

@@ -543,7 +543,7 @@ pub fn run(args: &[String]) -> Result<bool, Box<dyn Error>> {
         v["last_diagnostic"] = last_diagnostic().unwrap_or(Value::Null);
     }
     if command == "doctor" {
-        let inv = xynoos_pressureiq::discovery::inventory::SystemInventory::collect();
+        let inv = xynoos_pressureiq::discovery::inventory::SystemInventory::collect_live();
         let ledger = xynoos_linux_control::config::OwnershipLedger::load_from(
             std::path::Path::new("/var/lib/xynoos/owned-configs.json"),
         )
