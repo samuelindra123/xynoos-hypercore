@@ -30,7 +30,11 @@ pub struct MemoryPlanner;
 impl MemoryPlanner {
     /// Categorize host hardware into an evidence-based memory profile.
     pub fn determine_profile(inv: &SystemInventory) -> MemoryProfile {
-        if inv.platform.virtualization.is_some() || inv.platform.container_runtime.is_some() {
+        if inv.platform.virtualization
+            != xynoos_pressureiq::discovery::platform::VirtualizationEnvironment::Physical
+            || inv.platform.container_environment
+                != xynoos_pressureiq::discovery::platform::ContainerEnvironment::None
+        {
             return MemoryProfile::VirtualMachineContainer;
         }
 
@@ -52,21 +56,14 @@ impl MemoryPlanner {
 
     /// Select optimal kernel compression algorithm based on CPU capabilities.
     pub fn select_compression_algorithm(inv: &SystemInventory) -> &'static str {
-        let is_low_power_cpu = inv
-            .cpu
-            .model_name
-            .as_deref()
-            .map(|m| {
-                m.contains("N5000")
-                    || m.contains("Celeron")
-                    || m.contains("Atom")
-                    || m.contains("Silver")
-            })
-            .unwrap_or(false);
+        let is_low_power_cpu = inv.cpu.model_name.contains("N5000")
+            || inv.cpu.model_name.contains("Celeron")
+            || inv.cpu.model_name.contains("Atom")
+            || inv.cpu.model_name.contains("Silver");
 
         if is_low_power_cpu {
             "lz4"
-        } else if inv.cpu.cores >= 4 && inv.memory.total_bytes >= 8 * 1024 * 1024 * 1024 {
+        } else if inv.cpu.physical_cores >= 4 && inv.memory.total_bytes >= 8 * 1024 * 1024 * 1024 {
             "zstd"
         } else {
             "lz4"

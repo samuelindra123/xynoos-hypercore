@@ -37,10 +37,11 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼─────────────────────────────────────┐
-│  Milestone L: Universal Memory, Zram, Zswap, Swap & OOM Optimization   │
+│  Milestone L: Reversible Configuration Engine & Universal Memory Opt   │
+│  - Reversible execution engine, action model, journal & ownership ledger│
 │  - Dynamic ZRAM creation, algorithm selection (LZ4/ZSTD), swap priority│
-│  - Zswap vs Zram coordination, swappiness/vfs_cache_pressure tuning    │
-│  - Cooperative OOM management integration without process double-kills │
+│  - Zswap vs Zram coordination, swappiness/page-cluster memory sysctls  │
+│  - Cooperative OOM coexistence and authorized CLI setup lifecycle      │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼─────────────────────────────────────┐
@@ -58,10 +59,10 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼─────────────────────────────────────┐
-│  Milestone O: Automatic One-Time Setup, Ownership & Safe Rollback      │
-│  - Authorizable `xynoos setup --apply` execution engine                │
-│  - Strict ownership tracking (/etc/xynoos/owned-configs.json)          │
-│  - Atomic, idempotent restoration and transactional rollback           │
+│  Milestone O: Full Cross-Subsystem Automatic Setup & System Coexistence│
+│  - End-to-end multi-subsystem `xynoos setup --auto` coordination       │
+│  - Global conflict reconciliation across CPU, Memory, GPU & Storage    │
+│  - Whole-system transactional verification and unified rollback        │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼─────────────────────────────────────┐
@@ -104,17 +105,26 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
   - PASS: Physical read-only discovery executed and documented on N5000 reference hardware.
   - PASS: Setup planning strictly refuses `--apply` during Milestone K.
 
-### Milestone L — Universal Memory, Zram, Zswap, Swap & OOM Optimization
-- **Objective**: Implement safe, authorizable memory optimization mechanisms.
+### Milestone L — Reversible Configuration Engine, Universal Memory Optimization & Authorized Automatic Setup Foundation (Current)
+- **Objective**: Implement working, authorizable, reversible configuration execution system and universal memory optimization foundation.
 - **Scope**:
-  - Managed ZRAM lifecycle: automatic device sizing, kernel algorithm selection (LZ4, ZSTD, LZO).
+  - Deterministic versioned `ConfigurationAction` schema with typed allowlisted mutations.
+  - Configuration ownership ledger (`/etc/xynoos/owned-configs.json`) with checksums and tamper detection.
+  - Durable configuration journal (`config-journal.json`) with crash recovery semantics.
+  - Managed ZRAM lifecycle: conservative allocation heuristics, algorithm intelligence (LZ4 for low-power N5000, ZSTD for desktops).
   - Swap tiering coordination: prioritizing ZRAM swap over disk swap via priority weighting.
-  - Coordination with kernel ZSWAP to eliminate double compression overhead.
-  - Swappiness and page-cluster adaptation based on storage backing.
+  - Context-aware ZSWAP coordination (tiered coexistence with disk swap; eliminating double compression when ZRAM is sole swap).
+  - Memory sysctl allowlist (`vm.swappiness`, `vm.page-cluster`, `vm.vfs_cache_pressure`) with managed drop-ins (`/etc/sysctl.d/99-xynoos-memory.conf`).
+  - Transparent Huge Pages (THP) workload-aware policy.
+  - Cooperative userspace OOM coexistence (EarlyOOM, systemd-oomd, nohang).
+  - Complete CLI setup lifecycle (`setup --plan`, `setup --apply --authorized`, `setup --status`, `setup --rollback`, `doctor`).
 - **Acceptance Criteria**:
-  - Requires explicit operator authorization (`--authorized`).
-  - No disruption of existing third-party ZRAM managers without user consent.
-  - Automatic rollback on daemon exit or failure.
+  - PASS: Planning strictly read-only; zero mutation without explicit operator authorization.
+  - PASS: Requires explicit operator authorization (`--authorized`); fails fail-closed without it.
+  - PASS: Ownership ledger tracks all applied values, original values, and drop-in checksums.
+  - PASS: Complete, verified restoration and drop-in removal upon rollback.
+  - PASS: Refuses blind rollback if configuration files were tampered with or modified externally.
+  - PASS: Real remote mutation qualification in disposable runners passes completely.
 
 ### Milestone M — CPU, Scheduling, Thermal & Power Intelligence
 - **Objective**: Coordinate CPU frequency governors, idle states, and scheduling policies.
@@ -137,15 +147,15 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
   - Zero direct PCI register writes; interact only through supported kernel sysfs/DRM interfaces.
   - Preserves mount options and filesystem integrity.
 
-### Milestone O — Automatic One-Time Setup, Ownership & Rollback
-- **Objective**: Deliver the unified `xynoos setup` experience with safe ownership tracking.
+### Milestone O — Full Cross-Subsystem Automatic Setup & System Coexistence
+- **Objective**: Deliver end-to-end multi-subsystem `xynoos setup --auto` coordination.
 - **Scope**:
-  - Single interactive command `xynoos setup --apply`.
-  - Generation of `/etc/xynoos/owned-configs.json` tracking all modified parameters and original values.
-  - Atomic restoration via `xynoos rollback` or `xynoos uninstall`.
+  - Unified one-time setup orchestrating CPU, Memory, GPU, Storage, and Power policies.
+  - Global cross-subsystem conflict resolution.
+  - Whole-system transactional verification and unified multi-file rollback.
 - **Acceptance Criteria**:
-  - Zero modifications to un-owned or foreign configuration files.
-  - Complete, verifiable restoration back to original state upon rollback.
+  - Zero uncoordinated writes across disparate hardware subsystems.
+  - Verified atomic restoration back to baseline on any failure or user rollback request.
 
 ### Milestone P — Cross-Distribution Packaging & Init Compatibility
 - **Objective**: Broaden package availability across major Linux distributions.

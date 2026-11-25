@@ -93,6 +93,8 @@ pub enum ReversalProcedure {
     },
     /// Reset or unmount a zram block device
     ResetZramDevice { device_name: String },
+    /// Restore Transparent Huge Pages mode
+    RestoreThp { original_mode: String },
     /// Preserved configuration requires no rollback mutation
     NoOpPreserved,
 }
