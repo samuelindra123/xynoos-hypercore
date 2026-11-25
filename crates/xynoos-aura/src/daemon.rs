@@ -8,7 +8,7 @@ use crate::tiering::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
     sync::{
@@ -1197,6 +1197,9 @@ mod tests {
         backend.low = 48 * 1024 * 1024;
         assert!(daemon.reconcile_crash_recovery(&mut backend).is_err());
         assert_eq!(backend.low, 48 * 1024 * 1024); // fail-closed: not overwritten!
+
+        // Re-write journal for normal crash recovery test
+        journal.persist(&journal_file).unwrap();
 
         // Normal crash recovery when value matches requested_value
         backend.low = 32 * 1024 * 1024;

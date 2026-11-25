@@ -3,14 +3,14 @@
 
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
 };
 use xynoos_linux_control::{
     journal::{
         current_boot_id, recover_durable_lease, LeasePhase, RecoveryOutcome, TransactionJournal,
     },
-    transaction::{check, run, Backend, Identity, Outcome, SustainedLease},
+    transaction::{run, Backend, Identity, Outcome, SustainedLease},
     Action,
 };
 

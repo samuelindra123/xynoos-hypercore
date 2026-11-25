@@ -2,18 +2,16 @@
 
 use std::{
     fs,
-    path::{Path, PathBuf},
+    path::PathBuf,
     sync::atomic::{AtomicU64, Ordering},
 };
 use xynoos_linux_control::{
     journal::{
-        current_boot_id, recover_durable_lease, JournalStatus, LeasePhase, RecoveryOutcome,
-        TransactionJournal,
+        current_boot_id, recover_durable_lease, LeasePhase, RecoveryOutcome, TransactionJournal,
     },
     transaction::{Backend, Identity, SustainedLease},
     Action,
 };
-use xynoos_pressureiq::system::SystemSnapshot;
 
 static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(100);
 
