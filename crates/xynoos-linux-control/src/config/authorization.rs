@@ -10,6 +10,7 @@ pub struct SetupAuthorization {
     pub authorized_by: String,
     pub scope: AuthorizationScope,
     pub plan_fingerprint: String,
+    pub allowed_action_ids: Option<Vec<String>>,
     pub created_at_unix_ms: u64,
     pub expires_at_unix_ms: u64,
 }
@@ -27,9 +28,16 @@ impl SetupAuthorization {
             authorized_by: authorized_by.into(),
             scope,
             plan_fingerprint: plan_fingerprint.into(),
+            allowed_action_ids: None,
             created_at_unix_ms: now_ms,
             expires_at_unix_ms: now_ms.saturating_add(validity_duration_ms),
         }
+    }
+
+    /// Attach an explicit set of authorized action IDs.
+    pub fn with_allowed_actions(mut self, action_ids: Vec<String>) -> Self {
+        self.allowed_action_ids = Some(action_ids);
+        self
     }
 
     /// Check whether the authorization is active and covers the required scope and plan.
@@ -50,7 +58,22 @@ impl SetupAuthorization {
             (AuthorizationScope::MemoryOptimization, AuthorizationScope::MemoryOptimization) => {
                 Ok(())
             }
+            (AuthorizationScope::CpuOptimization, AuthorizationScope::CpuOptimization) => Ok(()),
+            (AuthorizationScope::StorageOptimization, AuthorizationScope::StorageOptimization) => {
+                Ok(())
+            }
+            (AuthorizationScope::PowerOptimization, AuthorizationScope::PowerOptimization) => {
+                Ok(())
+            }
             _ => Err("Granted authorization scope does not cover requested action scope"),
+        }
+    }
+
+    /// Check whether an action ID is permitted by this authorization token.
+    pub fn allows_action_id(&self, action_id: &str) -> bool {
+        match &self.allowed_action_ids {
+            Some(allowed) => allowed.iter().any(|id| id == action_id),
+            None => true,
         }
     }
 }

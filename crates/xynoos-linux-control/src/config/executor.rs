@@ -2,7 +2,7 @@
 #![forbid(unsafe_code)]
 
 use super::{
-    action::{ActionClassification, AuthorizationScope, ConfigurationAction, TypedMutation},
+    action::{ActionClassification, ConfigurationAction, TypedMutation},
     authorization::SetupAuthorization,
     journal::{ConfigJournal, ConfigJournalItem, ConfigTxPhase},
     ledger::{IntegrityStatus, OwnershipLedger},
@@ -97,13 +97,15 @@ impl ConfigExecutor {
         plan_fingerprint: &str,
         now_ms: u64,
     ) -> Result<ExecutionSummary, String> {
-        // 1. Authorization validation
-        auth.is_valid(
-            AuthorizationScope::MemoryOptimization,
-            plan_fingerprint,
-            now_ms,
-        )
-        .map_err(|e| format!("Authorization error: {e}"))?;
+        // 1. Authorization validation (fingerprint and expiration)
+        if now_ms > auth.expires_at_unix_ms {
+            return Err("Authorization token has expired".into());
+        }
+        if auth.plan_fingerprint != plan_fingerprint {
+            return Err(
+                "Plan fingerprint mismatch: authorization does not match current plan".into(),
+            );
+        }
 
         // 2. Load or initialize durable ledger
         let mut ledger = self
@@ -123,6 +125,33 @@ impl ConfigExecutor {
         let mut failed_count = 0;
 
         for action in actions {
+            // Check action authorization
+            if !auth.allows_action_id(&action.action_id) {
+                skipped_count += 1;
+                results.push(ActionResult {
+                    action_id: action.action_id.clone(),
+                    success: false,
+                    message: format!(
+                        "Skipped: action {} is not in authorized action list",
+                        action.action_id
+                    ),
+                });
+                continue;
+            }
+
+            if action.is_mutation() {
+                if let Err(e) = auth.is_valid(action.authorization_scope, plan_fingerprint, now_ms)
+                {
+                    skipped_count += 1;
+                    results.push(ActionResult {
+                        action_id: action.action_id.clone(),
+                        success: false,
+                        message: format!("Skipped: authorization scope error: {e}"),
+                    });
+                    continue;
+                }
+            }
+
             // Revalidate action
             if action.classification == ActionClassification::Preserve {
                 skipped_count += 1;
@@ -325,6 +354,17 @@ impl ConfigExecutor {
                 algorithm,
                 priority,
             } => {
+                let swaps_path = self.proc_root.join("swaps");
+                if swaps_path.exists() {
+                    if let Ok(swaps_content) = fs::read_to_string(&swaps_path) {
+                        if swaps_content.lines().any(|l| l.contains(device_name)) {
+                            return Err(format!(
+                                "ZRAM device {device_name} is actively populated swap. Refusing unsafe live reconfiguration."
+                            ));
+                        }
+                    }
+                }
+
                 let zram_block = self.sys_root.join(format!("block/{device_name}"));
                 if zram_block.exists() {
                     // If zram block device exists in sysfs, configure algorithm and disksize
@@ -374,6 +414,13 @@ impl ConfigExecutor {
                 if p_path.exists() {
                     fs::write(&p_path, target_value.as_bytes())
                         .map_err(|e| format!("Failed writing zswap {parameter}: {e}"))?;
+                    let readback = fs::read_to_string(&p_path)
+                        .map_err(|e| format!("Failed reading back zswap {parameter}: {e}"))?;
+                    if readback.trim() != target_value.trim() {
+                        return Err(format!(
+                            "Zswap verification failed for {parameter}: expected {target_value}, read {readback}"
+                        ));
+                    }
                 }
 
                 journal.record_item(ConfigJournalItem {
@@ -405,7 +452,16 @@ impl ConfigExecutor {
             } => {
                 let thp_path = self.sys_root.join("kernel/mm/transparent_hugepage/enabled");
                 if thp_path.exists() {
-                    let _ = fs::write(&thp_path, mode.as_bytes());
+                    fs::write(&thp_path, mode.as_bytes())
+                        .map_err(|e| format!("Failed writing THP mode: {e}"))?;
+                    let readback = fs::read_to_string(&thp_path)
+                        .map_err(|e| format!("Failed reading back THP mode: {e}"))?;
+                    let expected_bracket = format!("[{mode}]");
+                    if !readback.contains(&expected_bracket) {
+                        return Err(format!(
+                            "THP verification failed: expected {expected_bracket}, read {readback}"
+                        ));
+                    }
                 }
 
                 journal.record_item(ConfigJournalItem {
@@ -429,6 +485,426 @@ impl ConfigExecutor {
                 );
 
                 Ok(format!("Configured Transparent Huge Pages mode to {mode}"))
+            }
+
+            TypedMutation::ApplyCpuGovernor {
+                cpu_range,
+                governor,
+                original_governor,
+            } => {
+                let allowed = [
+                    "schedutil",
+                    "powersave",
+                    "performance",
+                    "ondemand",
+                    "conservative",
+                ];
+                if !allowed.contains(&governor.as_str()) {
+                    return Err(format!(
+                        "Disallowed or unrecognized CPU governor: {governor}"
+                    ));
+                }
+                let cpu_root = self.sys_root.join("devices/system/cpu");
+                if cpu_root.exists() {
+                    let mut entries: Vec<_> = fs::read_dir(&cpu_root)
+                        .map_err(|e| format!("Failed reading sysfs cpu root: {e}"))?
+                        .flatten()
+                        .filter(|e| e.file_name().to_string_lossy().starts_with("cpu"))
+                        .filter(|e| {
+                            e.file_name()
+                                .to_string_lossy()
+                                .strip_prefix("cpu")
+                                .is_some_and(|s| s.chars().all(|c| c.is_ascii_digit()))
+                        })
+                        .collect();
+                    entries.sort_by_key(|e| e.file_name());
+
+                    for entry in entries {
+                        let gov_path = entry.path().join("cpufreq/scaling_governor");
+                        if gov_path.exists() {
+                            fs::write(&gov_path, governor.as_bytes())
+                                .map_err(|e| format!("Failed writing CPU governor: {e}"))?;
+                            let readback = fs::read_to_string(&gov_path)
+                                .map_err(|e| format!("Failed reading back CPU governor: {e}"))?;
+                            if readback.trim() != governor.trim() {
+                                return Err(format!(
+                                    "CPU governor verification failed: expected {governor}, read {readback}"
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                journal.record_item(ConfigJournalItem {
+                    action_id: format!("cpu-gov-{cpu_range}"),
+                    target_key: format!("cpu.governor.{cpu_range}"),
+                    target_file: None,
+                    original_value: original_governor.clone(),
+                    applied_value: governor.clone(),
+                    is_applied: true,
+                });
+                let _ = journal.persist(&self.journal_path, now_ms);
+
+                ledger.record_applied(
+                    format!("cpu.governor.{cpu_range}"),
+                    None,
+                    original_governor.clone(),
+                    governor.clone(),
+                    None,
+                    tx_id.to_string(),
+                    now_ms,
+                );
+
+                Ok(format!(
+                    "Applied CPU governor {governor} to {cpu_range} CPUs"
+                ))
+            }
+
+            TypedMutation::ApplyCpuEpp {
+                cpu_range,
+                epp,
+                original_epp,
+            } => {
+                let allowed = [
+                    "performance",
+                    "balance_performance",
+                    "balance_power",
+                    "power",
+                    "default",
+                ];
+                if !allowed.contains(&epp.as_str()) {
+                    return Err(format!("Disallowed or unrecognized CPU EPP: {epp}"));
+                }
+                let cpu_root = self.sys_root.join("devices/system/cpu");
+                if cpu_root.exists() {
+                    let mut entries: Vec<_> = fs::read_dir(&cpu_root)
+                        .map_err(|e| format!("Failed reading sysfs cpu root: {e}"))?
+                        .flatten()
+                        .filter(|e| e.file_name().to_string_lossy().starts_with("cpu"))
+                        .filter(|e| {
+                            e.file_name()
+                                .to_string_lossy()
+                                .strip_prefix("cpu")
+                                .is_some_and(|s| s.chars().all(|c| c.is_ascii_digit()))
+                        })
+                        .collect();
+                    entries.sort_by_key(|e| e.file_name());
+
+                    for entry in entries {
+                        let epp_path = entry.path().join("cpufreq/energy_performance_preference");
+                        if epp_path.exists() {
+                            fs::write(&epp_path, epp.as_bytes())
+                                .map_err(|e| format!("Failed writing CPU EPP: {e}"))?;
+                            let readback = fs::read_to_string(&epp_path)
+                                .map_err(|e| format!("Failed reading back CPU EPP: {e}"))?;
+                            if readback.trim() != epp.trim() {
+                                return Err(format!(
+                                    "CPU EPP verification failed: expected {epp}, read {readback}"
+                                ));
+                            }
+                        }
+                    }
+                }
+
+                journal.record_item(ConfigJournalItem {
+                    action_id: format!("cpu-epp-{cpu_range}"),
+                    target_key: format!("cpu.epp.{cpu_range}"),
+                    target_file: None,
+                    original_value: original_epp.clone(),
+                    applied_value: epp.clone(),
+                    is_applied: true,
+                });
+                let _ = journal.persist(&self.journal_path, now_ms);
+
+                ledger.record_applied(
+                    format!("cpu.epp.{cpu_range}"),
+                    None,
+                    original_epp.clone(),
+                    epp.clone(),
+                    None,
+                    tx_id.to_string(),
+                    now_ms,
+                );
+
+                Ok(format!("Applied CPU EPP {epp} to {cpu_range} CPUs"))
+            }
+
+            TypedMutation::ApplyCpuFrequencyBounds {
+                cpu_range,
+                min_freq_khz,
+                max_freq_khz,
+                original_min,
+                original_max,
+            } => {
+                let cpu_root = self.sys_root.join("devices/system/cpu");
+                if cpu_root.exists() {
+                    for entry in fs::read_dir(&cpu_root).into_iter().flatten().flatten() {
+                        let name = entry.file_name().to_string_lossy().to_string();
+                        if name.starts_with("cpu")
+                            && name
+                                .strip_prefix("cpu")
+                                .is_some_and(|s| s.chars().all(|c| c.is_ascii_digit()))
+                        {
+                            if let Some(min_f) = min_freq_khz {
+                                let min_p = entry.path().join("cpufreq/scaling_min_freq");
+                                if min_p.exists() {
+                                    let _ = fs::write(&min_p, min_f.to_string().as_bytes());
+                                }
+                            }
+                            if let Some(max_f) = max_freq_khz {
+                                let max_p = entry.path().join("cpufreq/scaling_max_freq");
+                                if max_p.exists() {
+                                    let _ = fs::write(&max_p, max_f.to_string().as_bytes());
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let applied_str = format!("{:?}:{:?}", min_freq_khz, max_freq_khz);
+                let orig_str = format!("{:?}:{:?}", original_min, original_max);
+                journal.record_item(ConfigJournalItem {
+                    action_id: format!("cpu-bounds-{cpu_range}"),
+                    target_key: format!("cpu.freq_bounds.{cpu_range}"),
+                    target_file: None,
+                    original_value: Some(orig_str.clone()),
+                    applied_value: applied_str.clone(),
+                    is_applied: true,
+                });
+                let _ = journal.persist(&self.journal_path, now_ms);
+
+                ledger.record_applied(
+                    format!("cpu.freq_bounds.{cpu_range}"),
+                    None,
+                    Some(orig_str),
+                    applied_str,
+                    None,
+                    tx_id.to_string(),
+                    now_ms,
+                );
+
+                Ok(format!("Applied CPU frequency bounds to {cpu_range} CPUs"))
+            }
+
+            TypedMutation::ApplyBlockIoScheduler {
+                device_name,
+                scheduler,
+                original_scheduler,
+            } => {
+                if device_name.contains('/')
+                    || device_name.contains("..")
+                    || !device_name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                {
+                    return Err(format!("Unsafe block device name: {device_name}"));
+                }
+                let allowed = ["none", "mq-deadline", "bfq", "kyber"];
+                if !allowed.contains(&scheduler.as_str()) {
+                    return Err(format!(
+                        "Disallowed or unrecognized I/O scheduler: {scheduler}"
+                    ));
+                }
+                let sched_path = self
+                    .sys_root
+                    .join(format!("block/{device_name}/queue/scheduler"));
+                if sched_path.exists() {
+                    fs::write(&sched_path, scheduler.as_bytes()).map_err(|e| {
+                        format!("Failed writing I/O scheduler for {device_name}: {e}")
+                    })?;
+                    let readback = fs::read_to_string(&sched_path).map_err(|e| {
+                        format!("Failed reading back I/O scheduler for {device_name}: {e}")
+                    })?;
+                    let expected_bracket = format!("[{scheduler}]");
+                    if !readback.contains(&expected_bracket) {
+                        return Err(format!(
+                            "I/O scheduler verification failed for {device_name}: expected {expected_bracket}, read {readback}"
+                        ));
+                    }
+                }
+
+                journal.record_item(ConfigJournalItem {
+                    action_id: format!("storage-sched-{device_name}"),
+                    target_key: format!("block.scheduler.{device_name}"),
+                    target_file: None,
+                    original_value: original_scheduler.clone(),
+                    applied_value: scheduler.clone(),
+                    is_applied: true,
+                });
+                let _ = journal.persist(&self.journal_path, now_ms);
+
+                ledger.record_applied(
+                    format!("block.scheduler.{device_name}"),
+                    None,
+                    original_scheduler.clone(),
+                    scheduler.clone(),
+                    None,
+                    tx_id.to_string(),
+                    now_ms,
+                );
+
+                Ok(format!(
+                    "Applied I/O scheduler {scheduler} to {device_name}"
+                ))
+            }
+
+            TypedMutation::ApplyBlockReadAhead {
+                device_name,
+                read_ahead_kb,
+                original_kb,
+            } => {
+                if device_name.contains('/')
+                    || device_name.contains("..")
+                    || !device_name
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                {
+                    return Err(format!("Unsafe block device name: {device_name}"));
+                }
+                if !(16..=2048).contains(read_ahead_kb) {
+                    return Err(format!(
+                        "Read-ahead value {read_ahead_kb} out of permitted bounds (16..=2048)"
+                    ));
+                }
+                let ra_path = self
+                    .sys_root
+                    .join(format!("block/{device_name}/queue/read_ahead_kb"));
+                if ra_path.exists() {
+                    fs::write(&ra_path, read_ahead_kb.to_string().as_bytes())
+                        .map_err(|e| format!("Failed writing read-ahead for {device_name}: {e}"))?;
+                    let readback = fs::read_to_string(&ra_path).map_err(|e| {
+                        format!("Failed reading back read-ahead for {device_name}: {e}")
+                    })?;
+                    if readback.trim() != read_ahead_kb.to_string() {
+                        return Err(format!(
+                            "Read-ahead verification failed for {device_name}: expected {read_ahead_kb}, read {readback}"
+                        ));
+                    }
+                }
+
+                journal.record_item(ConfigJournalItem {
+                    action_id: format!("storage-ra-{device_name}"),
+                    target_key: format!("block.read_ahead.{device_name}"),
+                    target_file: None,
+                    original_value: original_kb.map(|k| k.to_string()),
+                    applied_value: read_ahead_kb.to_string(),
+                    is_applied: true,
+                });
+                let _ = journal.persist(&self.journal_path, now_ms);
+
+                ledger.record_applied(
+                    format!("block.read_ahead.{device_name}"),
+                    None,
+                    original_kb.map(|k| k.to_string()),
+                    read_ahead_kb.to_string(),
+                    None,
+                    tx_id.to_string(),
+                    now_ms,
+                );
+
+                Ok(format!(
+                    "Applied read-ahead {read_ahead_kb} KiB to {device_name}"
+                ))
+            }
+
+            TypedMutation::ApplyPowerProfile {
+                profile,
+                original_profile,
+            } => {
+                let allowed = ["balanced", "power-saver", "performance"];
+                if !allowed.contains(&profile.as_str()) {
+                    return Err(format!(
+                        "Disallowed or unrecognized power profile: {profile}"
+                    ));
+                }
+                let p_path = self.sys_root.join("firmware/acpi/platform_profile");
+                if p_path.exists() {
+                    fs::write(&p_path, profile.as_bytes())
+                        .map_err(|e| format!("Failed writing platform profile: {e}"))?;
+                    let readback = fs::read_to_string(&p_path)
+                        .map_err(|e| format!("Failed reading back platform profile: {e}"))?;
+                    if readback.trim() != profile.trim() {
+                        return Err(format!(
+                            "Power profile verification failed: expected {profile}, read {readback}"
+                        ));
+                    }
+                }
+
+                journal.record_item(ConfigJournalItem {
+                    action_id: "power-profile".into(),
+                    target_key: "power.profile".into(),
+                    target_file: None,
+                    original_value: original_profile.clone(),
+                    applied_value: profile.clone(),
+                    is_applied: true,
+                });
+                let _ = journal.persist(&self.journal_path, now_ms);
+
+                ledger.record_applied(
+                    "power.profile".into(),
+                    None,
+                    original_profile.clone(),
+                    profile.clone(),
+                    None,
+                    tx_id.to_string(),
+                    now_ms,
+                );
+
+                Ok(format!("Applied platform power profile: {profile}"))
+            }
+
+            TypedMutation::ApplyCgroupCpuWeight {
+                cgroup_path,
+                weight,
+                original_weight,
+            } => {
+                if !(1..=10000).contains(weight) {
+                    return Err(format!(
+                        "Cgroup CPU weight {weight} out of bounds (1..=10000)"
+                    ));
+                }
+                let cg_clean = cgroup_path.trim_start_matches('/');
+                if cg_clean.contains("..") {
+                    return Err(format!("Unsafe cgroup path: {cgroup_path}"));
+                }
+                let w_path = self
+                    .sys_root
+                    .join("fs/cgroup")
+                    .join(cg_clean)
+                    .join("cpu.weight");
+                if w_path.exists() {
+                    fs::write(&w_path, weight.to_string().as_bytes())
+                        .map_err(|e| format!("Failed writing cpu.weight: {e}"))?;
+                    let readback = fs::read_to_string(&w_path)
+                        .map_err(|e| format!("Failed reading back cpu.weight: {e}"))?;
+                    if readback.trim() != weight.to_string() {
+                        return Err(format!(
+                            "Cpu weight verification failed: expected {weight}, read {readback}"
+                        ));
+                    }
+                }
+
+                journal.record_item(ConfigJournalItem {
+                    action_id: format!("cgroup-weight-{cg_clean}"),
+                    target_key: format!("cgroup.cpu_weight.{cg_clean}"),
+                    target_file: None,
+                    original_value: original_weight.map(|w| w.to_string()),
+                    applied_value: weight.to_string(),
+                    is_applied: true,
+                });
+                let _ = journal.persist(&self.journal_path, now_ms);
+
+                ledger.record_applied(
+                    format!("cgroup.cpu_weight.{cg_clean}"),
+                    None,
+                    original_weight.map(|w| w.to_string()),
+                    weight.to_string(),
+                    None,
+                    tx_id.to_string(),
+                    now_ms,
+                );
+
+                Ok(format!("Applied cgroup CPU weight {weight} to {cg_clean}"))
             }
         }
     }
@@ -462,8 +938,92 @@ impl ConfigExecutor {
                 continue;
             }
 
-            // Restore runtime sysctl if recorded
-            if !key.starts_with("dropin:") && !key.starts_with("zram.") {
+            // Subsystem-specific rollback routing
+            if key.starts_with("cpu.governor.") {
+                if let Some(orig) = &entry.original_value {
+                    let cpu_root = self.sys_root.join("devices/system/cpu");
+                    if cpu_root.exists() {
+                        for entry in fs::read_dir(&cpu_root).into_iter().flatten().flatten() {
+                            let gov_p = entry.path().join("cpufreq/scaling_governor");
+                            if gov_p.exists() {
+                                let _ = fs::write(&gov_p, orig.as_bytes());
+                            }
+                        }
+                    }
+                    restored_keys.push(format!("{key} -> {orig}"));
+                }
+            } else if key.starts_with("cpu.epp.") {
+                if let Some(orig) = &entry.original_value {
+                    let cpu_root = self.sys_root.join("devices/system/cpu");
+                    if cpu_root.exists() {
+                        for entry in fs::read_dir(&cpu_root).into_iter().flatten().flatten() {
+                            let epp_p = entry.path().join("cpufreq/energy_performance_preference");
+                            if epp_p.exists() {
+                                let _ = fs::write(&epp_p, orig.as_bytes());
+                            }
+                        }
+                    }
+                    restored_keys.push(format!("{key} -> {orig}"));
+                }
+            } else if let Some(dev_name) = key.strip_prefix("block.scheduler.") {
+                if let Some(orig) = &entry.original_value {
+                    let sched_p = self
+                        .sys_root
+                        .join(format!("block/{dev_name}/queue/scheduler"));
+                    if sched_p.exists() {
+                        let _ = fs::write(&sched_p, orig.as_bytes());
+                    }
+                    restored_keys.push(format!("{key} -> {orig}"));
+                }
+            } else if let Some(dev_name) = key.strip_prefix("block.read_ahead.") {
+                if let Some(orig) = &entry.original_value {
+                    let ra_p = self
+                        .sys_root
+                        .join(format!("block/{dev_name}/queue/read_ahead_kb"));
+                    if ra_p.exists() {
+                        let _ = fs::write(&ra_p, orig.as_bytes());
+                    }
+                    restored_keys.push(format!("{key} -> {orig}"));
+                }
+            } else if key == "power.profile" {
+                if let Some(orig) = &entry.original_value {
+                    let p_path = self.sys_root.join("firmware/acpi/platform_profile");
+                    if p_path.exists() {
+                        let _ = fs::write(&p_path, orig.as_bytes());
+                    }
+                    restored_keys.push(format!("{key} -> {orig}"));
+                }
+            } else if let Some(cg_path) = key.strip_prefix("cgroup.cpu_weight.") {
+                if let Some(orig) = &entry.original_value {
+                    let w_path = self
+                        .sys_root
+                        .join("fs/cgroup")
+                        .join(cg_path)
+                        .join("cpu.weight");
+                    if w_path.exists() {
+                        let _ = fs::write(&w_path, orig.as_bytes());
+                    }
+                    restored_keys.push(format!("{key} -> {orig}"));
+                }
+            } else if key == "transparent_hugepage.enabled" {
+                if let Some(orig) = &entry.original_value {
+                    let thp_path = self.sys_root.join("kernel/mm/transparent_hugepage/enabled");
+                    if thp_path.exists() {
+                        let _ = fs::write(&thp_path, orig.as_bytes());
+                    }
+                    restored_keys.push(format!("{key} -> {orig}"));
+                }
+            } else if let Some(param) = key.strip_prefix("zswap.") {
+                if let Some(orig) = &entry.original_value {
+                    let p_path = self
+                        .sys_root
+                        .join(format!("module/zswap/parameters/{param}"));
+                    if p_path.exists() {
+                        let _ = fs::write(&p_path, orig.as_bytes());
+                    }
+                    restored_keys.push(format!("{key} -> {orig}"));
+                }
+            } else if !key.starts_with("dropin:") && !key.starts_with("zram.") {
                 if let Some(orig_val) = &entry.original_value {
                     let sysctl_rel = format!("sys/{}", key.replace('.', "/"));
                     let sysctl_path = self.proc_root.join(sysctl_rel);

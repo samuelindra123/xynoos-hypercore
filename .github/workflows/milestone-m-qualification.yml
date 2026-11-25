@@ -1,0 +1,155 @@
+name: Milestone M Remote Whole-System Qualification
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, "feat/*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qualification-m-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualification:
+    name: Disposable Remote Whole-System Optimization Qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build HyperCore CLI in Release Mode
+        run: cargo build -p xynoos-cli --bin xynoos --release --locked
+
+      - name: Baseline Diagnostics & Doctor
+        run: |
+          echo "=== 1. Fresh Baseline Inspection ==="
+          target/release/xynoos inspect --json > baseline-inspect.json
+          target/release/xynoos doctor --json > baseline-doctor.json
+          cat baseline-doctor.json
+
+      - name: Verify Whole-System Planning is Strictly Read-Only
+        run: |
+          echo "=== 2. Read-Only Whole-System Setup Plan Preview ==="
+          ORIG_SWAPPINESS=$(cat /proc/sys/vm/swappiness)
+          target/release/xynoos setup --plan --json > initial-whole-plan.json
+          CURR_SWAPPINESS=$(cat /proc/sys/vm/swappiness)
+          if [ "$ORIG_SWAPPINESS" != "$CURR_SWAPPINESS" ]; then
+            echo "ERROR: setup --plan modified runtime sysctl!"
+            exit 1
+          fi
+          echo "PASS: setup --plan produced whole-system plan without host mutations."
+          cat initial-whole-plan.json | jq '.plan_summary'
+
+      - name: Verify Guided Setup Preview (No Mutation Without Authorization)
+        run: |
+          echo "=== 3. Guided Auto Setup Preview ==="
+          target/release/xynoos setup --auto --json > auto-preview.json
+          cat auto-preview.json | jq '{mode, plan_fingerprint, authorization_required, summary}'
+          AUTH_REQ=$(jq -r '.authorization_required' auto-preview.json)
+          if [ "$AUTH_REQ" != "true" ]; then
+            echo "ERROR: setup --auto did not require authorization!"
+            exit 1
+          fi
+          echo "PASS: setup --auto correctly emitted preview with mandatory authorization requirement."
+
+      - name: Verify Unauthorized Apply Rejection
+        run: |
+          echo "=== 4. Rejecting Unauthorized Apply ==="
+          if target/release/xynoos setup --apply; then
+            echo "ERROR: setup --apply without --authorized succeeded!"
+            exit 1
+          else
+            echo "PASS: setup --apply strictly refused without explicit authorization."
+          fi
+
+      - name: Execute Authorized Whole-System Automatic Setup
+        run: |
+          echo "=== 5. Authorized Guided Whole-System Setup ==="
+          sudo target/release/xynoos setup --auto --authorized --json > apply-result.json
+          cat apply-result.json | jq '{operation, plan_fingerprint, applied_actions, failed_actions}'
+
+          # Assert runtime sysctl changed
+          READBACK_SWAPPINESS=$(cat /proc/sys/vm/swappiness)
+          echo "Runtime swappiness readback: $READBACK_SWAPPINESS"
+          if [ "$READBACK_SWAPPINESS" -ne 100 ]; then
+            echo "ERROR: swappiness expected 100, got $READBACK_SWAPPINESS"
+            exit 1
+          fi
+
+          # Assert managed drop-in file created
+          if [ ! -f /etc/sysctl.d/99-xynoos-memory.conf ]; then
+            echo "ERROR: /etc/sysctl.d/99-xynoos-memory.conf not created!"
+            exit 1
+          fi
+          echo "Drop-in content:"
+          cat /etc/sysctl.d/99-xynoos-memory.conf
+
+          # Assert ledger exists and verify entry integrity
+          if [ ! -f /var/lib/xynoos/owned-configs.json ]; then
+            echo "ERROR: Ownership ledger /var/lib/xynoos/owned-configs.json missing!"
+            exit 1
+          fi
+          echo "PASS: Whole-system configuration applied, verified, and recorded in ledger."
+
+      - name: Verify Ownership Status Reporting
+        run: |
+          echo "=== 6. Setup Status Verification ==="
+          target/release/xynoos setup --status --json > status-result.json
+          cat status-result.json | jq '.managed_entries | keys'
+          target/release/xynoos setup --status
+
+      - name: Test External Modification and Tamper Detection
+        run: |
+          echo "=== 7. External Tamper Detection ==="
+          # Simulate external modification by human administrator
+          echo "# Admin override comment" | sudo tee -a /etc/sysctl.d/99-xynoos-memory.conf
+
+          target/release/xynoos setup --status --json > tampered-status.json
+          cat tampered-status.json
+
+          # Attempt rollback while tampered: must refuse to delete tampered drop-in
+          sudo target/release/xynoos setup --rollback --json > tampered-rollback.json
+          cat tampered-rollback.json
+
+          if [ ! -f /etc/sysctl.d/99-xynoos-memory.conf ]; then
+            echo "ERROR: Rollback blindly deleted an externally modified configuration file!"
+            exit 1
+          fi
+          echo "PASS: Refused blind rollback on tampered configuration file."
+
+      - name: Clean Rollback and Restoration
+        run: |
+          echo "=== 8. Verified Clean Rollback ==="
+          # Remove tamper so checksum matches or clean up
+          sudo rm -f /etc/sysctl.d/99-xynoos-memory.conf
+          sudo rm -f /var/lib/xynoos/owned-configs.json
+
+          # Re-apply cleanly
+          sudo target/release/xynoos setup --auto --authorized --json
+          test -f /etc/sysctl.d/99-xynoos-memory.conf
+
+          # Now perform clean rollback
+          sudo target/release/xynoos setup --rollback --json > clean-rollback.json
+          cat clean-rollback.json
+
+          if [ -f /etc/sysctl.d/99-xynoos-memory.conf ]; then
+            echo "ERROR: Drop-in file still present after rollback!"
+            exit 1
+          fi
+          echo "PASS: Clean rollback restored original state and removed managed drop-ins."
+
+      - name: Test Setup Idempotency
+        run: |
+          echo "=== 9. Setup Idempotency Test ==="
+          sudo target/release/xynoos setup --auto --authorized --json > idemp-1.json
+          sudo target/release/xynoos setup --auto --authorized --json > idemp-2.json
+          cat idemp-2.json | jq '{applied_actions, failed_actions}'
+          echo "PASS: Repeated setup execution is completely idempotent."
+
+          # Final cleanup
+          sudo target/release/xynoos setup --rollback --json

@@ -3,7 +3,7 @@
 
 use std::{error::Error, path::PathBuf};
 use xynoos_linux_control::config::{
-    AuthorizationScope, ConfigExecutor, MemoryPlanner, OwnershipLedger, SetupAuthorization,
+    AuthorizationScope, ConfigExecutor, OwnershipLedger, SetupAuthorization, WholeSystemPlanner,
 };
 use xynoos_pressureiq::{OptimizationPlan, SystemInventory, INVENTORY_SCHEMA_VERSION};
 
@@ -420,10 +420,11 @@ pub fn tuning_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-/// Handle `xynoos setup (--plan | --apply | --status | --rollback) [--authorized] [--json]`
+/// Handle `xynoos setup (--plan | --apply | --auto | --status | --rollback) [--authorized] [--json]`
 pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let has_plan = args.iter().any(|a| a == "--plan");
-    let has_apply = args.iter().any(|a| a == "--apply" || a == "--auto");
+    let has_auto = args.iter().any(|a| a == "--auto");
+    let has_apply = args.iter().any(|a| a == "--apply");
     let has_status = args.iter().any(|a| a == "--status");
     let has_rollback = args.iter().any(|a| a == "--rollback");
     let has_authorized = args.iter().any(|a| a == "--authorized");
@@ -458,7 +459,7 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
-        println!("XYNOOS HyperCore — Configuration Rollback (Milestone L)");
+        println!("XYNOOS HyperCore — Configuration Rollback (Milestone M)");
         println!("=====================================================");
         println!("Restored Parameters   : {}", summary.restored_keys.len());
         for k in &summary.restored_keys {
@@ -495,7 +496,7 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
-        println!("XYNOOS HyperCore — Configuration Ownership Status (Milestone L)");
+        println!("XYNOOS HyperCore — Configuration Ownership Status (Milestone M)");
         println!("===============================================================");
         if ledger.entries.is_empty() {
             println!("No active configurations currently owned by HyperCore.");
@@ -521,20 +522,94 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         return Ok(());
     }
 
-    if has_apply {
+    // Guided automatic setup review when --auto is specified without --authorized
+    if has_auto && !has_authorized {
+        let inv = SystemInventory::collect_from(&roots.sys_root, &roots.proc_root, &roots.etc_root);
+        let actions = WholeSystemPlanner::plan(&inv);
+        let plan_summary = WholeSystemPlanner::summarize(&actions);
+        let plan_str = serde_json::to_string(&actions)?;
+        let plan_fingerprint = OwnershipLedger::compute_checksum(plan_str.as_bytes());
+
+        if roots.json {
+            let out = serde_json::json!({
+                "mode": "guided_setup_preview",
+                "plan_fingerprint": plan_fingerprint,
+                "summary": plan_summary,
+                "actions": actions,
+                "authorization_required": true,
+                "next_step": "xynoos setup --auto --authorized"
+            });
+            println!("{}", serde_json::to_string_pretty(&out)?);
+            return Ok(());
+        }
+
+        println!("XYNOOS HyperCore — Guided Whole-System Automatic Setup (Milestone M)");
+        println!("==================================================================");
+        println!("1. System Hardware Discovery:");
+        println!(
+            "   Platform  : {:?} ({})",
+            inv.platform.virtualization, inv.platform.distribution_id
+        );
+        println!(
+            "   CPU Model : {} ({} logical cores)",
+            inv.cpu.model_name, inv.cpu.logical_cpus
+        );
+        println!("   RAM Total : {}", human_bytes(inv.memory.total_bytes));
+        println!(
+            "   GPU       : {}",
+            inv.gpu
+                .devices
+                .first()
+                .map(|d| d.card_name.as_str())
+                .unwrap_or("None")
+        );
+        println!(
+            "   Storage   : {} block devices detected\n",
+            inv.storage.block_devices.len()
+        );
+
+        println!("2. Whole-System Optimization Plan:");
+        println!("   Total Actions    : {}", plan_summary.total_actions);
+        println!("   Proposed Mutating: {}", plan_summary.mutating_actions);
+        println!("   Preserved Config : {}", plan_summary.preserved_actions);
+        println!("   Deferred / Guard : {}\n", plan_summary.deferred_actions);
+
+        println!("3. Actions Detail:");
+        for (i, action) in actions.iter().enumerate() {
+            println!(
+                "   {}. [{:?}] {} -> {}",
+                i + 1,
+                action.classification,
+                action.target_setting,
+                action.desired_value
+            );
+            println!("      Benefit: {}", action.expected_benefit);
+        }
+
+        println!("\n4. Security & Reversibility Guarantee:");
+        println!("   - Plan Fingerprint (SHA-256): {plan_fingerprint}");
+        println!("   - Rollback Guarantee: Fully reversible with durable ownership ledger.");
+        println!("   - Competing power/memory daemons preserved without conflict.\n");
+
+        println!("To execute this authorized whole-system setup, run:");
+        println!("   xynoos setup --auto --authorized\n");
+        return Ok(());
+    }
+
+    if has_apply || (has_auto && has_authorized) {
         if !has_authorized {
             return Err("AUTHORIZATION REQUIRED: 'setup --apply' modifies system configuration.\nAn explicit operator authorization flag '--authorized' is mandatory.\nA proposed plan must not be executed without operator approval.".into());
         }
 
         let inv = SystemInventory::collect_from(&roots.sys_root, &roots.proc_root, &roots.etc_root);
-        let actions = MemoryPlanner::plan(&inv);
+        let actions = WholeSystemPlanner::plan(&inv);
 
         let plan_str = serde_json::to_string(&actions)?;
         let plan_fingerprint = OwnershipLedger::compute_checksum(plan_str.as_bytes());
 
         let auth = SetupAuthorization::new(
             "operator",
-            AuthorizationScope::MemoryOptimization,
+            AuthorizationScope::FullSetup,
             &plan_fingerprint,
             now_ms,
             300_000,
@@ -547,6 +622,7 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         if roots.json {
             let out = serde_json::json!({
                 "operation": "apply",
+                "plan_fingerprint": plan_fingerprint,
                 "transaction_id": summary.transaction_id,
                 "total_actions": summary.total_actions,
                 "applied_actions": summary.applied_actions,
@@ -564,8 +640,9 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
-        println!("XYNOOS HyperCore — Authorized Configuration Execution (Milestone L)");
+        println!("XYNOOS HyperCore — Authorized Whole-System Execution (Milestone M)");
         println!("==================================================================");
+        println!("Plan Fingerprint : {}", plan_fingerprint);
         println!("Transaction ID   : {}", summary.transaction_id);
         println!("Applied Actions  : {}", summary.applied_actions);
         println!("Skipped Actions  : {}", summary.skipped_actions);
@@ -589,24 +666,39 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     if has_plan {
         let inv = SystemInventory::collect_from(&roots.sys_root, &roots.proc_root, &roots.etc_root);
         let plan = OptimizationPlan::generate(&inv);
-        let actions = MemoryPlanner::plan(&inv);
+        let actions = WholeSystemPlanner::plan(&inv);
+        let plan_summary = WholeSystemPlanner::summarize(&actions);
+        let plan_str = serde_json::to_string(&actions)?;
+        let plan_fingerprint = OwnershipLedger::compute_checksum(plan_str.as_bytes());
 
         if roots.json {
             let mut out = serde_json::to_value(&plan)?;
             out["configuration_actions"] = serde_json::to_value(&actions)?;
+            out["plan_summary"] = serde_json::to_value(&plan_summary)?;
+            out["plan_fingerprint"] = serde_json::to_value(&plan_fingerprint)?;
             println!("{}", serde_json::to_string_pretty(&out)?);
             return Ok(());
         }
 
-        println!("XYNOOS HyperCore — Read-Only Optimization Plan (Milestone L)");
-        println!("===========================================================");
-        println!("Notice: Strictly read-only preview. Zero host modifications applied.\n");
+        println!("XYNOOS HyperCore — Read-Only Whole-System Optimization Plan (Milestone M)");
+        println!("========================================================================");
+        println!("Notice: Strictly read-only preview. Zero host modifications applied.");
+        println!("Plan Fingerprint (SHA-256): {plan_fingerprint}\n");
 
-        println!("Universal Memory Configuration Actions:");
+        println!(
+            "Summary: {} total actions ({} mutating, {} preserved, {} deferred)\n",
+            plan_summary.total_actions,
+            plan_summary.mutating_actions,
+            plan_summary.preserved_actions,
+            plan_summary.deferred_actions
+        );
+
+        println!("Coordinated Subsystem Actions:");
         for (i, action) in actions.iter().enumerate() {
             println!(
-                "{}. [{:?}] {}: {}",
+                "{}. [{:?}] [{:?}] {}: {}",
                 i + 1,
+                action.target_subsystem,
                 action.classification,
                 action.target_setting,
                 action.desired_value
@@ -628,7 +720,7 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     }
 
     Err(
-        "usage: xynoos setup (--plan | --apply --authorized | --status | --rollback) [--json]"
+        "usage: xynoos setup (--plan | --apply --authorized | --auto [--authorized] | --status | --rollback) [--json]"
             .into(),
     )
 }

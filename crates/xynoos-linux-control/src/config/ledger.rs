@@ -57,8 +57,22 @@ impl Default for OwnershipLedger {
 }
 
 impl OwnershipLedger {
-    /// Compute a deterministic checksum string for file contents.
+    /// Compute a cryptographic SHA-256 checksum string for file contents and plan fingerprints.
     pub fn compute_checksum(bytes: &[u8]) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(bytes);
+        let hash = hasher.finalize();
+        let mut s = String::with_capacity(64);
+        for byte in hash {
+            use std::fmt::Write;
+            let _ = write!(s, "{:02x}", byte);
+        }
+        s
+    }
+
+    /// Fast non-cryptographic CRC-32 checksum for lightweight operational checks.
+    pub fn compute_crc32(bytes: &[u8]) -> String {
         let mut hasher = crc32fast::Hasher::new();
         hasher.update(bytes);
         format!("{:08x}", hasher.finalize())

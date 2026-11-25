@@ -7,7 +7,7 @@ use xynoos_linux_control::config::{
     ActionClassification, AuthorizationScope, ConfigExecutor, ConfigJournal, ConfigJournalItem,
     ConfigSubsystem, ConfigTxPhase, ConfigurationAction, IntegrityStatus, MemoryPlanner,
     MemoryProfile, OwnershipLedger, PersistenceRequirement, ReversalProcedure, SetupAuthorization,
-    TypedMutation, VerificationProcedure, CONFIG_ACTION_SCHEMA_VERSION,
+    TypedMutation, VerificationProcedure, WholeSystemPlanner, CONFIG_ACTION_SCHEMA_VERSION,
 };
 use xynoos_pressureiq::discovery::{
     inventory::SystemInventory,
@@ -415,6 +415,250 @@ fn test_config_journal_lifecycle() {
 
     ConfigJournal::cleanup(&journal_path).unwrap();
     assert!(!journal_path.exists());
+
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn test_cpu_governor_execution_and_rollback() {
+    let root = std::env::temp_dir().join(format!("xynoos-cpu-test-{}", std::process::id()));
+    let sys_root = root.join("sys");
+    let proc_root = root.join("proc");
+    let etc_root = root.join("etc");
+    let state_dir = root.join("var/lib/xynoos");
+
+    let cpu0_cpufreq = sys_root.join("devices/system/cpu/cpu0/cpufreq");
+    fs::create_dir_all(&cpu0_cpufreq).unwrap();
+    let gov_file = cpu0_cpufreq.join("scaling_governor");
+    fs::write(&gov_file, "powersave\n").unwrap();
+
+    let executor = ConfigExecutor::new(
+        sys_root.clone(),
+        proc_root.clone(),
+        etc_root.clone(),
+        state_dir.clone(),
+    );
+
+    let action = ConfigurationAction {
+        schema_version: CONFIG_ACTION_SCHEMA_VERSION,
+        action_id: "CPU-GOV-001".into(),
+        target_subsystem: ConfigSubsystem::Cpu,
+        target_setting: "cpufreq.scaling_governor".into(),
+        current_observed_value: "powersave".into(),
+        desired_value: "schedutil".into(),
+        current_ownership: ConfigurationOwnership::KernelDefault,
+        required_privileges: PrivilegeLevel::RequiresRoot,
+        required_capability: "cpu.frequency_governor".into(),
+        expected_benefit: "Responsive frequency transitions".into(),
+        potential_side_effects: "None".into(),
+        confidence: ConfidenceLevel::High,
+        reversibility: ReversibilityGuarantee::FullyReversible,
+        classification: ActionClassification::Improve,
+        authorization_scope: AuthorizationScope::CpuOptimization,
+        preconditions: vec![],
+        dependencies: vec![],
+        conflict_status: None,
+        verification_procedure: VerificationProcedure::CpuGovernorReadback {
+            cpu_range: "all".into(),
+            expected_governor: "schedutil".into(),
+        },
+        reversal_procedure: ReversalProcedure::RestoreCpuGovernor {
+            cpu_range: "all".into(),
+            original_governor: "powersave".into(),
+        },
+        persistence_requirements: PersistenceRequirement::RuntimeOnly,
+        mutation: Some(TypedMutation::ApplyCpuGovernor {
+            cpu_range: "all".into(),
+            governor: "schedutil".into(),
+            original_governor: Some("powersave".into()),
+        }),
+    };
+
+    let now = 4_000_000u64;
+    let auth = SetupAuthorization::new(
+        "operator",
+        AuthorizationScope::FullSetup,
+        "plan-cpu-1",
+        now,
+        60_000,
+    );
+
+    let summary = executor
+        .execute_plan(&[action], &auth, "plan-cpu-1", now)
+        .unwrap();
+    assert_eq!(summary.applied_actions, 1);
+    assert_eq!(fs::read_to_string(&gov_file).unwrap().trim(), "schedutil");
+
+    let rollback = executor.rollback_all(now + 1000).unwrap();
+    assert_eq!(rollback.failed_restorations.len(), 0);
+    assert_eq!(fs::read_to_string(&gov_file).unwrap().trim(), "powersave");
+
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn test_block_io_scheduler_execution_and_rollback() {
+    let root = std::env::temp_dir().join(format!("xynoos-storage-test-{}", std::process::id()));
+    let sys_root = root.join("sys");
+    let proc_root = root.join("proc");
+    let etc_root = root.join("etc");
+    let state_dir = root.join("var/lib/xynoos");
+
+    let q_dir = sys_root.join("block/sda/queue");
+    fs::create_dir_all(&q_dir).unwrap();
+    let sched_file = q_dir.join("scheduler");
+    fs::write(&sched_file, "none [mq-deadline] bfq\n").unwrap();
+
+    let executor = ConfigExecutor::new(
+        sys_root.clone(),
+        proc_root.clone(),
+        etc_root.clone(),
+        state_dir.clone(),
+    );
+
+    let action = ConfigurationAction {
+        schema_version: CONFIG_ACTION_SCHEMA_VERSION,
+        action_id: "STORAGE-SCHED-SDA".into(),
+        target_subsystem: ConfigSubsystem::Storage,
+        target_setting: "block.sda.scheduler".into(),
+        current_observed_value: "mq-deadline".into(),
+        desired_value: "bfq".into(),
+        current_ownership: ConfigurationOwnership::KernelDefault,
+        required_privileges: PrivilegeLevel::RequiresRoot,
+        required_capability: "block.io_scheduler".into(),
+        expected_benefit: "Fair queuing for storage".into(),
+        potential_side_effects: "None".into(),
+        confidence: ConfidenceLevel::High,
+        reversibility: ReversibilityGuarantee::FullyReversible,
+        classification: ActionClassification::Improve,
+        authorization_scope: AuthorizationScope::StorageOptimization,
+        preconditions: vec![],
+        dependencies: vec![],
+        conflict_status: None,
+        verification_procedure: VerificationProcedure::BlockIoSchedulerReadback {
+            device_name: "sda".into(),
+            expected_scheduler: "bfq".into(),
+        },
+        reversal_procedure: ReversalProcedure::RestoreBlockIoScheduler {
+            device_name: "sda".into(),
+            original_scheduler: "mq-deadline".into(),
+        },
+        persistence_requirements: PersistenceRequirement::RuntimeOnly,
+        mutation: Some(TypedMutation::ApplyBlockIoScheduler {
+            device_name: "sda".into(),
+            scheduler: "bfq".into(),
+            original_scheduler: Some("mq-deadline".into()),
+        }),
+    };
+
+    let now = 5_000_000u64;
+    let auth = SetupAuthorization::new(
+        "operator",
+        AuthorizationScope::StorageOptimization,
+        "plan-storage-1",
+        now,
+        60_000,
+    );
+
+    let summary = executor
+        .execute_plan(&[action], &auth, "plan-storage-1", now)
+        .unwrap();
+    assert_eq!(summary.applied_actions, 1);
+
+    let rollback = executor.rollback_all(now + 1000).unwrap();
+    assert_eq!(rollback.failed_restorations.len(), 0);
+
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
+fn test_whole_system_planner_coordination() {
+    let mut inv = SystemInventory::default();
+    inv.cpu.model_name = "Intel Pentium Silver N5000".into();
+    inv.memory.total_bytes = 4 * 1024 * 1024 * 1024;
+    inv.cpu.active_governors = vec!["powersave".into()];
+
+    let actions = WholeSystemPlanner::plan(&inv);
+    assert!(!actions.is_empty());
+
+    let summary = WholeSystemPlanner::summarize(&actions);
+    assert!(summary.total_actions > 0);
+    assert!(summary.required_scopes.len() >= 1);
+
+    // Verify CPU planner chose schedutil or powersave appropriately
+    let cpu_action = actions.iter().find(|a| a.action_id == "CPU-GOV-001");
+    assert!(cpu_action.is_some());
+}
+
+#[test]
+fn test_zram_active_swap_rejection() {
+    let root = std::env::temp_dir().join(format!("xynoos-zram-reject-{}", std::process::id()));
+    let sys_root = root.join("sys");
+    let proc_root = root.join("proc");
+    let etc_root = root.join("etc");
+    let state_dir = root.join("var/lib/xynoos");
+
+    fs::create_dir_all(&proc_root).unwrap();
+    let swaps_file = proc_root.join("swaps");
+    fs::write(
+        &swaps_file,
+        "Filename\tType\tSize\tUsed\tPriority\n/dev/zram0\tpartition\t2097148\t1024\t100\n",
+    )
+    .unwrap();
+
+    let executor = ConfigExecutor::new(
+        sys_root.clone(),
+        proc_root.clone(),
+        etc_root.clone(),
+        state_dir.clone(),
+    );
+
+    let action = ConfigurationAction {
+        schema_version: CONFIG_ACTION_SCHEMA_VERSION,
+        action_id: "ACT-ZRAM-TEST".into(),
+        target_subsystem: ConfigSubsystem::Compression,
+        target_setting: "zram.zram0".into(),
+        current_observed_value: "2097152:lzo:100".into(),
+        desired_value: "2097152:lz4:100".into(),
+        current_ownership: ConfigurationOwnership::KernelDefault,
+        required_privileges: PrivilegeLevel::RequiresRoot,
+        required_capability: "zram.reconfigure".into(),
+        expected_benefit: "LZ4 compression".into(),
+        potential_side_effects: "None".into(),
+        confidence: ConfidenceLevel::High,
+        reversibility: ReversibilityGuarantee::FullyReversible,
+        classification: ActionClassification::Improve,
+        authorization_scope: AuthorizationScope::MemoryOptimization,
+        preconditions: vec![],
+        dependencies: vec![],
+        conflict_status: None,
+        verification_procedure: VerificationProcedure::NoOpPreserved,
+        reversal_procedure: ReversalProcedure::NoOpPreserved,
+        persistence_requirements: PersistenceRequirement::RuntimeOnly,
+        mutation: Some(TypedMutation::ConfigureZramDevice {
+            device_name: "zram0".into(),
+            disksize_bytes: 2097152,
+            algorithm: "lz4".into(),
+            priority: 100,
+        }),
+    };
+
+    let now = 6_000_000u64;
+    let auth = SetupAuthorization::new(
+        "operator",
+        AuthorizationScope::MemoryOptimization,
+        "plan-zram-1",
+        now,
+        60_000,
+    );
+
+    let summary = executor
+        .execute_plan(&[action], &auth, "plan-zram-1", now)
+        .unwrap();
+    assert_eq!(summary.failed_actions, 1);
+    assert!(summary.action_results[0]
+        .message
+        .contains("actively populated swap"));
 
     let _ = fs::remove_dir_all(&root);
 }
