@@ -309,3 +309,29 @@ fn memory_high_and_max_bounds_and_alignment_checks() {
         Outcome::Declined
     );
 }
+
+#[test]
+fn workload_cgroup_rejects_system_infrastructure_targets() {
+    use std::path::Path;
+    use xynoos_linux_control::transaction::WorkloadCgroup;
+
+    for prohibited in &[
+        "/sys/fs/cgroup/system.slice",
+        "/sys/fs/cgroup/user.slice",
+        "/sys/fs/cgroup/machine.slice",
+        "/sys/fs/cgroup/init.scope",
+        "/sys/fs/cgroup/-.slice",
+        "/sys/fs/cgroup/my-mount.mount",
+        "/sys/fs/cgroup/swap-device.swap",
+    ] {
+        let res = WorkloadCgroup::open(Path::new(prohibited), true);
+        assert!(res.is_err());
+        let err = res.err().unwrap();
+        assert!(
+            err.contains("system infrastructure cgroup targets are strictly prohibited"),
+            "Expected prohibition for {}, got: {}",
+            prohibited,
+            err
+        );
+    }
+}

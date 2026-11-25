@@ -371,7 +371,15 @@ impl TransactionJournal {
             .file_name()
             .and_then(|n| n.to_str())
             .unwrap_or("hypercore_journal.json");
-        let tmp_path = parent.join(format!(".{file_name}.tmp.{}", std::process::id()));
+        let ts_nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let tmp_path = parent.join(format!(
+            ".{file_name}.tmp.{}.{}",
+            std::process::id(),
+            ts_nanos
+        ));
 
         {
             let mut opts = OpenOptions::new();

@@ -551,8 +551,12 @@ impl WorkloadCgroup {
         let name_str = name_os.to_string_lossy();
         if name_str == "system.slice"
             || name_str == "user.slice"
+            || name_str == "machine.slice"
             || name_str == "init.scope"
             || name_str == "-.slice"
+            || name_str.ends_with(".mount")
+            || name_str.ends_with(".swap")
+            || name_str.ends_with(".automount")
         {
             return Err("system infrastructure cgroup targets are strictly prohibited".into());
         }
@@ -846,5 +850,18 @@ impl SustainedLease {
             .events
             .push("sustained lease restored original control value".into());
         report
+    }
+}
+
+impl Drop for SustainedLease {
+    fn drop(&mut self) {
+        if !self.released && !self.no_op {
+            // Emits diagnostic notice; note that automatic kernel restoration cannot be completed
+            // inside Drop because it lacks exclusive backend access. Callers must invoke release().
+            eprintln!(
+                "xynoos: WARNING - SustainedLease for {:?} dropped without explicit release (original: {}, requested: {})",
+                self.action, self.original, self.requested
+            );
+        }
     }
 }

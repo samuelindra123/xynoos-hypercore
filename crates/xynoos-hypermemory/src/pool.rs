@@ -273,6 +273,9 @@ impl HyperMemoryPool {
         }
         self.logical_bytes = self.logical_bytes.saturating_sub(len);
         self.current_generation = self.current_generation.wrapping_add(1);
+        if self.current_generation == 0 {
+            self.current_generation = 1;
+        }
         Ok(())
     }
 
@@ -436,5 +439,18 @@ mod tests {
         assert!(acct.stored_payload_bytes < acct.logical_payload_bytes);
         assert!(acct.net_savings_bytes > 0);
         assert!(acct.compression_ratio < 1.0);
+    }
+
+    #[test]
+    fn generation_counter_wrapping_never_produces_zero() {
+        let mut pool = HyperMemoryPool::with_budget(16, 65536).unwrap();
+        pool.current_generation = u32::MAX;
+        let h = pool.put(&[1, 2, 3, 4]).unwrap();
+        assert_eq!(h.generation(), u32::MAX);
+        pool.remove(h).unwrap();
+        // current_generation must have wrapped to 1, never 0
+        assert_eq!(pool.current_generation, 1);
+        let h2 = pool.put(&[5, 6, 7, 8]).unwrap();
+        assert_eq!(h2.generation(), 1);
     }
 }

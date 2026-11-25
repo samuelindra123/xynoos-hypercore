@@ -602,14 +602,19 @@ def main():
 
     zram_devs = sorted(p.name for p in Path("/sys/block").glob("zram*"))
     swaps_txt = read_text("/proc/swaps") or ""
+    swap_active = len(swaps_txt.splitlines()) > 1
+    zram_active = len(zram_devs) > 0
+    if not (swap_active or zram_active):
+        print("WARNING: Neither active swap nor zram device detected in environment. Baseline B results represent unoptimized standard Linux.", file=sys.stderr)
     env_meta = {
         "kernel": read_text("/proc/sys/kernel/osrelease"),
         "arch": os.uname().machine,
         "logical_cpus": os.cpu_count(),
         "swaps": swaps_txt,
-        "swap_active": len(swaps_txt.splitlines()) > 1,
+        "swap_active": swap_active,
         "zram_devices": zram_devs,
-        "zram_active": len(zram_devs) > 0,
+        "zram_active": zram_active,
+        "baseline_b_qualified": bool(swap_active or zram_active),
         "seed": args.seed,
         "browser_available": bool(shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser")),
     }
