@@ -63,7 +63,7 @@ fn test_runtime_authorization_contract_lifecycle() {
     // Save and load
     auth.save_to(&auth_path, now_ms).unwrap();
     let loaded = RuntimeAuthorizationContract::load_from(&auth_path).unwrap();
-    assert_eq!(loaded.is_revoked, true);
+    assert!(loaded.is_revoked);
     assert_eq!(
         loaded.revocation_reason.as_deref(),
         Some("Operator requested emergency revocation")

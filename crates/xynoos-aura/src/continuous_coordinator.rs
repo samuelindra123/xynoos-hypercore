@@ -156,10 +156,10 @@ impl ContinuousCoordinator {
 
         // 4. Multi-resource arbitration rules
         // Thermal constraint: if max temp >= 85°C or active throttle delta > 0, refuse performance ramps
-        if sample.max_cpu_temp_c.is_some_and(|t| t >= 85.0) || sample.cpu_throttle_delta > 0 {
-            if control == "cpu.weight" {
-                return Err("Arbitration: thermal throttling active; CPU boosts prohibited");
-            }
+        if (sample.max_cpu_temp_c.is_some_and(|t| t >= 85.0) || sample.cpu_throttle_delta > 0)
+            && control == "cpu.weight"
+        {
+            return Err("Arbitration: thermal throttling active; CPU boosts prohibited");
         }
 
         // I/O constraint: if I/O PSI >= 25%, refuse interventions that trigger storage contention
@@ -168,10 +168,11 @@ impl ContinuousCoordinator {
         }
 
         // Battery constraint: if battery capacity < 20% and on battery, do not elevate CPU weights
-        if sample.ac_online == Some(false) && sample.battery_capacity_pct.is_some_and(|b| b < 20) {
-            if control == "cpu.weight" {
-                return Err("Arbitration: low battery power; preserving power-saver profile");
-            }
+        if sample.ac_online == Some(false)
+            && sample.battery_capacity_pct.is_some_and(|b| b < 20)
+            && control == "cpu.weight"
+        {
+            return Err("Arbitration: low battery power; preserving power-saver profile");
         }
 
         // 5. Scoped runtime authorization check
@@ -181,6 +182,7 @@ impl ContinuousCoordinator {
     }
 
     /// Record newly applied intervention and enter evaluation state.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_intervention_applied(
         &mut self,
         target_id: &str,
