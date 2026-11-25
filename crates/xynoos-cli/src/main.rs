@@ -579,6 +579,7 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "run" => {}
             "--mode" => {
                 i += 1;
                 match args.get(i).map(String::as_str) {
@@ -603,7 +604,8 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
             "--no-pid-file" => no_pid_file = true,
             "--status" => status = true,
             "--human" => human = true,
-            _ => return Err("usage: daemon [--mode observe-only|advisory|transactional] [--interval-ms N] [--max-cycles N] [--pid-file PATH | --no-pid-file] [--status] [--human]".into()),
+            "--json" => human = false,
+            _ => return Err("usage: daemon [--mode observe-only|advisory|transactional] [--interval-ms N] [--max-cycles N] [--pid-file PATH | --no-pid-file] [--status] [--human] [--json]".into()),
         }
         i += 1;
     }

@@ -104,7 +104,7 @@ impl OwnershipLedger {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+                let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o755));
             }
         }
         let temp_path = path.with_extension("tmp");
@@ -116,7 +116,7 @@ impl OwnershipLedger {
             #[cfg(unix)]
             {
                 use std::os::unix::fs::PermissionsExt;
-                let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
+                let _ = file.set_permissions(fs::Permissions::from_mode(0o644));
             }
             file.write_all(payload.as_bytes())?;
             file.sync_all()?;

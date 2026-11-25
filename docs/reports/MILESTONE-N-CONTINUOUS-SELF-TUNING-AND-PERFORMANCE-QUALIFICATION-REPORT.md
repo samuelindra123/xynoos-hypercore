@@ -49,7 +49,7 @@
 
 ## A. Baseline Repositori & Ringkasan PR #109
 
-Repositori XYNOOS HyperCore pada awal Milestone N berada pada commit `d2b5e6b3cc29972df0e67ee0f36c850a3fb80593` (HEAD `main`). Pada commit ini, seluruh integrasi dari **Milestone M** (Pull Request #109: *Whole-System Hardware & Configuration Discovery, Reversible Multi-Subsystem Planner, Ledger Integrity & Guided Setup Workflow*) telah menyatu secara utuh melalui Squash and Merge. 
+Repositori XYNOOS HyperCore pada awal Milestone N berada pada commit `d2b5e6b3cc29972df0e67ee0f36c850a3fb80593` (HEAD `main`). Pada commit ini, seluruh integrasi dari **Milestone M** (Pull Request #109: *Whole-System Hardware & Configuration Discovery, Reversible Multi-Subsystem Planner, Ledger Integrity & Guided Setup Workflow*) telah menyatu secara utuh melalui Squash and Merge.
 
 Semua workflow validasi post-merge PR #109 pada GitHub Actions telah terverifikasi berstatus hijau (*Success*):
 1. `hypercore-engine-ci.yml` (Pemeriksaan format, Clippy, unit tests, cargo test suite).
@@ -105,7 +105,7 @@ stateDiagram-v2
     Starting --> Initializing: Inisialisasi Ringan & Muat Otorisasi
     Initializing --> NormalObserving: Otorisasi Valid (Observe-Only Default)
     Initializing --> DegradedTelemetry: Gagal Buka Telemetri (Fallback Terbatas)
-    
+
     state NormalObserving {
         [*] --> SteadyPoll: Polling Telemetri (2-5s)
         SteadyPoll --> HighPressure: PSI > Ambang Batas (Pindah ke Active 500-1000ms)
@@ -116,14 +116,14 @@ stateDiagram-v2
 
     NormalObserving --> ActiveIntervention: Evaluasi Kebijakan Mengharuskan Penyetelan
     ActiveIntervention --> PostEvaluation: Terapkan Penyetelan Terotorisasi (Hysteresis & Cooldown)
-    
+
     state PostEvaluation {
         [*] --> MeasuringResponse: Evaluasi Tertutup (3-15s)
         MeasuringResponse --> TuningAccepted: Metrik Membaik / Stabil
         MeasuringResponse --> RegressionDetected: Tekanan Memburuk / Osilasi
         RegressionDetected --> EmergencyRollback: Rollback Transien Otomatis
     }
-    
+
     PostEvaluation --> NormalObserving: Kembali ke Siklus Observasi
     NormalObserving --> SafeShutdown: SIGINT / SIGTERM Diterima
     ActiveIntervention --> SafeShutdown: SIGINT / SIGTERM Diterima
@@ -354,7 +354,7 @@ Menonaktifkan otorisasi secara instan dengan alasan audit yang tercatat di ledge
 
 ## Q. Metodologi Laboratorium Benchmark Empiris
 
-Untuk membuktikan secara ilmiah klaim keunggulan performa XYNOOS HyperCore, suite pengujian benchmark empiris dibangun pada `crates/xynoos-bench/src/main.rs`. 
+Untuk membuktikan secara ilmiah klaim keunggulan performa XYNOOS HyperCore, suite pengujian benchmark empiris dibangun pada `crates/xynoos-bench/src/main.rs`.
 
 ### Pengujian Dilakukan Terhadap 6 Konfigurasi:
 - **Konfigurasi A**: *Fresh Native Linux Defaults* (kernel stock tanpa penyesuaian, zram nonaktif, swap disk standar).
