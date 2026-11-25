@@ -243,8 +243,8 @@ impl HyperMemoryPool {
 
         let mut stored_bytes = 0usize;
         for &pid in &meta.pages {
-            if let Some(m) = self.store.page_meta(pid) {
-                stored_bytes = stored_bytes.saturating_add(m.compressed_size);
+            if let Ok(profile) = self.store.page_profile(pid) {
+                stored_bytes = stored_bytes.saturating_add(profile.stored_bytes);
             }
         }
 
