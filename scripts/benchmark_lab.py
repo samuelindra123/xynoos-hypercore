@@ -230,20 +230,54 @@ def run_single_trial(
             stderr=subprocess.PIPE,
         )
         time.sleep(0.25)
-    elif candidate == "candidate_e_transactional":
-        # Explicitly authorized bounded policy via Rust WorkloadCgroup + SustainedLease:
-        # protect foreground memory.low; only apply background memory.high when contended (not unpressured Profile C)
-        # Note: xynoos-linux-control enforces MAX_LOW_BYTES = 64 MiB, MAX_HIGH_BYTES = 512 MiB
+    elif candidate in ("candidate_e_transactional", "candidate_e_old_transactional"):
+        # Historical aggressive static 55% session memory clamp
         target_fg_low = min(int(profile_cfg["session_mem_bytes"] * 0.45), 64 * 1024 * 1024)
         fg_low = target_fg_low // 4096 * 4096
         contended = profile_cfg["bg_alloc_mib"] * 1024 * 1024 >= int(profile_cfg["session_mem_bytes"] * 0.85)
         target_bg_high = min(int(profile_cfg["session_mem_bytes"] * 0.55), 512 * 1024 * 1024)
         bg_high = (target_bg_high // 4096 * 4096) if contended else 0
+        lease_env = os.environ.copy()
+        lease_env["XYNOOS_LEASE_JOURNAL_DIR"] = str(work_dir)
         lease_proc = subprocess.Popen(
             [bench_bin, "workload-lease", str(fg_cg), str(fg_low), str(bg_cg), str(bg_high)],
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
+            env=lease_env,
+        )
+        ready = lease_proc.stdout.readline().decode().strip()
+        if ready != "READY":
+            raise RuntimeError(f"workload-lease failed: {lease_proc.stderr.read().decode()}")
+    elif candidate == "candidate_e_new_transactional":
+        # Revised resource-aware transactional policy:
+        # 1. Protect foreground memory.low (up to 40% session memory, bounded at 64 MiB)
+        target_fg_low = min(int(profile_cfg["session_mem_bytes"] * 0.40), 64 * 1024 * 1024)
+        fg_low = target_fg_low // 4096 * 4096
+        # 2. Adaptive background memory.high: avoid starving background compilation / interactive work!
+        contended = profile_cfg["bg_alloc_mib"] * 1024 * 1024 >= int(profile_cfg["session_mem_bytes"] * 0.85)
+        if not contended:
+            bg_high = 0
+        elif workload_kind == "dev_compile":
+            # For compilation, do not throttle below working set: grant at least 95% of background memory demand
+            target_bg_high = min(int(profile_cfg["bg_alloc_mib"] * 1024 * 1024 * 0.95), 512 * 1024 * 1024)
+            bg_high = target_bg_high // 4096 * 4096
+        elif workload_kind == "browser_headless":
+            # For browser, protect foreground while keeping background bounded progressively
+            target_bg_high = min(max(int(profile_cfg["session_mem_bytes"] * 0.70), 96 * 1024 * 1024), 512 * 1024 * 1024)
+            bg_high = target_bg_high // 4096 * 4096
+        else:
+            # Interactive / mixed: give background at least 75% headroom to prevent direct reclaim thrash
+            target_bg_high = min(max(int(profile_cfg["session_mem_bytes"] * 0.75), 100 * 1024 * 1024), 512 * 1024 * 1024)
+            bg_high = target_bg_high // 4096 * 4096
+        lease_env = os.environ.copy()
+        lease_env["XYNOOS_LEASE_JOURNAL_DIR"] = str(work_dir)
+        lease_proc = subprocess.Popen(
+            [bench_bin, "workload-lease", str(fg_cg), str(fg_low), str(bg_cg), str(bg_high)],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=lease_env,
         )
         ready = lease_proc.stdout.readline().decode().strip()
         if ready != "READY":
@@ -496,7 +530,8 @@ def main():
         "baseline_b_zram_or_swap",
         "candidate_c_observe_only",
         "candidate_d_advisory",
-        "candidate_e_transactional",
+        "candidate_e_old_transactional",
+        "candidate_e_new_transactional",
     ]
     workloads = ["interactive_probe", "dev_compile", "mixed_multitask"]
     if shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser"):
@@ -567,32 +602,42 @@ def main():
                     "daemon_rss_kib": summarize([r["daemon_rss_kib"] for r in c_rows if r["daemon_rss_kib"] is not None]),
                 }
 
-    # Controlled pairwise comparisons: Candidate E vs Baseline B (Optimized Linux)
+    # Controlled pairwise comparisons: Candidate E (Old & New) vs Baseline B (Optimized Linux)
     comparisons = {}
     for prof_name in summary:
         comparisons[prof_name] = {}
         for wl in summary[prof_name]:
             cand_b = summary[prof_name][wl].get("baseline_b_zram_or_swap")
-            cand_e = summary[prof_name][wl].get("candidate_e_transactional")
+            cand_e_old = summary[prof_name][wl].get("candidate_e_old_transactional") or summary[prof_name][wl].get("candidate_e_transactional")
+            cand_e_new = summary[prof_name][wl].get("candidate_e_new_transactional")
             cand_c = summary[prof_name][wl].get("candidate_c_observe_only")
             comp = {}
-            if cand_b and cand_e:
+            if cand_b and cand_e_old:
                 b_p50 = cand_b.get("fg_p50_ms", {}).get("median")
-                e_p50 = cand_e.get("fg_p50_ms", {}).get("median")
+                e_p50 = cand_e_old.get("fg_p50_ms", {}).get("median")
                 if b_p50 and e_p50:
-                    comp["fg_p50_delta_pct"] = round((e_p50 - b_p50) / b_p50 * 100.0, 2)
-                b_p95 = cand_b.get("fg_p95_ms", {}).get("median")
-                e_p95 = cand_e.get("fg_p95_ms", {}).get("median")
-                if b_p95 and e_p95:
-                    comp["fg_p95_delta_pct"] = round((e_p95 - b_p95) / b_p95 * 100.0, 2)
-                b_psi = cand_b.get("mem_psi_some_us", {}).get("median")
-                e_psi = cand_e.get("mem_psi_some_us", {}).get("median")
-                if b_psi is not None and e_psi is not None and b_psi > 0:
-                    comp["mem_psi_reduction_pct"] = round((b_psi - e_psi) / b_psi * 100.0, 2)
+                    comp["old_policy_fg_p50_delta_pct"] = round((e_p50 - b_p50) / b_p50 * 100.0, 2)
                 b_bg = cand_b.get("total_wall_ms", {}).get("median")
-                e_bg = cand_e.get("total_wall_ms", {}).get("median")
+                e_bg = cand_e_old.get("total_wall_ms", {}).get("median")
                 if b_bg and e_bg:
-                    comp["total_wall_ms_delta_pct"] = round((e_bg - b_bg) / b_bg * 100.0, 2)
+                    comp["old_policy_total_wall_ms_delta_pct"] = round((e_bg - b_bg) / b_bg * 100.0, 2)
+            if cand_b and cand_e_new:
+                b_p50 = cand_b.get("fg_p50_ms", {}).get("median")
+                e_p50 = cand_e_new.get("fg_p50_ms", {}).get("median")
+                if b_p50 and e_p50:
+                    comp["new_policy_fg_p50_delta_pct"] = round((e_p50 - b_p50) / b_p50 * 100.0, 2)
+                b_p95 = cand_b.get("fg_p95_ms", {}).get("median")
+                e_p95 = cand_e_new.get("fg_p95_ms", {}).get("median")
+                if b_p95 and e_p95:
+                    comp["new_policy_fg_p95_delta_pct"] = round((e_p95 - b_p95) / b_p95 * 100.0, 2)
+                b_psi = cand_b.get("mem_psi_some_us", {}).get("median")
+                e_psi = cand_e_new.get("mem_psi_some_us", {}).get("median")
+                if b_psi is not None and e_psi is not None and b_psi > 0:
+                    comp["new_policy_mem_psi_reduction_pct"] = round((b_psi - e_psi) / b_psi * 100.0, 2)
+                b_bg = cand_b.get("total_wall_ms", {}).get("median")
+                e_bg = cand_e_new.get("total_wall_ms", {}).get("median")
+                if b_bg and e_bg:
+                    comp["new_policy_total_wall_ms_delta_pct"] = round((e_bg - b_bg) / b_bg * 100.0, 2)
             if cand_b and cand_c:
                 b_p50 = cand_b.get("fg_p50_ms", {}).get("median")
                 c_p50 = cand_c.get("fg_p50_ms", {}).get("median")

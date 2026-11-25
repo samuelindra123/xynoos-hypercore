@@ -153,7 +153,12 @@ fn validate_telemetry(
     Ok(())
 }
 
+pub mod journal;
 pub mod transaction;
+
+pub use journal::{
+    recover_durable_lease, LeasePhase, RecoveryOutcome, RecoveryReport, TransactionJournal,
+};
 
 /// Builds the v1 contract at decision time, so its age cannot be frozen by a caller.
 /// Only memory PSI and meminfo are used; their scope is visible-system, not target-specific.

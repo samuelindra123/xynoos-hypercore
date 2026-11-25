@@ -1,12 +1,20 @@
 # XYNOOS HyperCore — Milestone J.1 Critical Systems Handoff
-## Implementation & Verification Brief for Gemini 4 Hydrogen
+## Implementation & Verification Brief (Superseded to Gemini 3.8 Flash High)
 
 - **Repository**: `samuelindra123/xynoos-hypercore`
 - **Current Branch**: `feat/hypercore-milestone-j-release-qualification`
-- **Current Baseline Commit**: `301a9c1abaac30ceea2d6d8ed83b630db18cde33`
+- **Current Baseline Commit**: `fa776d8242959d92b359b043d8ebe3afdd6af814`
 - **Target Release Candidate**: `v0.1.0-rc.1`
 - **Authoring Agent**: Gemini 3.8 Flash High (Primary Implementation & Systems Engineer)
-- **Designated Critical Engineering Model**: Gemini 4 Hydrogen
+- **Assigned Critical Engineering Model**: Gemini 3.8 Flash High (Superseded from Gemini 4 Hydrogen per Owner Authorization)
+
+---
+
+> [!IMPORTANT]
+> **Model Assignment Supersession Notice (Milestone J.2–J.3)**:
+> By explicit authorization of the repository owner, the previous engineering handoff requiring Gemini 4 Hydrogen has been formally superseded.
+> Gemini 3.8 Flash High is designated as the sole primary engineering model to implement, adversarially verify, and deliver all remaining Milestone J requirements (CRITICAL-01, CRITICAL-02, CRITICAL-03, and AURA performance remediation).
+> All original technical findings, architectural invariants, regression testing protocols, and acceptance criteria are strictly preserved.
 
 ---
 

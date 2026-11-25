@@ -229,9 +229,9 @@ impl RuntimeSafetyGuard {
             });
         }
 
-        // 2. Telemetry bounds checking
+        // 2. Telemetry bounds checking (must be finite, non-negative, and <= 100.0%)
         if let Some(cpu) = cpu_psi_avg10 {
-            if cpu.is_nan() || cpu.is_infinite() || cpu < 0.0 {
+            if cpu.is_nan() || cpu.is_infinite() || cpu < 0.0 || cpu > 100.0 {
                 return Err(SafetyRejection::InvalidTelemetry {
                     metric: "cpu_psi_avg10",
                 });
@@ -244,7 +244,7 @@ impl RuntimeSafetyGuard {
             }
         }
         if let Some(io) = io_psi_avg10 {
-            if io.is_nan() || io.is_infinite() || io < 0.0 {
+            if io.is_nan() || io.is_infinite() || io < 0.0 || io > 100.0 {
                 return Err(SafetyRejection::InvalidTelemetry {
                     metric: "io_psi_avg10",
                 });
@@ -257,7 +257,7 @@ impl RuntimeSafetyGuard {
             }
         }
         if let Some(mem) = mem_psi_avg10 {
-            if mem.is_nan() || mem.is_infinite() || mem < 0.0 {
+            if mem.is_nan() || mem.is_infinite() || mem < 0.0 || mem > 100.0 {
                 return Err(SafetyRejection::InvalidTelemetry {
                     metric: "mem_psi_avg10",
                 });

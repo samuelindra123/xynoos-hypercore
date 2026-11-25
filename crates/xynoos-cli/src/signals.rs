@@ -5,13 +5,10 @@
 //! strictly satisfying async-signal-safety requirements (no allocations, no locks,
 //! no file I/O, no complex formatting).
 
-use std::sync::{
-    atomic::{AtomicBool, Ordering},
-    Once,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 static DAEMON_STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
-static SIGNALS_INSTALLED: Once = Once::new();
+static SIGNALS_INSTALLED: AtomicBool = AtomicBool::new(false);
 
 /// Returns whether a termination signal (SIGINT, SIGTERM, SIGHUP) has been delivered.
 #[inline]
@@ -40,32 +37,32 @@ extern "C" fn posix_termination_handler(_signo: libc::c_int) {
 /// Installs async-signal-safe POSIX `sigaction` handlers for SIGINT, SIGTERM, and SIGHUP.
 ///
 /// Ensures other terminating signals are masked during handler execution.
+/// Idempotent: once successfully installed, subsequent calls are no-ops.
+/// If installation fails, error is returned and installation is NOT marked complete,
+/// allowing safe retry.
 pub fn install_daemon_signals() -> Result<(), std::io::Error> {
     #[cfg(unix)]
     {
-        let mut install_err = None;
-        SIGNALS_INSTALLED.call_once(|| {
-            unsafe {
-                let mut act: libc::sigaction = std::mem::zeroed();
-                act.sa_sigaction = posix_termination_handler as *const () as usize;
-                // Block all other standard termination signals while handling
-                libc::sigemptyset(&mut act.sa_mask);
-                libc::sigaddset(&mut act.sa_mask, libc::SIGINT);
-                libc::sigaddset(&mut act.sa_mask, libc::SIGTERM);
-                libc::sigaddset(&mut act.sa_mask, libc::SIGHUP);
-                act.sa_flags = 0; // Do not use SA_RESTART so blocking syscalls can return EINTR if needed
+        if SIGNALS_INSTALLED.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+        unsafe {
+            let mut act: libc::sigaction = std::mem::zeroed();
+            act.sa_sigaction = posix_termination_handler as *const () as usize;
+            // Block all other standard termination signals while handling
+            libc::sigemptyset(&mut act.sa_mask);
+            libc::sigaddset(&mut act.sa_mask, libc::SIGINT);
+            libc::sigaddset(&mut act.sa_mask, libc::SIGTERM);
+            libc::sigaddset(&mut act.sa_mask, libc::SIGHUP);
+            act.sa_flags = 0; // Do not use SA_RESTART so blocking syscalls can return EINTR if needed
 
-                for &sig in &[libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
-                    if libc::sigaction(sig, &act, std::ptr::null_mut()) != 0 {
-                        install_err = Some(std::io::Error::last_os_error());
-                        return;
-                    }
+            for &sig in &[libc::SIGINT, libc::SIGTERM, libc::SIGHUP] {
+                if libc::sigaction(sig, &act, std::ptr::null_mut()) != 0 {
+                    return Err(std::io::Error::last_os_error());
                 }
             }
-        });
-        if let Some(err) = install_err {
-            return Err(err);
         }
+        SIGNALS_INSTALLED.store(true, Ordering::SeqCst);
     }
     Ok(())
 }
