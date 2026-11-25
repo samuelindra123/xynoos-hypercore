@@ -925,7 +925,7 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     use std::io::{BufRead, BufReader};
     use std::process::{Command, Stdio};
     use xynoos_aura::xynoos_linux_control::transaction::{
-        DisposableCgroup, Outcome, SustainedLease, WorkloadCgroup,
+        Backend, DisposableCgroup, Outcome, SustainedLease, WorkloadCgroup,
     };
     use xynoos_aura::xynoos_linux_control::Action;
 
