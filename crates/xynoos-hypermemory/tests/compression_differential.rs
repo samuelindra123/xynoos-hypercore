@@ -263,15 +263,20 @@ fn bounded_fuzz_roundtrips_and_store_invariants() {
     let p2 = rng.fill_mixed(4096);
     let p3 = rng.fill_mixed(4096);
     let cid = cstore.insert_cluster(&[&p0, &p1, &p2, &p3]).unwrap();
-    assert_eq!(cstore.get_page(cid, 0).unwrap(), p0);
-    assert_eq!(cstore.get_page(cid, 2).unwrap(), p2);
-    assert!(cstore.get_page(cid, 4).is_err());
+    let mut page_out = vec![0u8; 4096];
+    cstore.get_page_into(cid, 0, &mut page_out).unwrap();
+    assert_eq!(page_out, p0);
+    cstore.get_page_into(cid, 2, &mut page_out).unwrap();
+    assert_eq!(page_out, p2);
+    assert!(cstore.get_page_into(cid, 4, &mut page_out).is_err());
     let _ = cstore.migrate_cluster(cid, StorageTier::Memory).unwrap();
-    assert_eq!(cstore.get_page(cid, 3).unwrap(), p3);
+    cstore.get_page_into(cid, 3, &mut page_out).unwrap();
+    assert_eq!(page_out, p3);
     let _ = cstore
-        .migrate_cluster(cid, StorageTier::Compressed)
+        .migrate_cluster_with_codec(cid, CodecId::Lz4Hc { level: 6 })
         .unwrap();
-    assert_eq!(cstore.get_page(cid, 1).unwrap(), p1);
+    cstore.get_page_into(cid, 1, &mut page_out).unwrap();
+    assert_eq!(page_out, p1);
 
     // Ensure invalid length is rejected cleanly
     assert_eq!(

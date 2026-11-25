@@ -299,7 +299,7 @@ impl ResourceCostModel {
             CodecId::Raw => 0,
             CodecId::Lz4Standard => original_bytes.saturating_add(1024),
             CodecId::Lz4Hc { .. } => {
-                let hash_bytes = if original_bytes <= 4096 {
+                let hash_bytes: usize = if original_bytes <= 4096 {
                     4096 * 4
                 } else if original_bytes <= 16_384 {
                     8192 * 4
