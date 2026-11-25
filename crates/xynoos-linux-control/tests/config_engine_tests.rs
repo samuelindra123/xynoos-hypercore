@@ -394,7 +394,7 @@ fn test_config_journal_lifecycle() {
     fs::create_dir_all(&root).unwrap();
     let journal_path = root.join("journal.json");
 
-    let mut journal = ConfigJournal::new("tx-12345".into());
+    let mut journal = ConfigJournal::new("tx-12345".into(), 1_000_000);
     assert_eq!(journal.phase, ConfigTxPhase::Prepared);
 
     journal.record_item(ConfigJournalItem {
@@ -409,11 +409,9 @@ fn test_config_journal_lifecycle() {
     journal.persist(&journal_path, 1_000_000).unwrap();
 
     let loaded = ConfigJournal::load_from(&journal_path).unwrap();
-    assert!(loaded.is_some());
-    let j = loaded.unwrap();
-    assert_eq!(j.transaction_id, "tx-12345");
-    assert_eq!(j.phase, ConfigTxPhase::Applying);
-    assert_eq!(j.items.len(), 1);
+    assert_eq!(loaded.transaction_id, "tx-12345");
+    assert_eq!(loaded.phase, ConfigTxPhase::Applying);
+    assert_eq!(loaded.items.len(), 1);
 
     ConfigJournal::cleanup(&journal_path).unwrap();
     assert!(!journal_path.exists());
