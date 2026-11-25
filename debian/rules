@@ -20,7 +20,7 @@ override_dh_auto_configure:
 	cp /usr/share/doc/libstd-rust-dev/copyright debian/RUST-STDLIB-NOTICES
 
 override_dh_auto_build:
-	cargo build --frozen --release -p xynoos-cli --bin xynoos --bin xynoosd --features debian-package
+	cargo build --frozen --release -p xynoos-cli --bin xynoos --features debian-package
 
 override_dh_auto_test:
 ifeq (,$(filter nocheck,$(DEB_BUILD_OPTIONS)))
@@ -29,7 +29,6 @@ endif
 
 override_dh_auto_install:
 	install -D -m 0755 target/release/xynoos debian/xynoos-hypercore/usr/bin/xynoos
-	install -D -m 0755 target/release/xynoosd debian/xynoos-hypercore/usr/bin/xynoosd
 
 override_dh_gencontrol:
 	dh_gencontrol -- -Vxynoos:Built-Using="$$(cat debian/rust-built-using)"

@@ -1,4 +1,3 @@
 # This is an upstream CI package, not an upload to the Debian archive.
 # No Debian ITP bug exists, so claiming a Closes number would be false.
 xynoos-hypercore: initial-upload-closes-no-bugs
-xynoos-hypercore: binary-without-manpage usr/bin/xynoosd

@@ -243,7 +243,7 @@ impl RuntimeAuthorizationContract {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
-    /// Save the contract to disk atomically with restricted permissions (0600).
+    /// Save the contract to disk atomically.
     pub fn save_to(&self, path: &Path, _now_ms: u64) -> io::Result<()> {
         if path.is_symlink() {
             return Err(io::Error::new(
@@ -253,11 +253,6 @@ impl RuntimeAuthorizationContract {
         }
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
-            }
         }
         let temp_path = path.with_extension("tmp");
         let payload = serde_json::to_string_pretty(self)
@@ -265,11 +260,6 @@ impl RuntimeAuthorizationContract {
 
         {
             let mut file = File::create(&temp_path)?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
-            }
             file.write_all(payload.as_bytes())?;
             file.sync_all()?;
         }
