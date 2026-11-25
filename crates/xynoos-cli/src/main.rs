@@ -15,9 +15,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     if args.first().map(String::as_str) == Some("transaction") {
         return transaction_command(&args[1..]);
     }
-    if args.first().map(String::as_str) == Some("internal-workload-worker") {
-        return internal_workload_worker(&args[1..]);
-    }
     if args.first().map(String::as_str) == Some("config") {
         return config_command(&args[1..]);
     }
@@ -904,26 +901,7 @@ fn profile_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn internal_workload_worker(args: &[String]) -> Result<(), Box<dyn Error>> {
-    use std::io::Read;
-    let bytes: usize = args
-        .first()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or(16 * 1024 * 1024);
-    let mut buf = vec![0u8; bytes];
-    for chunk in buf.chunks_mut(4096) {
-        chunk[0] = 42;
-    }
-    println!("READY");
-    io::stdout().flush()?;
-    let mut stdin_buf = [0u8; 16];
-    let _ = io::stdin().read(&mut stdin_buf);
-    Ok(())
-}
-
 fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
-    use std::io::{BufRead, BufReader};
-    use std::process::{Command, Stdio};
     use xynoos_aura::xynoos_linux_control::transaction::{
         Backend, DisposableCgroup, Outcome, SustainedLease, WorkloadCgroup,
     };
@@ -1084,33 +1062,70 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         .read_high()
         .map_err(|e| format!("Stage 2 read_high failed: {e}"))?;
 
-    // Spawn bounded worker process
-    let current_exe = std::env::current_exe()?;
-    let mut worker = Command::new(&current_exe)
-        .args(["internal-workload-worker", &workload_bytes.to_string()])
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::inherit())
-        .spawn()
-        .map_err(|e| format!("Failed to spawn qualification worker: {e}"))?;
-
-    let worker_pid = worker.id();
-    let mut worker_stdout = BufReader::new(
-        worker
-            .stdout
-            .take()
-            .ok_or("Failed to capture worker stdout")?,
-    );
-    let mut ready_line = String::new();
-    worker_stdout.read_line(&mut ready_line)?;
-    if !ready_line.trim().starts_with("READY") {
-        let _ = worker.kill();
-        return Err(format!("Worker failed to signal readiness: '{ready_line}'").into());
+    // Spawn bounded worker process using fork to preserve base libc6 compatibility (< 2.39)
+    let mut pipe_fds = [0i32; 2];
+    if unsafe { libc::pipe(pipe_fds.as_mut_ptr()) } != 0 {
+        return Err("Failed to create synchronization pipe for worker".into());
     }
+
+    let child_pid = unsafe { libc::fork() };
+    if child_pid < 0 {
+        unsafe {
+            libc::close(pipe_fds[0]);
+            libc::close(pipe_fds[1]);
+        }
+        return Err("Failed to fork qualification worker".into());
+    }
+
+    if child_pid == 0 {
+        // Child process
+        unsafe {
+            libc::close(pipe_fds[0]);
+        }
+        // Allocate bounded workload memory and touch pages to ensure resident memory
+        let mut buf = vec![0u8; workload_bytes as usize];
+        for chunk in buf.chunks_mut(4096) {
+            chunk[0] = 42;
+        }
+        // Signal readiness to parent
+        let ready = [1u8];
+        unsafe {
+            let _ = libc::write(pipe_fds[1], ready.as_ptr() as *const libc::c_void, 1);
+            libc::close(pipe_fds[1]);
+        }
+        // Sleep until terminated by parent
+        loop {
+            unsafe {
+                libc::pause();
+            }
+        }
+    }
+
+    // Parent process
+    unsafe {
+        libc::close(pipe_fds[1]);
+    }
+    let mut ready_buf = [0u8; 1];
+    let n = unsafe { libc::read(pipe_fds[0], ready_buf.as_mut_ptr() as *mut libc::c_void, 1) };
+    unsafe {
+        libc::close(pipe_fds[0]);
+    }
+    if n != 1 {
+        unsafe {
+            libc::kill(child_pid, libc::SIGKILL);
+            libc::waitpid(child_pid, std::ptr::null_mut(), 0);
+        }
+        return Err("Qualification worker failed to signal readiness".into());
+    }
+
+    let worker_pid = child_pid as u32;
 
     // Attach worker to workload cgroup
     std::fs::write(child_path.join("cgroup.procs"), worker_pid.to_string()).map_err(|e| {
-        let _ = worker.kill();
+        unsafe {
+            libc::kill(child_pid, libc::SIGKILL);
+            libc::waitpid(child_pid, std::ptr::null_mut(), 0);
+        }
         format!("Failed to move worker to cgroup: {e}")
     })?;
 
@@ -1133,7 +1148,10 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let mut lease =
         SustainedLease::acquire_durable(&mut wl_backend, &snap, lease_action, true, &journal)
             .map_err(|r| {
-                let _ = worker.kill();
+                unsafe {
+                    libc::kill(child_pid, libc::SIGKILL);
+                    libc::waitpid(child_pid, std::ptr::null_mut(), 0);
+                }
                 format!(
                     "acquire_durable failed: outcome={:?}, events={:?}",
                     r.outcome, r.events
@@ -1150,8 +1168,10 @@ fn transaction_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let journal_cleaned = !journal.exists();
 
     // Terminate worker
-    let _ = worker.kill();
-    let _ = worker.wait();
+    unsafe {
+        libc::kill(child_pid, libc::SIGKILL);
+        libc::waitpid(child_pid, std::ptr::null_mut(), 0);
+    }
 
     // Verification asserts
     if release_rep.outcome != Outcome::Restored {
