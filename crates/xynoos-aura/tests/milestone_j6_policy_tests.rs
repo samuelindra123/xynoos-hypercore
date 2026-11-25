@@ -199,7 +199,7 @@ fn test_stale_telemetry_fails_closed() {
 
 #[test]
 fn test_transient_spikes_and_recovery_hysteresis() {
-    let mut stabilizer = PressureStabilizer::new(3, 1);
+    let stabilizer = PressureStabilizer::new(3, 2);
 
     // Initial low pressure
     assert_eq!(stabilizer.step(MemoryPressure::Low), MemoryPressure::Low);
