@@ -567,16 +567,58 @@ def main():
                     "daemon_rss_kib": summarize([r["daemon_rss_kib"] for r in c_rows if r["daemon_rss_kib"] is not None]),
                 }
 
+    # Controlled pairwise comparisons: Candidate E vs Baseline B (Optimized Linux)
+    comparisons = {}
+    for prof_name in summary:
+        comparisons[prof_name] = {}
+        for wl in summary[prof_name]:
+            cand_b = summary[prof_name][wl].get("baseline_b_zram_or_swap")
+            cand_e = summary[prof_name][wl].get("candidate_e_transactional")
+            cand_c = summary[prof_name][wl].get("candidate_c_observe_only")
+            comp = {}
+            if cand_b and cand_e:
+                b_p50 = cand_b.get("fg_p50_ms", {}).get("median")
+                e_p50 = cand_e.get("fg_p50_ms", {}).get("median")
+                if b_p50 and e_p50:
+                    comp["fg_p50_delta_pct"] = round((e_p50 - b_p50) / b_p50 * 100.0, 2)
+                b_p95 = cand_b.get("fg_p95_ms", {}).get("median")
+                e_p95 = cand_e.get("fg_p95_ms", {}).get("median")
+                if b_p95 and e_p95:
+                    comp["fg_p95_delta_pct"] = round((e_p95 - b_p95) / b_p95 * 100.0, 2)
+                b_psi = cand_b.get("mem_psi_some_us", {}).get("median")
+                e_psi = cand_e.get("mem_psi_some_us", {}).get("median")
+                if b_psi is not None and e_psi is not None and b_psi > 0:
+                    comp["mem_psi_reduction_pct"] = round((b_psi - e_psi) / b_psi * 100.0, 2)
+                b_bg = cand_b.get("total_wall_ms", {}).get("median")
+                e_bg = cand_e.get("total_wall_ms", {}).get("median")
+                if b_bg and e_bg:
+                    comp["total_wall_ms_delta_pct"] = round((e_bg - b_bg) / b_bg * 100.0, 2)
+            if cand_b and cand_c:
+                b_p50 = cand_b.get("fg_p50_ms", {}).get("median")
+                c_p50 = cand_c.get("fg_p50_ms", {}).get("median")
+                if b_p50 and c_p50:
+                    comp["observe_only_overhead_p50_pct"] = round((c_p50 - b_p50) / b_p50 * 100.0, 2)
+            comparisons[prof_name][wl] = comp
+
+    zram_devs = sorted(p.name for p in Path("/sys/block").glob("zram*"))
+    swaps_txt = read_text("/proc/swaps") or ""
     env_meta = {
         "kernel": read_text("/proc/sys/kernel/osrelease"),
         "arch": os.uname().machine,
         "logical_cpus": os.cpu_count(),
-        "swaps": read_text("/proc/swaps"),
-        "zram_devices": sorted(p.name for p in Path("/sys/block").glob("zram*")),
+        "swaps": swaps_txt,
+        "swap_active": len(swaps_txt.splitlines()) > 1,
+        "zram_devices": zram_devs,
+        "zram_active": len(zram_devs) > 0,
         "seed": args.seed,
         "browser_available": bool(shutil.which("google-chrome") or shutil.which("chromium") or shutil.which("chromium-browser")),
     }
-    report = {"environment": env_meta, "profiles": profiles, "summary": summary}
+    report = {
+        "environment": env_meta,
+        "profiles": profiles,
+        "summary": summary,
+        "comparisons_vs_baseline_b": comparisons,
+    }
     (out_dir / "lab_summary.json").write_text(json.dumps(report, indent=2))
     print(json.dumps(report, indent=2))
 

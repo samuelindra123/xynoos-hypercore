@@ -70,7 +70,13 @@ pub use interplay::{AuraKernelCoordinator, InterplayReport, KernelTuningRecommen
 
 pub mod daemon;
 pub use daemon::{
-    AuraDaemon, DaemonConfig, DaemonDiagnostics, DaemonMode, PidLock, TransactionJournal,
+    AuraDaemon, ConfigValidationError, DaemonConfig, DaemonDiagnostics, DaemonMode, PidLock,
+    TransactionJournal,
+};
+
+pub mod safety_guard;
+pub use safety_guard::{
+    CircuitState, RuntimeSafetyGuard, SafetyGuardConfig, SafetyGuardStatus, SafetyRejection,
 };
 
 pub mod profiler;

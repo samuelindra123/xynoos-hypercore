@@ -17,16 +17,21 @@ Slice=xynoos-hypercore.slice
 
 # Sandboxing & Hardening Invariants
 ProtectSystem=strict
-ProtectHome=read-only
+ProtectHome=yes
 PrivateTmp=yes
 ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectControlGroups=false
 NoNewPrivileges=yes
-CapabilityBoundingSet=CAP_SYS_RESOURCE
+CapabilityBoundingSet=
 AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+MemoryHigh=32M
 MemoryMax=64M
+TasksMax=16
 CPUWeight=100
+LockPersonality=yes
+RestrictRealtime=yes
 
 [Install]
 WantedBy=multi-user.target

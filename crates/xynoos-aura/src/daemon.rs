@@ -73,9 +73,103 @@ pub enum DaemonMode {
     Transactional,
 }
 
-/// Konfigurasi runtime daemon AURA.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Kesalahan validasi konfigurasi runtime daemon AURA.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ConfigValidationError {
+    InvalidInterval {
+        min: u64,
+        max: u64,
+        actual: u64,
+    },
+    InvalidBackoff {
+        interval: u64,
+        actual: u64,
+    },
+    InvalidMaxRss {
+        min: usize,
+        max: usize,
+        actual: usize,
+    },
+    InvalidProtectionBytes {
+        max: u64,
+        actual: u64,
+    },
+    InvalidThrottleBytes {
+        max: u64,
+        actual: u64,
+    },
+    InsecurePath {
+        field: &'static str,
+        path: PathBuf,
+        reason: &'static str,
+    },
+    IoError {
+        path: PathBuf,
+        error: String,
+    },
+    DeserializationError(String),
+}
+
+impl std::fmt::Display for ConfigValidationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::InvalidInterval { min, max, actual } => {
+                write!(
+                    f,
+                    "interval_ms {actual} out of bounds: must be between {min} and {max} ms"
+                )
+            }
+            Self::InvalidBackoff { interval, actual } => {
+                write!(
+                    f,
+                    "max_backoff_ms {actual} invalid: must be >= interval_ms ({interval} ms)"
+                )
+            }
+            Self::InvalidMaxRss { min, max, actual } => {
+                write!(
+                    f,
+                    "max_rss_bytes {actual} out of bounds: must be between {min} and {max} bytes"
+                )
+            }
+            Self::InvalidProtectionBytes { max, actual } => {
+                write!(
+                    f,
+                    "default_protection_bytes {actual} invalid: must not exceed {max} bytes"
+                )
+            }
+            Self::InvalidThrottleBytes { max, actual } => {
+                write!(
+                    f,
+                    "default_throttle_bytes {actual} invalid: must not exceed {max} bytes"
+                )
+            }
+            Self::InsecurePath {
+                field,
+                path,
+                reason,
+            } => {
+                write!(f, "{field} path '{}' is insecure: {reason}", path.display())
+            }
+            Self::IoError { path, error } => {
+                write!(
+                    f,
+                    "failed to read configuration at '{}': {error}",
+                    path.display()
+                )
+            }
+            Self::DeserializationError(msg) => {
+                write!(f, "configuration parse error: {msg}")
+            }
+        }
+    }
+}
+impl std::error::Error for ConfigValidationError {}
+
+/// Konfigurasi runtime daemon AURA terverifikasi dan deterministik.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DaemonConfig {
+    #[serde(default = "default_config_schema")]
+    pub schema_version: u32,
     pub mode: DaemonMode,
     pub interval_ms: u64,
     pub max_backoff_ms: u64,
@@ -86,15 +180,110 @@ pub struct DaemonConfig {
     pub default_throttle_bytes: u64,
     #[serde(default = "default_adaptive_polling")]
     pub adaptive_polling: bool,
+    #[serde(default)]
+    pub safety_guard: crate::safety_guard::SafetyGuardConfig,
+}
+
+fn default_config_schema() -> u32 {
+    1
 }
 
 fn default_adaptive_polling() -> bool {
     true
 }
 
+impl DaemonConfig {
+    /// Memvalidasi seluruh batasan nilai konfigurasi sebelum aktivasi.
+    pub fn validate(&self) -> Result<(), ConfigValidationError> {
+        if self.interval_ms < 10 || self.interval_ms > 3_600_000 {
+            return Err(ConfigValidationError::InvalidInterval {
+                min: 10,
+                max: 3_600_000,
+                actual: self.interval_ms,
+            });
+        }
+        if self.max_backoff_ms < self.interval_ms {
+            return Err(ConfigValidationError::InvalidBackoff {
+                interval: self.interval_ms,
+                actual: self.max_backoff_ms,
+            });
+        }
+        if self.max_rss_bytes < 1024 * 1024 || self.max_rss_bytes > 16 * 1024 * 1024 * 1024 {
+            return Err(ConfigValidationError::InvalidMaxRss {
+                min: 1024 * 1024,
+                max: 16 * 1024 * 1024 * 1024,
+                actual: self.max_rss_bytes,
+            });
+        }
+        if self.default_protection_bytes > 512 * 1024 * 1024 {
+            return Err(ConfigValidationError::InvalidProtectionBytes {
+                max: 512 * 1024 * 1024,
+                actual: self.default_protection_bytes,
+            });
+        }
+        if self.default_throttle_bytes > 2 * 1024 * 1024 * 1024 {
+            return Err(ConfigValidationError::InvalidThrottleBytes {
+                max: 2 * 1024 * 1024 * 1024,
+                actual: self.default_throttle_bytes,
+            });
+        }
+
+        if let Some(ref p) = self.pid_file {
+            validate_safe_path("pid_file", p)?;
+        }
+        if let Some(ref j) = self.journal_file {
+            validate_safe_path("journal_file", j)?;
+        }
+
+        Ok(())
+    }
+
+    /// Membaca dan memvalidasi konfigurasi dari teks JSON.
+    pub fn from_json_str(s: &str) -> Result<Self, ConfigValidationError> {
+        let cfg: Self = serde_json::from_str(s)
+            .map_err(|e| ConfigValidationError::DeserializationError(e.to_string()))?;
+        cfg.validate()?;
+        Ok(cfg)
+    }
+
+    /// Membaca dan memvalidasi berkas konfigurasi dari disk.
+    pub fn from_file(path: &Path) -> Result<Self, ConfigValidationError> {
+        let content = fs::read_to_string(path).map_err(|e| ConfigValidationError::IoError {
+            path: path.to_path_buf(),
+            error: e.to_string(),
+        })?;
+        Self::from_json_str(&content)
+    }
+}
+
+fn validate_safe_path(field: &'static str, path: &Path) -> Result<(), ConfigValidationError> {
+    if !path.is_absolute() {
+        return Err(ConfigValidationError::InsecurePath {
+            field,
+            path: path.to_path_buf(),
+            reason: "path must be absolute",
+        });
+    }
+    let s = path.to_string_lossy();
+    if s == "/"
+        || s.starts_with("/etc")
+        || s.starts_with("/proc")
+        || s.starts_with("/sys")
+        || s.starts_with("/dev")
+    {
+        return Err(ConfigValidationError::InsecurePath {
+            field,
+            path: path.to_path_buf(),
+            reason: "system directory targets are strictly prohibited",
+        });
+    }
+    Ok(())
+}
+
 impl Default for DaemonConfig {
     fn default() -> Self {
         Self {
+            schema_version: 1,
             mode: DaemonMode::ObserveOnly,
             interval_ms: 5000,
             max_backoff_ms: 60000,
@@ -104,6 +293,7 @@ impl Default for DaemonConfig {
             default_protection_bytes: 16 * 1024 * 1024,
             default_throttle_bytes: 64 * 1024 * 1024,
             adaptive_polling: true,
+            safety_guard: crate::safety_guard::SafetyGuardConfig::default(),
         }
     }
 }
@@ -184,11 +374,14 @@ impl TransactionJournal {
         let tmp_path = parent.join(format!(".{file_name}.tmp.{}", std::process::id()));
 
         {
-            let mut tmp = OpenOptions::new()
-                .write(true)
-                .create(true)
-                .truncate(true)
-                .open(&tmp_path)?;
+            let mut opts = OpenOptions::new();
+            opts.write(true).create(true).truncate(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600);
+            }
+            let mut tmp = opts.open(&tmp_path)?;
             tmp.write_all(&data)?;
             tmp.flush()?;
             tmp.sync_all()?;
@@ -202,16 +395,33 @@ impl TransactionJournal {
     }
 
     /// Membaca dan memverifikasi integritas jurnal transaksi dari disk jika tersedia.
+    /// Jika berkas terkorupsi, salinan diagnostik (.corrupt.<epoch>) disimpan sebagai bukti forensik.
     pub fn load(path: &Path) -> io::Result<Option<Self>> {
         if !path.exists() {
             return Ok(None);
         }
         let data = fs::read(path)?;
-        let journal: Self = serde_json::from_slice(&data)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        let journal: Self = match serde_json::from_slice(&data) {
+            Ok(j) => j,
+            Err(e) => {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let corrupt_path = path.with_extension(format!("corrupt.{ts}"));
+                let _ = fs::copy(path, corrupt_path);
+                return Err(io::Error::new(io::ErrorKind::InvalidData, e));
+            }
+        };
         if journal.integrity_crc != 0 {
             let expected = journal.compute_crc()?;
             if journal.integrity_crc != expected {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let corrupt_path = path.with_extension(format!("corrupt.crc.{ts}"));
+                let _ = fs::copy(path, corrupt_path);
                 return Err(io::Error::new(
                     io::ErrorKind::InvalidData,
                     "journal integrity CRC mismatch",
@@ -250,7 +460,12 @@ impl PidLock {
         let trimmed = content.trim();
         let current_boot = current_boot_id();
 
-        if let Ok(rec) = serde_json::from_str::<PidLockRecord>(trimmed) {
+        let json_target = trimmed
+            .lines()
+            .find(|l| l.trim_start().starts_with('{'))
+            .unwrap_or(trimmed);
+
+        if let Ok(rec) = serde_json::from_str::<PidLockRecord>(json_target) {
             if let (Some(locked_boot), Some(host_boot)) = (&rec.boot_id, &current_boot) {
                 if locked_boot != host_boot {
                     return Ok(false);
@@ -275,8 +490,9 @@ impl PidLock {
             ));
         }
 
-        // Legacy plain-PID fallback
-        if let Ok(pid) = trimmed.parse::<u32>() {
+        // Standard plain-PID fallback (line 1 integer for start-stop-daemon compatibility)
+        let first_line = trimmed.lines().next().unwrap_or(trimmed);
+        if let Ok(pid) = first_line.trim().parse::<u32>() {
             if PathBuf::from(format!("/proc/{}", pid)).exists() {
                 return Err(format!(
                     "Daemon sudah berjalan dengan PID {} (lock: {})",
@@ -300,13 +516,24 @@ impl PidLock {
             start_ticks: process_start_ticks(current_pid),
             boot_id: current_boot_id(),
         };
-        let payload = serde_json::to_vec(&record)
+        let rec_json = serde_json::to_string(&record)
             .map_err(|e| format!("Gagal serialisasi PID lock: {}", e))?;
+        // First line: numeric PID (for standard init / start-stop-daemon compatibility)
+        // Second line: JSON record (for robust PID-reuse and boot verification)
+        let payload = format!("{}\n{}\n", current_pid, rec_json);
+
+        let mut opts = OpenOptions::new();
+        opts.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
 
         for _attempt in 0..3 {
-            match OpenOptions::new().write(true).create_new(true).open(&path) {
+            match opts.open(&path) {
                 Ok(mut file) => {
-                    file.write_all(&payload)
+                    file.write_all(payload.as_bytes())
                         .and_then(|_| file.sync_all())
                         .map_err(|e| format!("Gagal menulis PID lock: {}", e))?;
                     return Ok(Self { path });
@@ -372,11 +599,14 @@ pub struct DaemonDiagnostics {
     pub rss_bytes: Option<usize>,
     pub rss_within_budget: bool,
     pub history_len: usize,
+    #[serde(default)]
+    pub safety_guard: Option<crate::safety_guard::SafetyGuardStatus>,
 }
 
 /// Koordinator daemon AURA terpadu.
 pub struct AuraDaemon {
     pub config: DaemonConfig,
+    pub safety_guard: crate::safety_guard::RuntimeSafetyGuard,
     pub coordinator: AuraKernelCoordinator,
     pub adaptive_coordinator: AuraAdaptiveCoordinator,
     pub cluster_store: ClusterStore,
@@ -401,6 +631,11 @@ pub struct AuraDaemon {
 
 impl AuraDaemon {
     pub fn new(config: DaemonConfig) -> Result<Self, xynoos_hypermemory::Error> {
+        config
+            .validate()
+            .map_err(|_| xynoos_hypermemory::Error::InvalidCapacity)?;
+        let safety_guard =
+            crate::safety_guard::RuntimeSafetyGuard::new(config.safety_guard.clone());
         let tiering_coord = AuraTieringCoordinator::new(AdaptiveTieringPolicy::default());
         let mut kernel_coord = AuraKernelCoordinator::new(tiering_coord);
         kernel_coord.default_protection_bytes = config.default_protection_bytes;
@@ -418,6 +653,7 @@ impl AuraDaemon {
 
         Ok(Self {
             config,
+            safety_guard,
             coordinator: kernel_coord,
             adaptive_coordinator,
             cluster_store,
@@ -439,6 +675,15 @@ impl AuraDaemon {
             last_error: None,
             recovered_crashes: 0,
         })
+    }
+
+    /// Memperbarui konfigurasi daemon secara atomik setelah validasi menyeluruh.
+    pub fn reload_config(&mut self, new_config: DaemonConfig) -> Result<(), ConfigValidationError> {
+        new_config.validate()?;
+        self.coordinator.default_protection_bytes = new_config.default_protection_bytes;
+        self.coordinator.default_throttle_bytes = new_config.default_throttle_bytes;
+        self.config = new_config;
+        Ok(())
     }
 
     pub fn effective_interval_ms(&self) -> u64 {
@@ -689,6 +934,7 @@ impl AuraDaemon {
         let recommendation = self.coordinator.recommend(stabilized_pressure);
         self.last_recommendation = Some(recommendation.clone());
         let mut step_had_error = false;
+        self.safety_guard.tick_cycle();
 
         match self.config.mode {
             DaemonMode::ObserveOnly => {
@@ -725,51 +971,99 @@ impl AuraDaemon {
                         if let Some(action) =
                             self.compute_workload_aware_action(&recommendation, current_usage)
                         {
-                            if let Ok(orig) = b.read_control(action) {
-                                let wrote_journal = if let Some(journal_path) =
-                                    &self.config.journal_file
-                                {
-                                    let journal = TransactionJournal {
-                                        schema_version: 1,
-                                        timestamp_epoch_secs: std::time::SystemTime::now()
-                                            .duration_since(std::time::UNIX_EPOCH)
-                                            .map(|d| d.as_secs())
-                                            .unwrap_or(0),
-                                        boot_id: current_boot_id(),
-                                        process_pid: std::process::id(),
-                                        process_start_ticks: process_start_ticks(std::process::id()),
-                                        identity: id,
-                                        action,
-                                        original_value: orig,
-                                        requested_value: action.bytes(),
-                                        status: JournalStatus::Pending,
-                                        integrity_crc: 0,
-                                    };
-                                    journal.persist(journal_path).is_ok()
-                                } else {
-                                    false
-                                };
+                            let cpu_psi = snap.cpu_psi.as_ref().ok().map(|p| p.some.avg10);
+                            let io_psi = snap.io_psi.as_ref().ok().map(|p| p.some.avg10);
+                            let mem_psi =
+                                snap.memory.psi.result.as_ref().ok().map(|p| p.some.avg10);
 
-                                let report = transaction::run(b, snap, action, true);
-                                match report.outcome {
-                                    Outcome::Restored
-                                    | Outcome::Declined
-                                    | Outcome::ApplyFailed => {
-                                        if wrote_journal {
-                                            if let Some(journal_path) = &self.config.journal_file {
-                                                let _ = TransactionJournal::cleanup(journal_path);
+                            match self.safety_guard.can_intervene(cpu_psi, io_psi, mem_psi) {
+                                Err(rejection) => {
+                                    let msg = format!(
+                                        "Safety guard declined kernel intervention: {rejection}"
+                                    );
+                                    self.record_failure(msg);
+                                }
+                                Ok(()) => {
+                                    if let Ok(orig) = b.read_control(action) {
+                                        let wrote_journal = if let Some(journal_path) =
+                                            &self.config.journal_file
+                                        {
+                                            let journal = TransactionJournal {
+                                                schema_version: 1,
+                                                timestamp_epoch_secs: std::time::SystemTime::now()
+                                                    .duration_since(std::time::UNIX_EPOCH)
+                                                    .map(|d| d.as_secs())
+                                                    .unwrap_or(0),
+                                                boot_id: current_boot_id(),
+                                                process_pid: std::process::id(),
+                                                process_start_ticks: process_start_ticks(
+                                                    std::process::id(),
+                                                ),
+                                                identity: id,
+                                                action,
+                                                original_value: orig,
+                                                requested_value: action.bytes(),
+                                                status: JournalStatus::Pending,
+                                                integrity_crc: 0,
+                                            };
+                                            journal.persist(journal_path).is_ok()
+                                        } else {
+                                            false
+                                        };
+
+                                        let report = transaction::run(b, snap, action, true);
+                                        match report.outcome {
+                                            Outcome::Restored => {
+                                                let dir = match action {
+                                                    Action::MemoryLow { .. } => 1,
+                                                    Action::MemoryHigh { .. } => -1,
+                                                    Action::MemoryMax { .. } => -1,
+                                                };
+                                                self.safety_guard.record_success(dir);
+                                                if wrote_journal {
+                                                    if let Some(journal_path) =
+                                                        &self.config.journal_file
+                                                    {
+                                                        let _ = TransactionJournal::cleanup(
+                                                            journal_path,
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            Outcome::Declined | Outcome::ApplyFailed => {
+                                                self.safety_guard.record_failure(&format!(
+                                                    "{:?}",
+                                                    report.outcome
+                                                ));
+                                                if wrote_journal {
+                                                    if let Some(journal_path) =
+                                                        &self.config.journal_file
+                                                    {
+                                                        let _ = TransactionJournal::cleanup(
+                                                            journal_path,
+                                                        );
+                                                    }
+                                                }
+                                            }
+                                            Outcome::Conflict | Outcome::VerificationFailed => {
+                                                let msg = format!(
+                                                    "Kernel transaction ended with {:?}: {:?}",
+                                                    report.outcome, report.events
+                                                );
+                                                self.safety_guard.record_failure(&msg);
+                                                self.record_failure(msg);
+                                                step_had_error = true;
+                                            }
+                                            Outcome::RollbackFailed => {
+                                                let msg = format!(
+                                                    "Kernel transaction ended with {:?}: {:?}",
+                                                    report.outcome, report.events
+                                                );
+                                                self.safety_guard.record_rollback_failure(&msg);
+                                                self.record_failure(msg);
+                                                step_had_error = true;
                                             }
                                         }
-                                    }
-                                    Outcome::Conflict
-                                    | Outcome::VerificationFailed
-                                    | Outcome::RollbackFailed => {
-                                        let msg = format!(
-                                            "Kernel transaction ended with {:?}: {:?}",
-                                            report.outcome, report.events
-                                        );
-                                        self.record_failure(msg);
-                                        step_had_error = true;
                                     }
                                 }
                             }
@@ -813,6 +1107,7 @@ impl AuraDaemon {
             rss_bytes,
             rss_within_budget,
             history_len: self.telemetry_history.len(),
+            safety_guard: Some(self.safety_guard.status()),
         }
     }
 
@@ -1288,5 +1583,42 @@ mod tests {
         assert_eq!(out.last_cpu_pressure, Some(ResourcePressureLevel::Low));
         assert_eq!(out.last_io_pressure, Some(ResourcePressureLevel::Low));
         assert!(out.adaptive_transitions_total >= 1);
+    }
+
+    #[test]
+    fn test_daemon_config_strict_validation_and_reload() {
+        let valid = DaemonConfig::default();
+        assert!(valid.validate().is_ok());
+
+        let mut invalid_interval = valid.clone();
+        invalid_interval.interval_ms = 5; // < 10 ms
+        assert!(matches!(
+            invalid_interval.validate(),
+            Err(ConfigValidationError::InvalidInterval { .. })
+        ));
+
+        let mut invalid_backoff = valid.clone();
+        invalid_backoff.interval_ms = 5000;
+        invalid_backoff.max_backoff_ms = 1000; // < interval
+        assert!(matches!(
+            invalid_backoff.validate(),
+            Err(ConfigValidationError::InvalidBackoff { .. })
+        ));
+
+        let mut invalid_pid = valid.clone();
+        invalid_pid.pid_file = Some(PathBuf::from("/etc/xynoos.pid")); // /etc forbidden
+        assert!(matches!(
+            invalid_pid.validate(),
+            Err(ConfigValidationError::InsecurePath { .. })
+        ));
+
+        let mut daemon = AuraDaemon::new(valid.clone()).unwrap();
+        let mut new_cfg = valid.clone();
+        new_cfg.default_protection_bytes = 32 * 1024 * 1024;
+        assert!(daemon.reload_config(new_cfg).is_ok());
+        assert_eq!(
+            daemon.coordinator.default_protection_bytes,
+            32 * 1024 * 1024
+        );
     }
 }

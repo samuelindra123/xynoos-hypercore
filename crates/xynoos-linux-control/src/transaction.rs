@@ -548,6 +548,14 @@ impl WorkloadCgroup {
         let name_os = target
             .file_name()
             .ok_or("target must have a directory name")?;
+        let name_str = name_os.to_string_lossy();
+        if name_str == "system.slice"
+            || name_str == "user.slice"
+            || name_str == "init.scope"
+            || name_str == "-.slice"
+        {
+            return Err("system infrastructure cgroup targets are strictly prohibited".into());
+        }
         let name = std::ffi::CString::new(name_os.as_bytes()).map_err(|_| "invalid target name")?;
 
         let parent = open_absolute_dir(parent_path)?;

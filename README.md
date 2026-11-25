@@ -54,10 +54,16 @@ curl --proto '=https' --tlsv1.2 -fsSL https://raw.githubusercontent.com/samuelin
 ```sh
 xynoos doctor
 xynoos status
+xynoos config validate
 xynoos diagnose --count 10 --interval-ms 1000 --json
 xynoos update
 xynoos rollback
 ```
+
+[Release readiness matrix](docs/distribution/RELEASE-READINESS-MATRIX.md) ·
+[Production hardening report (Milestone I)](docs/reports/MILESTONE-I-PRODUCTION-HARDENING-REPORT.md) ·
+[Deployment rollback procedures](docs/distribution/ROLLBACK.md) ·
+[Software bill of materials (SBOM)](docs/distribution/SBOM.md)
 
 Installs for your user without sudo, a source checkout, Rust, manual extraction or
 GitHub login. Requires curl, Python 3.9+, OpenSSL 3 and CA certificates. The final
