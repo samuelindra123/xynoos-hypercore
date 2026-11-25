@@ -877,7 +877,7 @@ impl SustainedLease {
                 action,
                 original_value: original,
                 requested_value: bytes,
-                phase: crate::journal::LeasePhase::Prepared,
+                status: crate::journal::LeasePhase::Prepared,
                 integrity_crc: 0,
             };
             if let Err(e) = journal.persist(j_path) {
@@ -931,7 +931,7 @@ impl SustainedLease {
                         action,
                         original_value: original,
                         requested_value: bytes,
-                        phase: crate::journal::LeasePhase::Conflict,
+                        status: crate::journal::LeasePhase::Conflict,
                         integrity_crc: 0,
                     };
                     let _ = conflict_journal.persist(j_path);
@@ -963,7 +963,7 @@ impl SustainedLease {
                 action,
                 original_value: original,
                 requested_value: bytes,
-                phase: crate::journal::LeasePhase::Applied,
+                status: crate::journal::LeasePhase::Applied,
                 integrity_crc: 0,
             };
             if let Err(e) = applied_journal.persist(j_path) {
@@ -1052,7 +1052,7 @@ impl SustainedLease {
                 action: self.action,
                 original_value: self.original,
                 requested_value: self.requested,
-                phase: crate::journal::LeasePhase::Restoring,
+                status: crate::journal::LeasePhase::Restoring,
                 integrity_crc: 0,
             };
             let _ = restoring_journal.persist(j_path);
@@ -1083,7 +1083,7 @@ impl SustainedLease {
                     action: self.action,
                     original_value: self.original,
                     requested_value: self.requested,
-                    phase: crate::journal::LeasePhase::Conflict,
+                    status: crate::journal::LeasePhase::Conflict,
                     integrity_crc: 0,
                 };
                 let _ = conflict_journal.persist(j_path);
