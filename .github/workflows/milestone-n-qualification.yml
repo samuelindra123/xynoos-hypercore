@@ -115,7 +115,7 @@ jobs:
           cat runtime-explain.json | jq '.'
 
           echo "=== Testing xynoos runtime disable ==="
-          target/release/xynoos runtime disable --json > runtime-disable.json
+          sudo target/release/xynoos runtime disable --json > runtime-disable.json
           cat runtime-disable.json | jq '.'
           IS_REVOKED=$(jq -r '.status' runtime-disable.json)
           if [ "$IS_REVOKED" != "revoked" ]; then

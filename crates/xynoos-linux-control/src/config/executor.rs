@@ -223,7 +223,9 @@ impl ConfigExecutor {
         if failed_count == 0 {
             journal.phase = ConfigTxPhase::Committed;
             let _ = journal.persist(&self.journal_path, now_ms);
-            let _ = ledger.save_to(&self.ledger_path, now_ms);
+            ledger
+                .save_to(&self.ledger_path, now_ms)
+                .map_err(|e| format!("Failed to commit ownership ledger: {e}"))?;
             let _ = ConfigJournal::cleanup(&self.journal_path);
         } else {
             // Transaction failed: roll back all partial items recorded in this journal
