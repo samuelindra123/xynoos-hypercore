@@ -439,7 +439,7 @@ pub fn recover_durable_lease<B: Backend + ?Sized>(
     // 4. Value Reconcile & Conflict Detection
     if current_val == journal.original_value {
         // Control is already at baseline
-        report.outcome = RecoveryOutcome::Restored;
+        report.outcome = RecoveryOutcome::AlreadyRestored;
         report
             .events
             .push("control is already at original baseline value".into());
