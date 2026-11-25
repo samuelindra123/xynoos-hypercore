@@ -90,6 +90,7 @@ impl Backend for Fixture {
             device: d.dev(),
             inode: d.ino(),
             control_inode: f.ino(),
+            mount_id: None,
         })
     }
     fn read_low(&mut self) -> Result<u64, String> {

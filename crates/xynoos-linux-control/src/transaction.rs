@@ -23,6 +23,28 @@ pub struct Identity {
     pub mount_id: Option<u64>,
 }
 
+impl Default for Identity {
+    fn default() -> Self {
+        Self {
+            device: 0,
+            inode: 0,
+            control_inode: 0,
+            mount_id: None,
+        }
+    }
+}
+
+impl Identity {
+    pub const fn new(device: u64, inode: u64, control_inode: u64) -> Self {
+        Self {
+            device,
+            inode,
+            control_inode,
+            mount_id: None,
+        }
+    }
+}
+
 /// Implementations must confine operations to one disposable target.
 pub trait Backend {
     fn identity(&mut self) -> Result<Identity, String>;

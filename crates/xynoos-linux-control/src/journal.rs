@@ -64,6 +64,19 @@ pub struct RecoveryReport {
     pub events: Vec<String>,
 }
 
+/// Returns the effective user ID of the calling process in a safe manner.
+pub fn current_euid() -> u32 {
+    #[cfg(unix)]
+    {
+        // SAFETY: geteuid is always safe to call and returns the effective user ID of the calling process.
+        unsafe { libc::geteuid() }
+    }
+    #[cfg(not(unix))]
+    {
+        0
+    }
+}
+
 fn default_schema_version() -> u32 {
     TransactionJournal::CURRENT_SCHEMA_VERSION
 }
@@ -103,7 +116,30 @@ impl TransactionJournal {
     pub fn phase(&self) -> LeasePhase {
         self.status
     }
+}
 
+impl Default for TransactionJournal {
+    fn default() -> Self {
+        Self {
+            schema_version: Self::CURRENT_SCHEMA_VERSION,
+            lease_id: String::new(),
+            timestamp_epoch_secs: 0,
+            boot_id: None,
+            owner_uid: 0,
+            process_pid: 0,
+            process_start_ticks: None,
+            authorized_root: None,
+            identity: Identity::default(),
+            action: Action::default(),
+            original_value: 0,
+            requested_value: 0,
+            status: LeasePhase::Prepared,
+            integrity_crc: 0,
+        }
+    }
+}
+
+impl TransactionJournal {
     /// Computes the IEEE CRC32 checksum over the serialized journal with integrity_crc set to 0.
     pub fn compute_crc(&self) -> io::Result<u32> {
         let mut copy = self.clone();

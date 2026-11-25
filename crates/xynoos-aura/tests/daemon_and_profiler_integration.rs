@@ -71,6 +71,7 @@ fn test_milestone_f_daemon_modes_and_safety_invariants() {
             device: 10,
             inode: 20,
             control_inode: 30,
+            mount_id: None,
         },
         low: 10 * 1024 * 1024,
         high: 100 * 1024 * 1024,
@@ -108,6 +109,7 @@ fn test_milestone_f_crash_recovery_and_rollback() {
         device: 100,
         inode: 200,
         control_inode: 300,
+        mount_id: None,
     };
     let mut backend = MockBackend {
         id: target_id,
@@ -119,10 +121,13 @@ fn test_milestone_f_crash_recovery_and_rollback() {
     // Tulis jurnal simulasi crash
     let journal = TransactionJournal {
         schema_version: 1,
+        lease_id: "test-lease".into(),
         timestamp_epoch_secs: 1700000000,
         boot_id: None,
+        owner_uid: 1000,
         process_pid: std::process::id(),
         process_start_ticks: None,
+        authorized_root: None,
         identity: target_id,
         action: Action::MemoryLow {
             bytes: 64 * 1024 * 1024,

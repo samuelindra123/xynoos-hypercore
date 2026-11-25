@@ -10,6 +10,7 @@ impl Backend for Memory {
             device: 1,
             inode: 2,
             control_inode: 3,
+            mount_id: None,
         })
     }
     fn read_low(&mut self) -> Result<u64, String> {

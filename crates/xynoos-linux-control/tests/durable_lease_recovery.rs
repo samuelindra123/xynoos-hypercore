@@ -350,7 +350,7 @@ fn test_recovery_quarantines_crc_mismatch() {
     let journal_path = test_dir.join("lease_journal.json");
     let mut backend = MockCgroupBackend::new(1008, 16 * 1024 * 1024);
 
-    let mut journal = TransactionJournal {
+    let journal = TransactionJournal {
         schema_version: TransactionJournal::CURRENT_SCHEMA_VERSION,
         lease_id: "test-crc".into(),
         timestamp_epoch_secs: 1000,

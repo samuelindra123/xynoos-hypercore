@@ -813,6 +813,7 @@ impl Backend for BenchMockBackend {
             device: 1,
             inode: 200,
             control_inode: 201,
+            mount_id: None,
         })
     }
     fn read_low(&mut self) -> Result<u64, String> {

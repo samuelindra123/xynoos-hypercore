@@ -18,7 +18,7 @@ use std::{
     time::{Duration, Instant},
 };
 use xynoos_core::{MemoryPressure, MigrationBudget, ResourcePressureLevel};
-use xynoos_hypermemory::{crc32_ieee, ClusterStore, PageStore};
+use xynoos_hypermemory::{ClusterStore, PageStore};
 use xynoos_linux_control::{
     transaction::{self, Backend, Identity, Outcome},
     Action, MAX_HIGH_BYTES, MAX_LOW_BYTES,
@@ -806,7 +806,7 @@ impl AuraDaemon {
                                                     .map(|d| d.as_secs())
                                                     .unwrap_or(0),
                                                 boot_id: current_boot_id(),
-                                                owner_uid: unsafe { libc::geteuid() },
+                                                owner_uid: xynoos_linux_control::current_euid(),
                                                 process_pid: std::process::id(),
                                                 process_start_ticks: process_start_ticks(
                                                     std::process::id(),
@@ -1162,6 +1162,7 @@ mod tests {
             device: 1,
             inode: 2,
             control_inode: 3,
+            mount_id: None,
         };
         let mut backend = MockBackend {
             id: mock_id,
@@ -1172,10 +1173,13 @@ mod tests {
 
         let journal = TransactionJournal {
             schema_version: 1,
+            lease_id: "test-lease".into(),
             timestamp_epoch_secs: 1234567,
             boot_id: current_boot_id(),
+            owner_uid: 1000,
             process_pid: std::process::id(),
             process_start_ticks: process_start_ticks(std::process::id()),
+            authorized_root: None,
             identity: mock_id,
             action: Action::MemoryLow {
                 bytes: 32 * 1024 * 1024,
@@ -1336,6 +1340,7 @@ mod tests {
                 device: 1,
                 inode: 2,
                 control_inode: 3,
+                mount_id: None,
             },
         };
 
