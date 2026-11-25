@@ -2,7 +2,6 @@
 #![forbid(unsafe_code)]
 
 use crate::telemetry_scheduler::TelemetrySample;
-use crate::workload_controller::{WorkloadClass, WorkloadRecommendation};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use xynoos_linux_control::config::RuntimeAuthorizationContract;

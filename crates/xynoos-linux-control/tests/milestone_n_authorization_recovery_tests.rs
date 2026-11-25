@@ -3,7 +3,7 @@
 
 use std::fs;
 use xynoos_linux_control::config::{
-    ActionClassification, AuthorizationScope, ConfigExecutor, ConfigurationAction, OwnershipLedger,
+    ActionClassification, AuthorizationScope, ConfigExecutor, ConfigurationAction,
     PersistenceRequirement, ReversalProcedure, RuntimeAuthorizationContract, SetupAuthorization,
     TypedMutation, VerificationProcedure, CONFIG_ACTION_SCHEMA_VERSION,
 };

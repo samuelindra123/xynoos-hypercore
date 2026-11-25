@@ -3,11 +3,7 @@
 
 use std::{
     fs,
-    path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::{atomic::AtomicBool, Arc},
     time::Duration,
 };
 use xynoos_aura::{
@@ -26,7 +22,7 @@ fn test_telemetry_scheduler_multi_rate_intervals() {
     fs::create_dir_all(&proc_dir).unwrap();
     fs::create_dir_all(&sys_dir).unwrap();
 
-    let mut scheduler = TelemetryScheduler::new(proc_dir, sys_dir, 5000);
+    let scheduler = TelemetryScheduler::new(proc_dir, sys_dir, 5000);
     assert_eq!(scheduler.current_tier(), PollingTier::SteadyState);
 
     // Initial interval for steady state base=5000 should be 5000ms
@@ -235,7 +231,7 @@ fn test_oscillation_circuit_breaker() {
 fn test_closed_loop_regression_rollback() {
     let mut coordinator = ContinuousCoordinator::new();
 
-    let mut pre_sample = TelemetrySample {
+    let pre_sample = TelemetrySample {
         schema_version: TELEMETRY_SAMPLE_SCHEMA_VERSION,
         timestamp_epoch_ms: 1000,
         elapsed_interval_ms: 5000,

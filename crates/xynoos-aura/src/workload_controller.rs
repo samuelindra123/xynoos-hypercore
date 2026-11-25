@@ -34,7 +34,7 @@ pub enum WorkloadClass {
 }
 
 /// Proposed workload-level cgroup tuning recommendation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WorkloadRecommendation {
     pub classification: WorkloadClass,
     pub recommended_cpu_weight: Option<u32>,

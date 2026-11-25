@@ -25,7 +25,7 @@ pub enum PollingTier {
 }
 
 impl PollingTier {
-    pub const fn target_interval_ms(&self, base_ms: u64) -> u64 {
+    pub fn target_interval_ms(&self, base_ms: u64) -> u64 {
         match self {
             Self::ActivePressure => (base_ms / 4).clamp(500, 1000),
             Self::SteadyState => base_ms.clamp(2000, 5000),
@@ -211,7 +211,7 @@ impl TelemetryScheduler {
                 cur_oom.saturating_sub(prev.cgroup_oom_count),
                 cur_high.saturating_sub(prev.cgroup_high_count),
             ),
-            None => (0, 0, 0),
+            None => (0, 0),
         };
 
         // Update cumulative counters

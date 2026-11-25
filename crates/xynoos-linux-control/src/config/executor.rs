@@ -254,7 +254,7 @@ impl ConfigExecutor {
                     ledger.remove_entry(&item.target_key);
                 }
             }
-            journal.phase = ConfigTxPhase::RolledBack;
+            journal.phase = ConfigTxPhase::Restored;
             let _ = journal.persist(&self.journal_path, now_ms);
             let _ = ledger.save_to(&self.ledger_path, now_ms);
         }
