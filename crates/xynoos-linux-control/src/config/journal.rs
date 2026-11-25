@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     fs::{self, File},
     io::{self, Read, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 pub const CONFIG_JOURNAL_SCHEMA_VERSION: u32 = 1;

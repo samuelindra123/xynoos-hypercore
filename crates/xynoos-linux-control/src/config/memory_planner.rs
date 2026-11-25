@@ -9,7 +9,6 @@ use super::action::{
 use serde::{Deserialize, Serialize};
 use xynoos_pressureiq::discovery::{
     inventory::SystemInventory,
-    storage::StorageMediaType,
     types::{ConfidenceLevel, ConfigurationOwnership, PrivilegeLevel, ReversibilityGuarantee},
 };
 
@@ -354,34 +353,36 @@ impl MemoryPlanner {
         }
 
         // 4. ZSWAP Coordination
-        if inv.memory.zswap.available && inv.memory.zswap.enabled {
-            if has_disk_swap && has_zram_device {
-                actions.push(ConfigurationAction {
-                    schema_version: CONFIG_ACTION_SCHEMA_VERSION,
-                    action_id: "ACT-ZSWAP-PRESERVE-TIERED".into(),
-                    target_subsystem: ConfigSubsystem::Swap,
-                    target_setting: "zswap.tiered_coexistence".into(),
-                    current_observed_value: "Enabled alongside disk swap and ZRAM".into(),
-                    desired_value: "Preserve tiered swap hierarchy".into(),
-                    current_ownership: ConfigurationOwnership::DistributionManaged,
-                    required_privileges: PrivilegeLevel::Unprivileged,
-                    required_capability: "kernel.zswap".into(),
-                    expected_benefit:
-                        "ZRAM handles hot swap while ZSWAP buffers writes to disk swap.".into(),
-                    potential_side_effects: "None.".into(),
-                    confidence: ConfidenceLevel::High,
-                    reversibility: ReversibilityGuarantee::FullyReversible,
-                    classification: ActionClassification::Preserve,
-                    authorization_scope: AuthorizationScope::MemoryOptimization,
-                    preconditions: vec!["disk_swap_present".into()],
-                    dependencies: vec![],
-                    conflict_status: None,
-                    verification_procedure: VerificationProcedure::NoOpPreserved,
-                    reversal_procedure: ReversalProcedure::NoOpPreserved,
-                    persistence_requirements: PersistenceRequirement::RuntimeOnly,
-                    mutation: None,
-                });
-            }
+        if inv.memory.zswap.available
+            && inv.memory.zswap.enabled
+            && has_disk_swap
+            && has_zram_device
+        {
+            actions.push(ConfigurationAction {
+                schema_version: CONFIG_ACTION_SCHEMA_VERSION,
+                action_id: "ACT-ZSWAP-PRESERVE-TIERED".into(),
+                target_subsystem: ConfigSubsystem::Swap,
+                target_setting: "zswap.tiered_coexistence".into(),
+                current_observed_value: "Enabled alongside disk swap and ZRAM".into(),
+                desired_value: "Preserve tiered swap hierarchy".into(),
+                current_ownership: ConfigurationOwnership::DistributionManaged,
+                required_privileges: PrivilegeLevel::Unprivileged,
+                required_capability: "kernel.zswap".into(),
+                expected_benefit: "ZRAM handles hot swap while ZSWAP buffers writes to disk swap."
+                    .into(),
+                potential_side_effects: "None.".into(),
+                confidence: ConfidenceLevel::High,
+                reversibility: ReversibilityGuarantee::FullyReversible,
+                classification: ActionClassification::Preserve,
+                authorization_scope: AuthorizationScope::MemoryOptimization,
+                preconditions: vec!["disk_swap_present".into()],
+                dependencies: vec![],
+                conflict_status: None,
+                verification_procedure: VerificationProcedure::NoOpPreserved,
+                reversal_procedure: ReversalProcedure::NoOpPreserved,
+                persistence_requirements: PersistenceRequirement::RuntimeOnly,
+                mutation: None,
+            });
         }
 
         // 5. Transparent Huge Pages (THP) Planning

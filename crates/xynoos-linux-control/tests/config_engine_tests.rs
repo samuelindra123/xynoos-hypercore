@@ -278,6 +278,98 @@ fn test_executor_apply_and_rollback_lifecycle() {
 }
 
 #[test]
+fn test_rollback_refuses_externally_tampered_dropin() {
+    let root = std::env::temp_dir().join(format!("xynoos-tamper-test-{}", std::process::id()));
+    let sys_root = root.join("sys");
+    let proc_root = root.join("proc");
+    let etc_root = root.join("etc");
+    let state_dir = root.join("var/lib/xynoos");
+
+    let swappiness_dir = proc_root.join("sys/vm");
+    fs::create_dir_all(&swappiness_dir).unwrap();
+    let swappiness_file = swappiness_dir.join("swappiness");
+    fs::write(&swappiness_file, "60\n").unwrap();
+
+    let executor = ConfigExecutor::new(
+        sys_root.clone(),
+        proc_root.clone(),
+        etc_root.clone(),
+        state_dir.clone(),
+    );
+
+    let actions = vec![ConfigurationAction {
+        schema_version: CONFIG_ACTION_SCHEMA_VERSION,
+        action_id: "ACT-DROPIN-SWAPPINESS".into(),
+        target_subsystem: ConfigSubsystem::Sysctl,
+        target_setting: "etc/sysctl.d/99-xynoos-memory.conf".into(),
+        current_observed_value: "None".into(),
+        desired_value: "Drop-in file".into(),
+        current_ownership: ConfigurationOwnership::KernelDefault,
+        required_privileges: PrivilegeLevel::RequiresRoot,
+        required_capability: "fs.sysctl_d".into(),
+        expected_benefit: "Persistence".into(),
+        potential_side_effects: "None".into(),
+        confidence: ConfidenceLevel::High,
+        reversibility: ReversibilityGuarantee::FullyReversible,
+        classification: ActionClassification::Configure,
+        authorization_scope: AuthorizationScope::MemoryOptimization,
+        preconditions: vec![],
+        dependencies: vec![],
+        conflict_status: None,
+        verification_procedure: VerificationProcedure::DropInFileExists {
+            path: "etc/sysctl.d/99-xynoos-memory.conf".into(),
+            expected_sha256: "".into(),
+        },
+        reversal_procedure: ReversalProcedure::DeleteDropIn {
+            target_path: "etc/sysctl.d/99-xynoos-memory.conf".into(),
+            expected_sha256: "".into(),
+        },
+        persistence_requirements: PersistenceRequirement::DropInFile,
+        mutation: Some(TypedMutation::WriteSysctlDropIn {
+            dropin_filename: "99-xynoos-memory.conf".into(),
+            content: "vm.swappiness = 100\n".into(),
+            key: "vm.swappiness".into(),
+            target_value: 100,
+        }),
+    }];
+
+    let now = 3_000_000u64;
+    let auth = SetupAuthorization::new(
+        "operator",
+        AuthorizationScope::MemoryOptimization,
+        "plan-hash-tamper",
+        now,
+        60_000,
+    );
+
+    executor
+        .execute_plan(&actions, &auth, "plan-hash-tamper", now)
+        .expect("Execution must succeed");
+
+    let dropin_file = etc_root.join("sysctl.d/99-xynoos-memory.conf");
+    assert!(dropin_file.exists());
+
+    // Tamper with the file externally (administrator append)
+    use std::io::Write;
+    let mut file = fs::OpenOptions::new()
+        .append(true)
+        .open(&dropin_file)
+        .unwrap();
+    writeln!(file, "# Tampered by sysadmin").unwrap();
+
+    // Rollback must refuse to remove the tampered file
+    let rollback_summary = executor.rollback_all(now + 1000).unwrap();
+    assert_eq!(rollback_summary.skipped_due_to_tampering.len(), 1);
+    assert!(
+        dropin_file.exists(),
+        "Tampered file must NOT be deleted by rollback"
+    );
+
+    // Clean up
+    let _ = fs::remove_dir_all(&root);
+}
+
+#[test]
 fn test_memory_planner_profile_and_actions() {
     let mut inv = SystemInventory::default();
     inv.memory.total_bytes = 4 * 1024 * 1024 * 1024; // 4 GiB N5000 style

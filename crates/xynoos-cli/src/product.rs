@@ -542,6 +542,64 @@ pub fn run(args: &[String]) -> Result<bool, Box<dyn Error>> {
             .unwrap_or_else(|e| json!({"status":"UNAVAILABLE","detail":e.to_string()}));
         v["last_diagnostic"] = last_diagnostic().unwrap_or(Value::Null);
     }
+    if command == "doctor" {
+        let inv = xynoos_pressureiq::discovery::inventory::SystemInventory::collect();
+        let ledger = xynoos_linux_control::config::OwnershipLedger::load_from(
+            std::path::Path::new("/var/lib/xynoos/owned-configs.json"),
+        )
+        .unwrap_or_default();
+
+        let mut checks = Vec::new();
+        let cgroup_ok = inv.platform.cgroup_hierarchy
+            == xynoos_pressureiq::discovery::platform::CgroupHierarchy::V2Unified;
+        checks.push(json!({
+            "name": "Cgroup v2 Unified",
+            "pass": cgroup_ok,
+            "message": if cgroup_ok { "Unified hierarchy active" } else { "Legacy or Hybrid cgroups (limited isolation)" },
+        }));
+
+        let psi_ok = inv.platform.psi_available;
+        checks.push(json!({
+            "name": "Pressure Stall Information (PSI)",
+            "pass": psi_ok,
+            "message": if psi_ok { "PSI controllers available" } else { "PSI unavailable in kernel" },
+        }));
+
+        let active_oom_count = (inv.memory.oom_managers.earlyoom_active as usize)
+            + (inv.memory.oom_managers.systemd_oomd_active as usize)
+            + (inv.memory.oom_managers.nohang_active as usize)
+            + (inv.memory.oom_managers.oomd_active as usize);
+        checks.push(json!({
+            "name": "OOM Manager Coexistence",
+            "pass": active_oom_count <= 1,
+            "message": if active_oom_count == 0 {
+                "Kernel default OOM killer active"
+            } else if active_oom_count == 1 {
+                "Single active userspace manager (cooperative)"
+            } else {
+                "Multiple competing userspace OOM killers running"
+            },
+        }));
+
+        let mut ledger_tampered = false;
+        for entry in ledger.entries.values() {
+            if ledger.check_entry_integrity(entry, std::path::Path::new("/etc"))
+                == xynoos_linux_control::config::IntegrityStatus::ModifiedExternally
+            {
+                ledger_tampered = true;
+                break;
+            }
+        }
+        checks.push(json!({
+            "name": "Configuration Ownership Ledger",
+            "pass": !ledger_tampered,
+            "message": if ledger_tampered { "External file tampering detected" } else { "Clean and synchronized" },
+        }));
+
+        v["checks"] = json!(checks);
+        v["ledger_entries_count"] = json!(ledger.entries.len());
+        v["active_conflicts_count"] = json!(inv.conflicts.len());
+    }
     if command == "diagnose" {
         let started = Instant::now();
         let mut samples = vec![snapshot(&s)];

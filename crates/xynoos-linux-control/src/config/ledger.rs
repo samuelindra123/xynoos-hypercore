@@ -6,7 +6,7 @@ use std::{
     collections::BTreeMap,
     fs::{self, File},
     io::{self, Read, Write},
-    path::{Path, PathBuf},
+    path::Path,
 };
 
 pub const LEDGER_SCHEMA_VERSION: u32 = 1;
@@ -102,12 +102,13 @@ impl OwnershipLedger {
         entry: &ManagedEntry,
         root_prefix: &Path,
     ) -> IntegrityStatus {
-        if let Some(rel_path) = &entry.target_file {
-            let full_path = if rel_path.starts_with('/') {
-                root_prefix.join(rel_path.trim_start_matches('/'))
-            } else {
-                root_prefix.join(rel_path)
-            };
+        if let Some(target_file) = &entry.target_file {
+            let rel_path = target_file
+                .strip_prefix("/etc/")
+                .or_else(|| target_file.strip_prefix("etc/"))
+                .or_else(|| target_file.strip_prefix('/'))
+                .unwrap_or(target_file);
+            let full_path = root_prefix.join(rel_path);
 
             if !full_path.exists() {
                 return IntegrityStatus::Missing;
@@ -134,6 +135,7 @@ impl OwnershipLedger {
     }
 
     /// Register or update a managed entry in the ledger.
+    #[allow(clippy::too_many_arguments)]
     pub fn record_applied(
         &mut self,
         key: String,

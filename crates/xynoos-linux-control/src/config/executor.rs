@@ -2,17 +2,14 @@
 #![forbid(unsafe_code)]
 
 use super::{
-    action::{
-        ActionClassification, AuthorizationScope, ConfigurationAction, ReversalProcedure,
-        TypedMutation, VerificationProcedure,
-    },
+    action::{ActionClassification, AuthorizationScope, ConfigurationAction, TypedMutation},
     authorization::SetupAuthorization,
     journal::{ConfigJournal, ConfigJournalItem, ConfigTxPhase},
     ledger::{IntegrityStatus, OwnershipLedger},
 };
 use std::{
     fs::{self, File},
-    io::{self, Read, Write},
+    io::{self, Write},
     path::{Path, PathBuf},
 };
 use xynoos_pressureiq::discovery::types::ConfigurationOwnership;
@@ -482,7 +479,12 @@ impl ConfigExecutor {
 
             // Remove managed drop-in file if present
             if let Some(target_file) = &entry.target_file {
-                let full_path = self.etc_root.join(target_file.trim_start_matches("etc/"));
+                let rel_path = target_file
+                    .strip_prefix("/etc/")
+                    .or_else(|| target_file.strip_prefix("etc/"))
+                    .or_else(|| target_file.strip_prefix('/'))
+                    .unwrap_or(target_file);
+                let full_path = self.etc_root.join(rel_path);
                 if full_path.exists() {
                     if let Err(e) = fs::remove_file(&full_path) {
                         failed.push(format!("{}: {e}", full_path.display()));
