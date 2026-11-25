@@ -179,6 +179,14 @@ fn capabilities(s: &SystemSnapshot) -> Value {
         "cgroup_v2_observation": availability(&s.cgroup),
         "init_system_detection": "AVAILABLE",
         "daemon_observe_only": "AVAILABLE",
+        "universal_platform_discovery": "AVAILABLE",
+        "hardware_intelligence_cpu": "AVAILABLE",
+        "hardware_intelligence_gpu": "AVAILABLE",
+        "hardware_intelligence_storage": "AVAILABLE",
+        "hardware_intelligence_power": "AVAILABLE",
+        "existing_tuning_audit": "AVAILABLE",
+        "configuration_conflict_analysis": "AVAILABLE",
+        "automatic_setup_planning": "AVAILABLE",
         "policy_simulation": "EXPERIMENTAL", "cooperative_owned_memory": "EXPERIMENTAL",
         "delegated_cgroup_control": "EXPERIMENTAL",
         "physical_kernel_mutation": "NOT AUTHORIZED", "active_zram_tuning": "UNAVAILABLE",
@@ -275,9 +283,9 @@ fn render(command: &str, v: &Value, color: bool) {
     if command == "help" {
         println!("Observe first. Physical kernel mutation: DISABLED.\n");
         #[cfg(not(feature = "debian-package"))]
-        println!("  doctor        Check host support and release integrity\n  status        Inspect pressure, swap and engine state\n  capabilities  Show available and experimental features\n  diagnose      Capture bounded read-only telemetry\n  benchmark     Measure telemetry overhead (no workload tuning)\n  update        Install the latest verified preview\n  rollback      Restore the previous verified version offline\n  uninstall     Remove owned software; preserve evidence\n");
+        println!("  doctor        Check host support and release integrity\n  status        Inspect pressure, swap and engine state\n  capabilities  Show available and experimental features\n  inspect       Inspect universal platform, hardware, and kernel capabilities\n  tuning audit  Audit existing system tuning, ownership, and conflicts\n  setup --plan  Generate a read-only automatic optimization plan\n  diagnose      Capture bounded read-only telemetry\n  benchmark     Measure telemetry overhead (no workload tuning)\n  update        Install the latest verified preview\n  rollback      Restore the previous verified version offline\n  uninstall     Remove owned software; preserve evidence\n");
         #[cfg(feature = "debian-package")]
-        println!("  doctor        Check host support and package information\n  status        Inspect pressure, swap and engine state\n  capabilities  Show available and experimental features\n  diagnose      Capture bounded read-only telemetry\n  benchmark     Measure telemetry overhead (no workload tuning)\n");
+        println!("  doctor        Check host support and package information\n  status        Inspect pressure, swap and engine state\n  capabilities  Show available and experimental features\n  inspect       Inspect universal platform, hardware, and kernel capabilities\n  tuning audit  Audit existing system tuning, ownership, and conflicts\n  setup --plan  Generate a read-only automatic optimization plan\n  diagnose      Capture bounded read-only telemetry\n  benchmark     Measure telemetry overhead (no workload tuning)\n");
         println!("Use --json for structured output; --no-color for plain text.");
         println!("Diagnose: --count 1..60 --interval-ms 100..10000 (max 60s)");
         #[cfg(not(feature = "debian-package"))]
