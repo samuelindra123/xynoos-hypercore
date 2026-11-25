@@ -84,9 +84,94 @@ jobs:
         run: |
           target/release/xynoos-bench shadow > benchmark-results/shadow.csv
           cat benchmark-results/shadow.csv
+      - name: Run Milestone G Adaptive Compression Campaign
+        run: |
+          target/release/xynoos-bench adaptive-campaign > benchmark-results/adaptive-campaign.csv
+          cat benchmark-results/adaptive-campaign.csv
+      - name: Run Milestone G Clustering Evaluation (1/2/4/8)
+        run: |
+          target/release/xynoos-bench clustering-g > benchmark-results/clustering-g.csv
+          cat benchmark-results/clustering-g.csv
+      - name: Run Milestone G Constrained Workload Evaluation
+        run: |
+          target/release/xynoos-bench workload-eval > benchmark-results/workload-eval.csv
+          cat benchmark-results/workload-eval.csv
+      - name: Run Milestone G Sustained Daemon Benchmark (2000 cycles)
+        run: |
+          target/release/xynoos-bench daemon-sustained 2000 > benchmark-results/daemon-sustained.csv
+          cat benchmark-results/daemon-sustained.csv
+      - name: Real Daemon CLI Resource & Signal Test (ObserveOnly)
+        run: |
+          set -euo pipefail
+          TMPDIR_D=$(mktemp -d)
+          PID_FILE="$TMPDIR_D/daemon.pid"
+          t_start=$(date +%s%N)
+          target/release/xynoos daemon --mode observe-only --interval-ms 200 --pid-file "$PID_FILE" > "$TMPDIR_D/out.json" &
+          DPID=$!
+          sleep 1
+          if kill -0 "$DPID" 2>/dev/null; then
+            RSS_KB=$(awk '/VmRSS:/ {print $2}' /proc/$DPID/status || echo 0)
+            echo "daemon_live_rss_kib=$RSS_KB"
+            kill -KILL "$DPID"
+            wait "$DPID" || true
+          fi
+          # Verify PidLock recovers cleanly after ungraceful SIGKILL leaving stale PID file
+          target/release/xynoos daemon --mode observe-only --interval-ms 100 --max-cycles 2 --pid-file "$PID_FILE" > "$TMPDIR_D/recover.json"
+          cat "$TMPDIR_D/recover.json"
+          t_end=$(date +%s%N)
+          echo "daemon_signal_test_elapsed_ms=$(( (t_end - t_start) / 1000000 ))"
+          rm -rf "$TMPDIR_D"
       - name: Archive Benchmark Artifacts
         uses: actions/upload-artifact@v4
         with:
           name: hypercore-benchmark-results
           path: benchmark-results/
           retention-days: 7
+
+  cgroup_v2_probe:
+    name: Isolated Cgroup v2 Validation
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Probe and Run Isolated Delegated Cgroup v2 Tests
+        run: |
+          set -euo pipefail
+          echo "=== Cgroup v2 Environment Probe ==="
+          stat -fc %T /sys/fs/cgroup || true
+          cat /proc/self/cgroup || true
+          USER_CG_REL=$(awk -F: '$1 == "0" {print $3}' /proc/self/cgroup | head -n1 || true)
+          CANDIDATE="/sys/fs/cgroup${USER_CG_REL}"
+          echo "Detected cgroup path: $CANDIDATE"
+          if [ -d "$CANDIDATE" ] && [ -w "$CANDIDATE" ] && [ -f "$CANDIDATE/cgroup.subtree_control" ] && grep -qw memory "$CANDIDATE/cgroup.subtree_control"; then
+            echo "STATUS: DELEGATED_MEMORY_CONTROLLER_AVAILABLE"
+            XYNOOS_KERNEL_TEST=1 XYNOOS_CGROUP_PARENT="$CANDIDATE" \
+              cargo test -p xynoos-linux-control --test kernel_transaction --locked -- --ignored --nocapture
+          elif command -v systemd-run >/dev/null 2>&1 && systemctl --user status >/dev/null 2>&1; then
+            echo "Attempting isolated systemd-run --user delegated scope..."
+            systemd-run --user --scope -p Delegate=yes -p MemoryAccounting=yes bash -c '
+              REL=$(awk -F: "\$1 == \"0\" {print \$3}" /proc/self/cgroup | head -n1)
+              PARENT="/sys/fs/cgroup${REL}"
+              echo "Scope cgroup: $PARENT"
+              echo "Available controllers: $(cat "$PARENT/cgroup.controllers" 2>/dev/null || echo none)"
+              if grep -qw memory "$PARENT/cgroup.controllers" 2>/dev/null && [ -w "$PARENT" ]; then
+                mkdir -p "$PARENT/runner-leaf" "$PARENT/test-parent"
+                # Respect cgroup v2 no-internal-processes rule before writing subtree_control
+                for p in $(cat "$PARENT/cgroup.procs"); do echo "$p" > "$PARENT/runner-leaf/cgroup.procs" 2>/dev/null || true; done
+                echo "+memory" > "$PARENT/cgroup.subtree_control" 2>/dev/null || true
+                echo "+memory" > "$PARENT/test-parent/cgroup.subtree_control" 2>/dev/null || true
+                if grep -qw memory "$PARENT/test-parent/cgroup.subtree_control" 2>/dev/null; then
+                  echo "STATUS: DELEGATED_MEMORY_CONTROLLER_AVAILABLE_VIA_SYSTEMD_USER"
+                  XYNOOS_KERNEL_TEST=1 XYNOOS_CGROUP_PARENT="$PARENT/test-parent" \
+                    cargo test -p xynoos-linux-control --test kernel_transaction --locked -- --ignored --nocapture
+                else
+                  echo "STATUS: NOT_RUN_OR_BLOCKED (failed to enable +memory in test-parent subtree_control)"
+                fi
+              else
+                echo "STATUS: NOT_RUN_OR_BLOCKED (memory controller not delegated to user scope)"
+              fi
+            ' || echo "STATUS: NOT_RUN_OR_BLOCKED (systemd-run --user unavailable)"
+          else
+            echo "STATUS: NOT_RUN_OR_BLOCKED (runner lacks delegated writable memory controller)"
+          fi

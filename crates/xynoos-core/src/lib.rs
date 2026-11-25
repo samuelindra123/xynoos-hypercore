@@ -91,6 +91,139 @@ pub enum EvictionPolicy {
     Fifo,
 }
 
+/// Explicit codec identifier stored with every compressed or raw object.
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize, Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum CodecId {
+    /// Uncompressed raw byte storage.
+    Raw,
+    /// Standard fast LZ4 block compression.
+    #[default]
+    Lz4Standard,
+    /// Pure-safe-Rust LZ4HC hash-chain + lazy-match block compression.
+    Lz4Hc { level: u8 },
+}
+
+impl CodecId {
+    pub const fn is_compressed(self) -> bool {
+        !matches!(self, CodecId::Raw)
+    }
+
+    pub const fn tier(self) -> StorageTier {
+        match self {
+            CodecId::Raw => StorageTier::Memory,
+            CodecId::Lz4Standard | CodecId::Lz4Hc { .. } => StorageTier::Compressed,
+        }
+    }
+
+    pub const fn canonical_name(self) -> &'static str {
+        match self {
+            CodecId::Raw => "raw",
+            CodecId::Lz4Standard => "lz4_standard",
+            CodecId::Lz4Hc { .. } => "lz4_hc",
+        }
+    }
+}
+
+/// Explicit compression configuration with minimum savings and scratch bounds.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CompressionConfig {
+    pub codec: CodecId,
+    pub min_savings_bytes: usize,
+    pub max_scratch_bytes: usize,
+}
+
+impl Default for CompressionConfig {
+    fn default() -> Self {
+        Self {
+            codec: CodecId::Lz4Standard,
+            min_savings_bytes: 64,
+            max_scratch_bytes: 512 * 1024,
+        }
+    }
+}
+
+/// Multi-resource pressure levels for CPU, memory, and I/O contention.
+#[derive(
+    Debug,
+    Clone,
+    Copy,
+    PartialEq,
+    Eq,
+    PartialOrd,
+    Ord,
+    Hash,
+    serde::Serialize,
+    serde::Deserialize,
+    Default,
+)]
+#[serde(rename_all = "snake_case")]
+pub enum ResourcePressureLevel {
+    #[default]
+    Low,
+    Moderate,
+    High,
+    Critical,
+}
+
+/// Auditable action selected by the adaptive compression decision engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompressionAction {
+    PreserveRaw,
+    ApplyStandardLz4,
+    ApplyLz4Hc { level: u8 },
+    RetainExisting,
+    DeferCompression,
+    DeferMigration,
+    PromoteToRaw,
+    FallbackSafe,
+}
+
+/// Auditable reason code explaining a compression or migration decision.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DecisionReason {
+    InvalidOrUnreliableTelemetry,
+    ElevatedCpuPressureBlocksHighCompression,
+    HighIoOrMemoryContentionDefersWork,
+    IncompressibleDataProtected,
+    NegligibleSavingsAvoidsRecompression,
+    HotDataProtectedFromCompressionLatency,
+    CooldownActivePreventsOscillation,
+    MigrationBudgetExhausted,
+    InsufficientAvailableMemoryForScratch,
+    BeneficialStandardCompression,
+    BeneficialHighCompression,
+    HotPromotionUnderLowPressure,
+    AlreadyOptimal,
+}
+
+/// Overhead-inclusive memory accounting snapshot for HyperMemory stores.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize, serde::Deserialize)]
+pub struct MemoryAccounting {
+    pub original_logical_bytes: usize,
+    pub stored_payload_bytes: usize,
+    pub metadata_bytes: usize,
+    pub allocated_capacity_bytes: usize,
+    pub scratch_buffer_bytes: usize,
+    pub peak_memory_bytes: usize,
+    pub total_accounted_bytes: usize,
+    pub net_savings_bytes: isize,
+}
+
+impl MemoryAccounting {
+    pub fn net_savings_ratio(&self) -> f64 {
+        if self.original_logical_bytes == 0 {
+            0.0
+        } else {
+            self.net_savings_bytes as f64 / self.original_logical_bytes as f64
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

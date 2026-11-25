@@ -245,3 +245,34 @@ Milestone F menyatukan seluruh subsistem HyperCore ke dalam integrasi sistem end
 5. **Integrasi Hardened Systemd & Debian Packaging**:
    - Menyediakan unit `systemd/xynoos-hypercore.service` dan `systemd/xynoos-hypercore.slice` dengan pengerasan sandboxing sistem (`ProtectSystem=strict`, `ProtectHome=read-only`, `PrivateTmp=yes`, `NoNewPrivileges=yes`, `CapabilityBoundingSet=CAP_SYS_RESOURCE`).
    - Layanan *tidak diaktifkan otomatis* saat instalasi paket Debian, menjaga prinsip netralitas distribusi.
+
+---
+
+## 9. Milestone G — Adaptive Compression, Resource Cost Intelligence & Runtime Reliability
+
+Milestone G meningkatkan efisiensi memori dan keandalan runtime di seluruh subsistem tanpa melanggar kebijakan `#![forbid(unsafe_code)]` maupun batas MSRV Rust 1.82.0:
+
+1. **Arsitektur Kompresi Adaptif (`xynoos-hypermemory/src/codec.rs`)**:
+   - Mendefinisikan `CodecId` eksplisit (`Raw`, `Lz4Standard`, `Lz4Hc { level }`), `CompressionConfig`, `CompressedObjectMeta`, dan `CodecScratch` terikat.
+   - Mengimplementasikan encoder **LZ4HC pure-safe-Rust** (*hash-chain + lazy matching*) yang menghasilkan blok LZ4 standar yang kompatibel penuh dengan `lz4_flex::block::decompress_into`.
+   - Menghilangkan pemborosan kapasitas berlebih melalui kompresi ke buffer scratch terpakai ulang (*reusable scratch*) dan reservasi kapasitas eksak (`try_reserve_exact`).
+
+2. **Resource Cost Intelligence & Mesin Keputusan (`cost_model.rs`, `compression_policy.rs`)**:
+   - `ResourceCostModel` deterministik berbasis EWMA (*fixed-point permille*) dan statistik bergulir terikat (32 sampel) yang memisahkan penghematan bersih setelah metadata, biaya scratch sementara, biaya CPU kompresi/rekompresi, dan penalti latensi pembacaan.
+   - `CompressionDecisionEngine` menghasilkan keputusan teraudit (`CompressionAction` + `DecisionReason`): memblokir `Lz4Hc` saat tekanan CPU tinggi, melindungi halaman *hot* dan data inkompresibel, serta menegakkan *cooldown* anti-osilasi.
+
+3. **Telemetri Multi-Sumber (`xynoos-pressureiq/src/multi_resource.rs`)**:
+   - Mengumpulkan `/proc/pressure/cpu`, `/proc/pressure/memory`, `/proc/pressure/io`, `/proc/meminfo`, `/proc/vmstat`, `/proc/stat`, dan statistik cgroup v2 secara read-only tanpa pernah memalsukan nilai yang hilang, ditolak izinnya, atau terkena reset counter.
+
+4. **Kalibrasi Kebijakan Bayangan (`ShadowCalibrator` & `PolicyConfig`)**:
+   - Skema `PolicyConfig` berversi dengan validasi ketat dan jalur rollback ke `PolicyConfig::safe_default()`.
+   - `ShadowCalibrator` memisahkan jejak menjadi *calibration* (50%), *validation* (25% anti-overfitting), dan *evaluation* (25% held-out) untuk membandingkan baseline Milestone F, static LZ4, default Milestone G, dan konfigurasi terkalibrasi secara *counterfactual*.
+
+5. **Perbaikan Audit Phase 0 & Akuntansi Overhead Penuh**:
+   - Memperbaiki bug *double-tick / double-hit* pada `ClusterStore::get_page_into`, bug *tick-before-commit* pada `insert_cluster`, dan batas riwayat `evicted_history` pada `ClusterStore`.
+   - Menambahkan `MemoryAccounting` (`overhead_accounting()`) yang menghitung payload, metadata (`Entry`, `page_crcs`, `evicted_history`), kapasitas teralokasi, scratch buffer, puncak memori, dan penghematan bersih setelah overhead.
+
+6. **Ketahanan Daemon & Pemulihan Crash (`AuraDaemon`, `PidLock`, `TransactionJournal`)**:
+   - `AuraDaemon::run_with_signal` kini mengonsumsi telemetri `PressureIQ` nyata, menerapkan *adaptive polling*, histori telemetri terikat (32 entri), pelaporan RSS (`/proc/self/statm`), dan perbaikan perhitungan *workload-aware* bebas overflow.
+   - `PidLock` menggunakan pembuatan berkas atomik (`O_CREAT | O_EXCL`) serta memverifikasi `boot_id` dan `start_ticks` dari `/proc/<pid>/stat` untuk mencegah risiko *PID reuse*.
+   - `TransactionJournal` menggunakan penulisan atomik (*temp file + fsync + rename + dir sync*), checksum CRC32 integritas jurnal, dan deteksi konflik *fail-closed* terhadap perubahan eksternal atau perbedaan `boot_id`/identitas cgroup.

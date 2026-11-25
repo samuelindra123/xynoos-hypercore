@@ -7,6 +7,8 @@ PartOf=xynoos-hypercore.slice
 [Service]
 Type=simple
 EnvironmentFile=-/etc/default/xynoos-hypercore
+RuntimeDirectory=xynoos
+RuntimeDirectoryMode=0755
 ExecStart=/usr/bin/xynoos daemon --mode observe-only --interval-ms 5000
 Restart=on-failure
 RestartSec=10s

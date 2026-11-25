@@ -9,12 +9,21 @@
 //! 3. Promosi selektif (`selective_promotion`) saat tekanan rendah untuk menghindari dekompresi mubazir.
 //! 4. Pembatasan laju migrasi per siklus (`MigrationBudget`).
 
+use crate::{
+    compression_policy::{
+        AdaptiveCompressionConfig, CompressionDecisionEngine, MultiResourceState,
+        ObjectCompressionInput,
+    },
+    cost_model::ResourceCostModel,
+    DecisionPolicy,
+};
 use std::sync::Mutex;
-use xynoos_core::{CostEstimate, MemoryPressure, MigrationBudget, StorageTier};
+use xynoos_core::{
+    CodecId, CompressionAction, CostEstimate, DecisionReason, MemoryPressure, MigrationBudget,
+    StorageTier,
+};
 use xynoos_hypermemory::{Error as HyperMemoryError, PageStore, TieringReport};
 use xynoos_pressureiq::intelligence::Diagnosis;
-
-use crate::DecisionPolicy;
 
 /// Status validasi telemetri memori sebelum dikonsumsi oleh jembatan kebijakan.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -446,6 +455,175 @@ impl AuraTieringCoordinator {
         store.apply_tiering_with_budget(self.migration_budget, |_id, _current_tier, cost| {
             self.policy.decide(pressure, cost)
         })
+    }
+}
+
+/// Auditable summary produced by Milestone G adaptive compression + cost intelligence tiering.
+#[derive(Debug, Clone, Default)]
+pub struct AdaptiveTieringReport {
+    pub inspected_pages: usize,
+    pub migrated_to_raw: usize,
+    pub migrated_to_lz4: usize,
+    pub migrated_to_lz4hc: usize,
+    pub retained_or_preserved: usize,
+    pub deferred_by_budget: usize,
+    pub deferred_by_cpu_or_contention: usize,
+    pub rejected_by_storage_budget: usize,
+    pub rejected_expensive_ops: usize,
+    pub policy_transitions: usize,
+    pub decision_latency_ns: u64,
+    pub last_reason: Option<DecisionReason>,
+}
+
+/// Milestone G adaptive coordinator combining `PressureStabilizer`, `ResourceCostModel`,
+/// and `CompressionDecisionEngine` with `PageStore` codec migration.
+#[derive(Debug, Clone, Default)]
+pub struct AuraAdaptiveCoordinator {
+    pub stabilizer: PressureStabilizer,
+    pub migration_budget: MigrationBudget,
+    pub cost_model: ResourceCostModel,
+    pub engine: CompressionDecisionEngine,
+}
+
+impl AuraAdaptiveCoordinator {
+    pub fn new(
+        config: AdaptiveCompressionConfig,
+        stabilizer: PressureStabilizer,
+        migration_budget: MigrationBudget,
+    ) -> Self {
+        Self {
+            stabilizer,
+            migration_budget,
+            cost_model: ResourceCostModel::default(),
+            engine: CompressionDecisionEngine::new(config),
+        }
+    }
+
+    /// Execute one bounded adaptive compression & tiering cycle over `store`.
+    pub fn step_adaptive(
+        &mut self,
+        store: &mut PageStore,
+        resources: &MultiResourceState,
+    ) -> Result<AdaptiveTieringReport, HyperMemoryError> {
+        let start = std::time::Instant::now();
+        let stabilized_mem = if resources.telemetry_valid {
+            self.stabilizer.step(resources.memory_pressure)
+        } else {
+            MemoryPressure::Moderate
+        };
+        let effective = MultiResourceState {
+            memory_pressure: stabilized_mem,
+            ..*resources
+        };
+
+        let ids = store.page_ids_sorted();
+        let mut report = AdaptiveTieringReport {
+            inspected_pages: ids.len(),
+            ..Default::default()
+        };
+
+        let mut remaining = self.migration_budget;
+
+        for id in ids {
+            let profile = store.page_profile(id)?;
+            let est_ratio_permille = if profile.codec.is_compressed() && profile.original_size > 0 {
+                Some(
+                    ((profile.stored_bytes as u128).saturating_mul(1000)
+                        / profile.original_size as u128) as u64,
+                )
+            } else {
+                None
+            };
+
+            let obj = ObjectCompressionInput {
+                current_codec: profile.codec,
+                original_bytes: profile.original_size,
+                stored_bytes: profile.stored_bytes,
+                metadata_bytes: profile.metadata_bytes,
+                access_count: profile.access_count,
+                last_accessed_tick: profile.last_accessed_tick,
+                last_transition_tick: profile.last_transition_tick,
+                current_tick: profile.current_tick,
+                incompressible_flagged: profile.incompressible_flagged,
+                estimated_compressibility_permille: est_ratio_permille,
+            };
+
+            let dec = self
+                .engine
+                .decide(&effective, &obj, &self.cost_model, remaining);
+            report.last_reason = Some(dec.reason);
+
+            match dec.action {
+                CompressionAction::PreserveRaw
+                | CompressionAction::RetainExisting
+                | CompressionAction::FallbackSafe => {
+                    report.retained_or_preserved += 1;
+                    if matches!(
+                        dec.reason,
+                        DecisionReason::NegligibleSavingsAvoidsRecompression
+                            | DecisionReason::IncompressibleDataProtected
+                            | DecisionReason::CooldownActivePreventsOscillation
+                    ) {
+                        report.rejected_expensive_ops += 1;
+                    }
+                }
+                CompressionAction::DeferCompression => {
+                    report.deferred_by_cpu_or_contention += 1;
+                    report.rejected_expensive_ops += 1;
+                }
+                CompressionAction::DeferMigration => {
+                    report.deferred_by_budget += 1;
+                }
+                CompressionAction::PromoteToRaw
+                | CompressionAction::ApplyStandardLz4
+                | CompressionAction::ApplyLz4Hc { .. } => {
+                    if dec.target_codec == profile.codec {
+                        report.retained_or_preserved += 1;
+                        continue;
+                    }
+                    match store.migrate_page_with_codec(id, dec.target_codec) {
+                        Ok(true) => {
+                            remaining.max_pages = remaining.max_pages.saturating_sub(1);
+                            remaining.max_bytes =
+                                remaining.max_bytes.saturating_sub(profile.original_size);
+                            report.policy_transitions += 1;
+                            match dec.target_codec {
+                                CodecId::Raw => report.migrated_to_raw += 1,
+                                CodecId::Lz4Standard => report.migrated_to_lz4 += 1,
+                                CodecId::Lz4Hc { .. } => report.migrated_to_lz4hc += 1,
+                            }
+                            if let Ok(updated) = store.page_profile(id) {
+                                if dec.target_codec.is_compressed() {
+                                    self.cost_model.record_compression_feedback(
+                                        updated.codec,
+                                        updated.original_size,
+                                        updated.stored_bytes,
+                                        updated.last_compress_ns,
+                                    );
+                                } else {
+                                    self.cost_model.record_decompression_feedback(
+                                        profile.codec,
+                                        updated.original_size,
+                                        updated.last_decompress_ns,
+                                    );
+                                }
+                            }
+                        }
+                        Ok(false) => {
+                            report.retained_or_preserved += 1;
+                            report.rejected_expensive_ops += 1;
+                        }
+                        Err(HyperMemoryError::BudgetExceeded) => {
+                            report.rejected_by_storage_budget += 1;
+                        }
+                        Err(e) => return Err(e),
+                    }
+                }
+            }
+        }
+
+        report.decision_latency_ns = start.elapsed().as_nanos().min(u64::MAX as u128) as u64;
+        Ok(report)
     }
 }
 

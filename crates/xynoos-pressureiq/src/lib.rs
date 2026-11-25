@@ -487,3 +487,5 @@ pub mod workload;
 pub mod intelligence;
 
 pub mod hardware;
+
+pub mod multi_resource;
