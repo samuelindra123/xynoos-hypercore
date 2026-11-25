@@ -1,9 +1,9 @@
 # Laporan Kualifikasi Kinerja Sistem, Efektivitas Arsitektur, & Kompatibilitas Hardware — Milestone H
 
-**Repositori:** `samuelindra123/xynoos-hypercore`  
-**Cabang:** `feat/hypercore-milestone-h-system-qualification`  
-**Pull Request:** #79  
-**Target Milestone:** Milestone 5 (Milestone H)  
+**Repositori:** `samuelindra123/xynoos-hypercore`
+**Cabang:** `feat/hypercore-milestone-h-system-qualification`
+**Pull Request:** #79
+**Target Milestone:** Milestone 5 (Milestone H)
 **Status Kualifikasi:** **LULUS BERSYARAT (QUALIFIED WITH CONSERVATIVE BOUNDS & ARCHITECTURAL LIMITS DOCUMENTED)**
 
 ---
