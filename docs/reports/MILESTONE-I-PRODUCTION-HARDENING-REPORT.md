@@ -1,17 +1,17 @@
 # Laporan Rekayasa Produksi, Keamanan Runtime, & Kesiapan Hardware — Milestone I
 ## Production Hardening, Deployment Safety, Security & Hardware Readiness
 
-**Repositori:** `samuelindra123/xynoos-hypercore`  
-**Cabang:** `feat/hypercore-milestone-i-production-hardening`  
-**Target Milestone:** Milestone 6 (Milestone I)  
-**Status Rekayasa:** **LULUS TERVERIFIKASI & SIAP RILIS KANDIDAT (RC-READY)**  
-**Tanggal Evaluasi:** 2026-11-25  
+**Repositori:** `samuelindra123/xynoos-hypercore`
+**Cabang:** `feat/hypercore-milestone-i-production-hardening`
+**Target Milestone:** Milestone 6 (Milestone I)
+**Status Rekayasa:** **LULUS TERVERIFIKASI & SIAP RILIS KANDIDAT (RC-READY)**
+**Tanggal Evaluasi:** 2026-11-25
 
 ---
 
 ## A. Ringkasan Eksekutif
 
-Milestone I menyelesaikan transformasi XYNOOS HyperCore dari fondasi eksperimental menuju **pondasi Release Candidate (`v0.1.0-rc.1`)** yang matang, aman, deterministik, terisolasi secara hak akses, dan siap deploy secara andal. 
+Milestone I menyelesaikan transformasi XYNOOS HyperCore dari fondasi eksperimental menuju **pondasi Release Candidate (`v0.1.0-rc.1`)** yang matang, aman, deterministik, terisolasi secara hak akses, dan siap deploy secara andal.
 
 Fokus utama Milestone I bukan penambahan fitur spekulatif baru, melainkan:
 1. **Pembersihan & Pengerasan Keamanan (Security Hardening)**: Menghapus penggunaan `libc::signal` yang tidak aman dan menggantinya dengan abstraksi sinyal POSIX `sigaction` yang async-signal-safe murni; mengisolasi seluruh operasi cgroup dan memastikan prinsip *least-privilege* tanpa memerlukan hak akses root untuk observasi atau rekomendasi.
@@ -281,7 +281,7 @@ Paket kualifikasi hardware-in-the-loop (`scripts/hil-validate.sh`) diperbarui de
 - **Tahap D (Isolated Transaction Qualification)**: Uji cgroup terdelegasi hanya dengan izin eksplisit operator (`--confirm-hardware-audit`).
 - **Tahap E (Cleanup & Verification)**: Verifikasi terminasi proses dan ketiadaan berkas tertinggal.
 
-> **Status Tata Kelola Isu #42**:  
+> **Status Tata Kelola Isu #42**:
 > Sesuai Aturan Tata Kelola Rule 8 dan panduan mandat Milestone I, **Isu #42 TETAP TERBUKA (OPEN)**. Penyediaan skrip uji HIL tidak sama dengan kelulusan kualifikasi hardware fisik. Kualifikasi hardware fisik lokal N5000 tetap merupakan aktivitas terpisah yang memerlukan eksekusi berizin operator fisik secara langsung.
 
 ---
@@ -363,13 +363,13 @@ Berdasarkan pencapaian Milestone I, pondasi rekayasa sistem telah mencapai kemat
 Sesuai Aturan Tata Kelola Rule 8 dan Fase 20, tiga status keputusan dilaporkan secara terpisah:
 
 ### 1. Status Pengiriman Rekayasa (Engineering Delivery Status)
-> **COMPLETE**  
+> **COMPLETE**
 > Seluruh kode sumber, perbaikan keamanan, abstraksi sinyal aman, pemutus sirkuit, pengerasan jurnal transaksi, validasi konfigurasi, kematangan pool, dan dokumentasi telah diimplementasikan dan diverifikasi secara lokal dan melalui alur kerja CI.
 
 ### 2. Status Efektivitas Sistem (System Effectiveness Status)
-> **WORKLOAD-SPECIFIC BENEFIT VERIFIED (Optimized Baseline Comparison)**  
+> **WORKLOAD-SPECIFIC BENEFIT VERIFIED (Optimized Baseline Comparison)**
 > Manfaat HyperCore terbukti secara terukur pada skenario kontensi memori beban kerja interaktif (pengurangan latensi navigasi p50 8–12% dan pemotongan stall PSI memori ~47% di cgroup terdelegasi). Pada sistem tanpa tekanan, HyperCore beroperasi secara hemat dan pasif tanpa regresi sistem.
 
 ### 3. Status Kesiapan Rilis (Release Readiness Status)
-> **RELEASE CANDIDATE READY (RC FOUNDATION HARDENED)**  
+> **RELEASE CANDIDATE READY (RC FOUNDATION HARDENED)**
 > HyperCore telah siap sebagai pondasi rilis kandidat (`v0.1.0-rc.1`). Status rilis umum produksi (`v1.0.0-stable`) tetap ditahan sampai Isu #36 (penandatanganan APT) dan Isu #42 (kualifikasi hardware fisik N5000) diselesaikan secara independen.

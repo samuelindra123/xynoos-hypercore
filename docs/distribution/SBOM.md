@@ -1,9 +1,9 @@
 # Software Bill of Materials (SBOM) & Supply Chain Security Audit
 ## XYNOOS HyperCore — Milestone I
 
-**Schema**: Lightweight SPDX / CycloneDX equivalent markdown document  
-**Repository**: `samuelindra123/xynoos-hypercore`  
-**Generated**: 2026-11-25  
+**Schema**: Lightweight SPDX / CycloneDX equivalent markdown document
+**Repository**: `samuelindra123/xynoos-hypercore`
+**Generated**: 2026-11-25
 **License**: GNU General Public License v3.0 (`GPL-3.0-only`)
 
 ---
