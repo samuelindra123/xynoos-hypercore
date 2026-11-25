@@ -11,12 +11,20 @@ mod intelligence_cli;
 mod product;
 mod signals;
 
-use intelligence_cli::{inspect_command, setup_command, tuning_command};
+use intelligence_cli::{inspect_command, runtime_command, setup_command, tuning_command};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
+    let exe = std::env::args().next().unwrap_or_default();
+    if exe.ends_with("xynoosd") {
+        return daemon_command(&args);
+    }
+
     if args.first().map(String::as_str) == Some("inspect") {
         return inspect_command(&args[1..]);
+    }
+    if args.first().map(String::as_str) == Some("runtime") {
+        return runtime_command(&args[1..]);
     }
     if args.first().map(String::as_str) == Some("tuning") {
         return tuning_command(&args[1..]);
@@ -571,6 +579,7 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "run" => {}
             "--mode" => {
                 i += 1;
                 match args.get(i).map(String::as_str) {
@@ -595,7 +604,8 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
             "--no-pid-file" => no_pid_file = true,
             "--status" => status = true,
             "--human" => human = true,
-            _ => return Err("usage: daemon [--mode observe-only|advisory|transactional] [--interval-ms N] [--max-cycles N] [--pid-file PATH | --no-pid-file] [--status] [--human]".into()),
+            "--json" => human = false,
+            _ => return Err("usage: daemon [--mode observe-only|advisory|transactional] [--interval-ms N] [--max-cycles N] [--pid-file PATH | --no-pid-file] [--status] [--human] [--json]".into()),
         }
         i += 1;
     }

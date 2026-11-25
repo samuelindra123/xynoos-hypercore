@@ -92,6 +92,12 @@ impl OwnershipLedger {
 
     /// Save the ledger atomically using a temporary file and sync.
     pub fn save_to(&mut self, path: &Path, now_ms: u64) -> io::Result<()> {
+        if path.is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Refusing to save ledger through a symlink",
+            ));
+        }
         self.updated_at_unix_ms = now_ms;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;

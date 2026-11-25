@@ -18,7 +18,9 @@ pub use action::{
     PersistenceRequirement, ReversalProcedure, TypedMutation, VerificationProcedure,
     CONFIG_ACTION_SCHEMA_VERSION,
 };
-pub use authorization::SetupAuthorization;
+pub use authorization::{
+    RuntimeAuthorizationContract, SetupAuthorization, RUNTIME_AUTH_SCHEMA_VERSION,
+};
 pub use cpu_planner::{CpuPlanner, CpuProfile};
 pub use executor::{ActionResult, ConfigExecutor, ExecutionSummary, RollbackSummary};
 pub use gpu_planner::{GpuPlanner, GpuProfile};

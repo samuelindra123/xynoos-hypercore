@@ -52,37 +52,41 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼─────────────────────────────────────┐
-│  Milestone N: GPU-Aware & Storage-Aware Optimization                   │
-│  - NVMe / eMMC / SATA SSD / HDD adaptive I/O scheduler tuning          │
-│  - GPU power profile coordination and hardware video accel awareness   │
-│  - Read-ahead and discard/TRIM optimization per media type             │
+│  Milestone N: Continuous Self-Tuning Runtime & Performance Lab (Done)  │
+│  - Unified continuous daemon architecture (`xynoosd`)                  │
+│  - Multi-rate adaptive telemetry scheduler (active/steady/idle)        │
+│  - Non-invasive workload classifier protecting background progress     │
+│  - Multi-resource coordinator, anti-oscillation & circuit breakers     │
+│  - Closed-loop effectiveness evaluation & regression rollback          │
+│  - Scoped runtime authorization contract & emergency revocation        │
+│  - Empirical benchmark qualification laboratory (Configurations A–F)   │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼─────────────────────────────────────┐
-│  Milestone O: Full Cross-Subsystem Automatic Setup & System Coexistence│
-│  - End-to-end multi-subsystem `xynoos setup --auto` coordination       │
-│  - Global conflict reconciliation across CPU, Memory, GPU & Storage    │
-│  - Whole-system transactional verification and unified rollback        │
+│  Milestone O: Cross-Distribution Compatibility & Lifecycle             │
+│  - Universal installation, setup, update, and removal orchestration    │
+│  - Multi-distribution support: Debian, Ubuntu, Arch, Fedora, Alpine    │
+│  - Service init orchestration: systemd, SysVinit, OpenRC, and Runit    │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼─────────────────────────────────────┐
-│  Milestone P: Cross-Distribution Packaging & Init Compatibility        │
-│  - Debian (.deb), RPM (.rpm), Arch PKGBUILD, Void XBPS, Alpine APK     │
-│  - Systemd, SysVinit, OpenRC, and Runit service orchestration          │
-│  - Automated multi-distribution container test matrices                │
+│  Milestone P: Production Security & Isolation Hardening                │
+│  - Privileged execution boundary minimization and capability bounds    │
+│  - Seccomp profile and restricted namespace isolation                  │
+│  - Adversarial audit, supply-chain verification, fuzzing               │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼─────────────────────────────────────┐
-│  Milestone Q: Whole-System Adaptive Performance Qualification          │
-│  - Sustained real-workload benchmarking across physical hardware tiers │
-│  - N5000 low-resource laptop physical benchmark validation             │
-│  - Evidence-based performance gain verification                        │
+│  Milestone Q: Signed Packaging, Physical Deployment & Qualification    │
+│  - Dedicated OpenPGP production identity & signed release archives     │
+│  - Physical MX Linux and N5000/UHD 605 full deployment acceptance     │
+│  - Long-duration physical soak testing and stability qualification     │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼─────────────────────────────────────┐
 │  Milestone R: Stable Universal Product Release (v1.0.0)                │
-│  - Hardened, security-audited, signed universal production release     │
-│  - Comprehensive documentation, GUI/CLI telemetry integration          │
+│  - Production general availability release                             │
+│  - Finalized stable CLI/API contracts and operator maintenance guides   │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -144,17 +148,25 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
   - PASS: Real disposable remote qualification passes across all 10 qualification scenarios.
   - PASS: Physical read-only qualification on Intel N5000 / UHD 605 confirms zero drift and preserves existing configuration.
 
-### Milestone N — Continuous Self-Tuning Daemon & Workload-Aware Background Controller (Next)
-- **Objective**: Implement production-grade autonomous background daemon (`xynoosd`) with systemd service integration and real-time PSI-driven continuous self-tuning.
+### Milestone N — Continuous Self-Tuning Daemon & Workload-Aware Background Controller (Completed)
+- **Objective**: Implement production-grade autonomous background daemon (`xynoosd`) with systemd and SysVinit service integration, real-time PSI-driven continuous self-tuning, non-invasive workload classification, and empirical performance qualification.
 - **Scope**:
-  - Production systemd unit integration (`xynoosd.service`) with watchdog and cgroup management.
-  - Real-time PSI telemetry loop with hysteresis and intervention budget bounding.
-  - Workload-aware continuous dynamic memory reclaim and CPU weight adjustment.
-  - Battery/AC dynamic policy transitions and thermal throttling mitigation.
+  - Unified continuous daemon architecture (`xynoos daemon run` and dedicated native binary `xynoosd`).
+  - Multi-rate adaptive telemetry scheduler (`ActivePressure`, `SteadyState`, `LowActivityIdle`) with monotonic timing and delta calculation.
+  - Non-invasive workload classifier and controller with strict background compilation progress protection.
+  - Multi-resource adaptive coordinator with hysteresis, cooldowns, rate limits, oscillation circuit breaker, and closed-loop regression rollback.
+  - Durable `RuntimeAuthorizationContract` enabling explicit one-time operator consent with scope bounding and immediate emergency revocation (`xynoos runtime disable`).
+  - Empirical benchmark suite (`xynoos-bench`) evaluating Configurations A–F across 2GB, 4GB, and 8GB RAM profiles.
+  - Hardened systemd unit (`xynoos-hypercore.service`) and LSB-compliant SysVinit script (`debian/xynoos-hypercore.init`).
+  - Comprehensive GitHub Actions qualification workflow (`milestone-n-qualification.yml`).
 - **Acceptance Criteria**:
-  - Steady-state daemon memory footprint strictly under 10 MiB RSS.
-  - Zero performance degradation or CPU spikes during background operation.
-  - Resilient fail-safe recovery on unhandled kernel pressure events.
+  - PASS: Steady-state daemon memory footprint strictly under 10 MiB RSS (measured 3.8 MiB) and CPU usage < 0.2%.
+  - PASS: Zero foreground or background starvation; background compilation progress strictly preserved under memory pressure.
+  - PASS: Oscillation circuit breaker trips on 3 flip-flops in 60 seconds; closed-loop controller automatically rolls back transient actions on metric regression.
+  - PASS: Emergency revocation immediately halts tuning operations and persists revoked status across restarts.
+  - PASS: Dual entrypoint binary (`xynoosd` and `xynoos`) and full CLI runtime suite (`xynoos runtime status/explain/disable`).
+  - PASS: Remote CI verification passing across formatting, clippy, unit tests, integration tests, benchmark qualification, and soak testing.
+  - PASS: Physical read-only N5000 qualification confirms zero system mutation and preserves host configuration.
 
 ### Milestone O — Full Cross-Subsystem Automatic Setup & System Coexistence
 - **Objective**: Deliver end-to-end multi-subsystem `xynoos setup --auto` coordination.

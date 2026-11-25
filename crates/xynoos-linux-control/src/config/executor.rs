@@ -223,8 +223,42 @@ impl ConfigExecutor {
         if failed_count == 0 {
             journal.phase = ConfigTxPhase::Committed;
             let _ = journal.persist(&self.journal_path, now_ms);
-            let _ = ledger.save_to(&self.ledger_path, now_ms);
+            ledger
+                .save_to(&self.ledger_path, now_ms)
+                .map_err(|e| format!("Failed to commit ownership ledger: {e}"))?;
             let _ = ConfigJournal::cleanup(&self.journal_path);
+        } else {
+            // Transaction failed: roll back all partial items recorded in this journal
+            for item in journal.items.iter().rev() {
+                if item.is_applied {
+                    if let Some(orig) = &item.original_value {
+                        if item.target_key.starts_with("sysctl.") || !item.target_key.contains('.')
+                        {
+                            let k = item
+                                .target_key
+                                .strip_prefix("sysctl.")
+                                .unwrap_or(&item.target_key);
+                            let sysctl_rel = format!("sys/{}", k.replace('.', "/"));
+                            let sysctl_path = self.proc_root.join(sysctl_rel);
+                            if sysctl_path.exists() {
+                                let _ = fs::write(&sysctl_path, orig.as_bytes());
+                            }
+                        }
+                    }
+                    if let Some(rel_f) = &item.target_file {
+                        let full_f = self
+                            .etc_root
+                            .join(rel_f.trim_start_matches("etc/").trim_start_matches('/'));
+                        if full_f.exists() {
+                            let _ = fs::remove_file(&full_f);
+                        }
+                    }
+                    ledger.remove_entry(&item.target_key);
+                }
+            }
+            journal.phase = ConfigTxPhase::Restored;
+            let _ = journal.persist(&self.journal_path, now_ms);
+            let _ = ledger.save_to(&self.ledger_path, now_ms);
         }
 
         Ok(ExecutionSummary {
@@ -960,6 +994,42 @@ impl ConfigExecutor {
                             let epp_p = entry.path().join("cpufreq/energy_performance_preference");
                             if epp_p.exists() {
                                 let _ = fs::write(&epp_p, orig.as_bytes());
+                            }
+                        }
+                    }
+                    restored_keys.push(format!("{key} -> {orig}"));
+                }
+            } else if key.starts_with("cpu.freq_bounds.") {
+                if let Some(orig) = &entry.original_value {
+                    let parts: Vec<&str> = orig.split(':').collect();
+                    if parts.len() == 2 {
+                        let parse_freq = |p: &str| -> Option<u64> {
+                            p.strip_prefix("Some(")?.strip_suffix(')')?.parse().ok()
+                        };
+                        let min_freq = parse_freq(parts[0]);
+                        let max_freq = parse_freq(parts[1]);
+                        let cpu_root = self.sys_root.join("devices/system/cpu");
+                        if cpu_root.exists() {
+                            for entry in fs::read_dir(&cpu_root).into_iter().flatten().flatten() {
+                                let name = entry.file_name().to_string_lossy().to_string();
+                                if name.starts_with("cpu")
+                                    && name
+                                        .strip_prefix("cpu")
+                                        .is_some_and(|s| s.chars().all(|c| c.is_ascii_digit()))
+                                {
+                                    if let Some(min_f) = min_freq {
+                                        let min_p = entry.path().join("cpufreq/scaling_min_freq");
+                                        if min_p.exists() {
+                                            let _ = fs::write(&min_p, min_f.to_string().as_bytes());
+                                        }
+                                    }
+                                    if let Some(max_f) = max_freq {
+                                        let max_p = entry.path().join("cpufreq/scaling_max_freq");
+                                        if max_p.exists() {
+                                            let _ = fs::write(&max_p, max_f.to_string().as_bytes());
+                                        }
+                                    }
+                                }
                             }
                         }
                     }
