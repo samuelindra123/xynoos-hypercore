@@ -8,13 +8,11 @@ use std::{
 };
 use xynoos_linux_control::{
     journal::{
-        current_boot_id, recover_durable_lease, JournalStatus, LeasePhase, RecoveryOutcome,
-        TransactionJournal,
+        current_boot_id, recover_durable_lease, LeasePhase, RecoveryOutcome, TransactionJournal,
     },
     transaction::{check, run, Backend, Identity, Outcome, SustainedLease},
     Action,
 };
-use xynoos_pressureiq::system::SystemSnapshot;
 
 static TEST_DIR_COUNTER: AtomicU64 = AtomicU64::new(500);
 

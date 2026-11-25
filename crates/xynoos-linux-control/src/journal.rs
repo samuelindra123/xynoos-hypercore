@@ -312,9 +312,8 @@ pub fn cgroup2_mount_id() -> Option<u64> {
     let mounts = fs::read_to_string("/proc/self/mountinfo").ok()?;
     for line in mounts.lines() {
         if line.contains(" - cgroup2 ") {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            if parts.len() > 0 {
-                if let Ok(id) = parts[0].parse::<u64>() {
+            if let Some(first) = line.split_whitespace().next() {
+                if let Ok(id) = first.parse::<u64>() {
                     return Some(id);
                 }
             }

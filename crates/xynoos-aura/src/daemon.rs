@@ -20,7 +20,7 @@ use std::{
 use xynoos_core::{MemoryPressure, MigrationBudget, ResourcePressureLevel};
 use xynoos_hypermemory::{ClusterStore, PageStore};
 use xynoos_linux_control::{
-    transaction::{self, Backend, Identity, Outcome},
+    transaction::{self, Backend, Outcome},
     Action, MAX_HIGH_BYTES, MAX_LOW_BYTES,
 };
 use xynoos_pressureiq::{
@@ -1062,6 +1062,7 @@ impl AuraDaemon {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use xynoos_linux_control::transaction::Identity;
 
     #[allow(dead_code)]
     struct MockBackend {

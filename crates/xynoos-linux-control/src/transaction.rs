@@ -14,24 +14,13 @@ use std::{
 };
 use xynoos_pressureiq::system::SystemSnapshot;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Identity {
     pub device: u64,
     pub inode: u64,
     pub control_inode: u64,
     #[serde(default)]
     pub mount_id: Option<u64>,
-}
-
-impl Default for Identity {
-    fn default() -> Self {
-        Self {
-            device: 0,
-            inode: 0,
-            control_inode: 0,
-            mount_id: None,
-        }
-    }
 }
 
 impl Identity {
@@ -208,7 +197,7 @@ pub fn run<B: Backend + ?Sized>(
         .push("original state verified after restore".into());
     report
 }
-fn check<B: Backend + ?Sized>(
+pub fn check<B: Backend + ?Sized>(
     backend: &mut B,
     id: Identity,
     action: Action,
