@@ -22,3 +22,7 @@ xynoos-decision = { path = "../xynoos-decision" }
 [[bin]]
 name = "xynoos"
 path = "src/bin/xynoos.rs"
+
+[[bin]]
+name = "xynoosd"
+path = "src/bin/xynoosd.rs"

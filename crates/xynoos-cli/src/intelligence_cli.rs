@@ -2,8 +2,10 @@
 #![forbid(unsafe_code)]
 
 use std::{error::Error, path::PathBuf};
+use xynoos_aura::{TelemetryScheduler, WorkloadController};
 use xynoos_linux_control::config::{
-    AuthorizationScope, ConfigExecutor, OwnershipLedger, SetupAuthorization, WholeSystemPlanner,
+    AuthorizationScope, ConfigExecutor, OwnershipLedger, RuntimeAuthorizationContract,
+    SetupAuthorization, WholeSystemPlanner,
 };
 use xynoos_pressureiq::{OptimizationPlan, SystemInventory, INVENTORY_SCHEMA_VERSION};
 
@@ -619,6 +621,12 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
             .execute_plan(&actions, &auth, &plan_fingerprint, now_ms)
             .map_err(|e| format!("Setup apply error: {e}"))?;
 
+        if summary.failed_actions == 0 {
+            let runtime_contract =
+                RuntimeAuthorizationContract::new("operator", &plan_fingerprint, now_ms, 0);
+            let _ = runtime_contract.save_to(&roots.state_dir.join("authorization.json"), now_ms);
+        }
+
         if roots.json {
             let out = serde_json::json!({
                 "operation": "apply",
@@ -723,4 +731,207 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         "usage: xynoos setup (--plan | --apply --authorized | --auto [--authorized] | --status | --rollback) [--json]"
             .into(),
     )
+}
+
+/// Handle `xynoos runtime (status | explain | disable) [--json] [--state-dir PATH]`
+pub fn runtime_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    let subcmd = args.first().map(String::as_str);
+    let roots = parse_roots(args)?;
+    let auth_path = roots.state_dir.join("authorization.json");
+
+    match subcmd {
+        Some("status") => {
+            let auth = RuntimeAuthorizationContract::load_from(&auth_path).unwrap_or_default();
+            let pid_path = PathBuf::from("/run/xynoos/hypercore.pid");
+            let is_running = pid_path.exists();
+            let mut scheduler =
+                TelemetryScheduler::new(roots.proc_root.clone(), roots.sys_root.clone(), 5000);
+            let sample = scheduler.collect_sample(None);
+            let (workload, confidence) = WorkloadController::classify(&sample);
+
+            if roots.json {
+                let out = serde_json::json!({
+                    "schema_version": 1,
+                    "daemon_state": if is_running { "running" } else { "not_running" },
+                    "pid_file": pid_path,
+                    "workload_classification": workload,
+                    "workload_confidence": confidence,
+                    "polling_tier": scheduler.current_tier(),
+                    "effective_interval_ms": scheduler.next_polling_interval().as_millis(),
+                    "authorization": {
+                        "is_revoked": auth.is_revoked,
+                        "revocation_reason": auth.revocation_reason,
+                        "allowed_scopes": auth.allowed_scopes,
+                        "allowed_controls": auth.allowed_controls,
+                        "max_intervention_duration_secs": auth.max_intervention_duration_secs,
+                        "expires_at_unix_ms": auth.expires_at_unix_ms,
+                    },
+                    "telemetry": sample,
+                });
+                println!("{}", serde_json::to_string_pretty(&out)?);
+                return Ok(());
+            }
+
+            println!("XYNOOS HyperCore — Runtime Observability & Status (Milestone N)");
+            println!("=============================================================");
+            println!(
+                "Daemon State      : {}",
+                if is_running {
+                    "Running (active)"
+                } else {
+                    "Not running"
+                }
+            );
+            println!(
+                "Workload Detected : {:?} (Confidence: {:.0}%)",
+                workload,
+                confidence * 100.0
+            );
+            println!(
+                "Telemetry Tier    : {:?} (Interval: {} ms)",
+                scheduler.current_tier(),
+                scheduler.next_polling_interval().as_millis()
+            );
+            println!(
+                "Memory Available  : {}",
+                sample
+                    .mem_available_pct
+                    .map(|p| format!("{p:.1}%"))
+                    .unwrap_or_else(|| "unknown".into())
+            );
+            println!(
+                "CPU Utilization   : {}",
+                sample
+                    .cpu_utilization_pct
+                    .map(|u| format!("{u:.1}%"))
+                    .unwrap_or_else(|| "unknown".into())
+            );
+            println!(
+                "Runtime Auth Scope: {}",
+                if auth.is_revoked {
+                    "REVOKED (emergency disabled)"
+                } else {
+                    "Active & Bound"
+                }
+            );
+            if let Some(reason) = &auth.revocation_reason {
+                println!("  Revocation Info : {reason}");
+            }
+            Ok(())
+        }
+        Some("explain") => {
+            let mut scheduler =
+                TelemetryScheduler::new(roots.proc_root.clone(), roots.sys_root.clone(), 5000);
+            let sample = scheduler.collect_sample(None);
+            let (workload, confidence) = WorkloadController::classify(&sample);
+            let rec = WorkloadController::evaluate(&sample, None, None);
+
+            if roots.json {
+                let out = serde_json::json!({
+                    "schema_version": 1,
+                    "workload": workload,
+                    "confidence": confidence,
+                    "explanation": rec.explanation,
+                    "recommendations": {
+                        "cpu_weight": rec.recommended_cpu_weight,
+                        "protect_background_progress": rec.protect_background_progress,
+                        "memory_low_headroom_bytes": rec.recommended_memory_low_headroom_bytes,
+                        "memory_high_headroom_bytes": rec.recommended_memory_high_headroom_bytes,
+                    },
+                    "telemetry_rationale": {
+                        "cpu_util_pct": sample.cpu_utilization_pct,
+                        "psi_memory_some": sample.psi_memory_some_avg10,
+                        "psi_cpu_some": sample.psi_cpu_some_avg10,
+                        "psi_io_some": sample.psi_io_some_avg10,
+                        "throttle_delta": sample.cpu_throttle_delta,
+                        "ac_online": sample.ac_online,
+                    }
+                });
+                println!("{}", serde_json::to_string_pretty(&out)?);
+                return Ok(());
+            }
+
+            println!("XYNOOS HyperCore — Runtime Decision & Workload Explanation (Milestone N)");
+            println!("=======================================================================");
+            println!("Classified Workload : {:?}", workload);
+            println!("Confidence Level    : {:.1}%", confidence * 100.0);
+            println!("Decision Rationale  : {}", rec.explanation);
+            println!(
+                "Background Protection: {}",
+                if rec.protect_background_progress {
+                    "ACTIVE (Progress protected against starvation)"
+                } else {
+                    "Default"
+                }
+            );
+            if let Some(w) = rec.recommended_cpu_weight {
+                println!("Target CPU Weight   : {w}");
+            }
+            println!("\nMulti-Resource Signals:");
+            println!(
+                "  CPU Utilization   : {}",
+                sample
+                    .cpu_utilization_pct
+                    .map(|u| format!("{u:.1}%"))
+                    .unwrap_or_else(|| "N/A".into())
+            );
+            println!(
+                "  Memory PSI (some) : {}",
+                sample
+                    .psi_memory_some_avg10
+                    .map(|p| format!("{p:.2}%"))
+                    .unwrap_or_else(|| "N/A".into())
+            );
+            println!(
+                "  CPU PSI (some)    : {}",
+                sample
+                    .psi_cpu_some_avg10
+                    .map(|p| format!("{p:.2}%"))
+                    .unwrap_or_else(|| "N/A".into())
+            );
+            println!(
+                "  I/O PSI (some)    : {}",
+                sample
+                    .psi_io_some_avg10
+                    .map(|p| format!("{p:.2}%"))
+                    .unwrap_or_else(|| "N/A".into())
+            );
+            println!(
+                "  Thermal Throttle  : {} events in interval",
+                sample.cpu_throttle_delta
+            );
+            Ok(())
+        }
+        Some("disable") => {
+            let mut auth = RuntimeAuthorizationContract::load_from(&auth_path).unwrap_or_default();
+            auth.revoke("Explicit emergency disablement via 'xynoos runtime disable'");
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            auth.save_to(&auth_path, now_ms)?;
+
+            if roots.json {
+                let out = serde_json::json!({
+                    "operation": "runtime_disable",
+                    "status": "revoked",
+                    "message": "Runtime authorization successfully revoked; active interventions disabled.",
+                });
+                println!("{}", serde_json::to_string_pretty(&out)?);
+                return Ok(());
+            }
+
+            println!("XYNOOS HyperCore — Emergency Runtime Disablement");
+            println!("================================================");
+            println!("Runtime authorization has been REVOKED.");
+            println!(
+                "The continuous daemon will decline all active interventions and revert leases."
+            );
+            println!("To re-enable runtime management in the future, run: xynoos setup --auto --authorized");
+            Ok(())
+        }
+        _ => Err(
+            "usage: xynoos runtime (status | explain | disable) [--json] [--state-dir PATH]".into(),
+        ),
+    }
 }

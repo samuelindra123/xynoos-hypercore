@@ -38,7 +38,9 @@ impl PowerPlanner {
     pub fn plan(inv: &SystemInventory) -> Vec<ConfigurationAction> {
         let mut actions = Vec::new();
         let competing = Self::detect_competing_daemon(inv);
-        let is_throttled = inv.cpu.core_throttle_events > 0 || inv.cpu.package_throttle_events > 0;
+        // Historical nonzero thermal throttle counters alone must not imply current throttling.
+        // Active thermal constraint is established when current CPU temperature exceeds 85°C.
+        let is_throttled = inv.power.max_cpu_temp_degrees_c.is_some_and(|t| t >= 85.0);
         let is_battery = inv.power.ac_online == Some(false);
 
         if let Some((daemon_name, status)) = competing {

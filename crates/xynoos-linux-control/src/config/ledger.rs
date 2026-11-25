@@ -90,11 +90,22 @@ impl OwnershipLedger {
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
-    /// Save the ledger atomically using a temporary file and sync.
+    /// Save the ledger atomically using a temporary file and sync with hardened permissions.
     pub fn save_to(&mut self, path: &Path, now_ms: u64) -> io::Result<()> {
+        if path.is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "Refusing to save ledger through a symlink",
+            ));
+        }
         self.updated_at_unix_ms = now_ms;
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+            }
         }
         let temp_path = path.with_extension("tmp");
         let payload = serde_json::to_string_pretty(self)
@@ -102,6 +113,11 @@ impl OwnershipLedger {
 
         {
             let mut file = File::create(&temp_path)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
+            }
             file.write_all(payload.as_bytes())?;
             file.sync_all()?;
         }

@@ -464,6 +464,20 @@ pub struct DaemonDiagnostics {
     pub history_len: usize,
     #[serde(default)]
     pub safety_guard: Option<crate::safety_guard::SafetyGuardStatus>,
+    #[serde(default)]
+    pub workload_classification: Option<crate::workload_controller::WorkloadClass>,
+    #[serde(default)]
+    pub coordinator_state: Option<crate::continuous_coordinator::CoordinatorState>,
+    #[serde(default)]
+    pub active_interventions: Vec<crate::continuous_coordinator::InterventionRecord>,
+    #[serde(default)]
+    pub polling_tier: Option<crate::telemetry_scheduler::PollingTier>,
+    #[serde(default)]
+    pub circuit_breaker_active: bool,
+    #[serde(default)]
+    pub authorization_scope: Option<String>,
+    #[serde(default)]
+    pub last_telemetry: Option<crate::telemetry_scheduler::TelemetrySample>,
 }
 
 /// Koordinator daemon AURA terpadu.
@@ -474,6 +488,10 @@ pub struct AuraDaemon {
     pub adaptive_coordinator: AuraAdaptiveCoordinator,
     pub cluster_store: ClusterStore,
     pub page_store: PageStore,
+    pub telemetry_scheduler: crate::telemetry_scheduler::TelemetryScheduler,
+    pub continuous_coordinator: crate::continuous_coordinator::ContinuousCoordinator,
+    pub runtime_auth: xynoos_linux_control::config::RuntimeAuthorizationContract,
+    pub last_workload: Option<crate::workload_controller::WorkloadClass>,
     start_time: Instant,
     cycles_completed: u64,
     cycles_failed: u64,
@@ -514,6 +532,14 @@ impl AuraDaemon {
         let cluster_store = ClusterStore::with_default_clustering(16)?;
         let page_store = PageStore::with_capacity(32)?;
 
+        let telemetry_scheduler = crate::telemetry_scheduler::TelemetryScheduler::new(
+            PathBuf::from("/proc"),
+            PathBuf::from("/sys"),
+            config.interval_ms,
+        );
+        let continuous_coordinator = crate::continuous_coordinator::ContinuousCoordinator::new();
+        let runtime_auth = xynoos_linux_control::config::RuntimeAuthorizationContract::default();
+
         Ok(Self {
             config,
             safety_guard,
@@ -521,6 +547,10 @@ impl AuraDaemon {
             adaptive_coordinator,
             cluster_store,
             page_store,
+            telemetry_scheduler,
+            continuous_coordinator,
+            runtime_auth,
+            last_workload: None,
             start_time: Instant::now(),
             cycles_completed: 0,
             cycles_failed: 0,
@@ -557,13 +587,7 @@ impl AuraDaemon {
         if !self.config.adaptive_polling {
             return base;
         }
-        match self.last_stabilized_pressure {
-            Some(MemoryPressure::Low) if self.steady_low_cycles >= 3 => {
-                base.saturating_mul(2).min(15_000)
-            }
-            Some(MemoryPressure::High | MemoryPressure::Critical) => (base / 2).max(250),
-            _ => base,
-        }
+        self.telemetry_scheduler.next_polling_interval().as_millis() as u64
     }
 
     /// Rekonsiliasi pemulihan crash pada startup: membaca jurnal transaksi sebelumnya,
@@ -959,6 +983,23 @@ impl AuraDaemon {
         let acct = self.cluster_store.overhead_accounting();
         let rss_bytes = process_rss_bytes();
         let rss_within_budget = rss_bytes.is_none_or(|r| r <= self.config.max_rss_bytes);
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        let cb_active = self
+            .continuous_coordinator
+            .is_circuit_breaker_tripped(now_ms);
+        let last_telemetry = self.telemetry_scheduler.last_sample().cloned();
+        let polling_tier = Some(self.telemetry_scheduler.current_tier());
+        let coord_state = Some(self.continuous_coordinator.state);
+        let active_interventions = self.continuous_coordinator.active_interventions.clone();
+        let auth_scope = if self.runtime_auth.is_revoked {
+            Some("revoked".into())
+        } else {
+            Some(format!("{:?}", self.runtime_auth.allowed_scopes))
+        };
+
         DaemonDiagnostics {
             mode: self.config.mode,
             uptime_secs: self.start_time.elapsed().as_secs(),
@@ -980,6 +1021,13 @@ impl AuraDaemon {
             rss_within_budget,
             history_len: self.telemetry_history.len(),
             safety_guard: Some(self.safety_guard.status()),
+            workload_classification: self.last_workload,
+            coordinator_state: coord_state,
+            active_interventions,
+            polling_tier,
+            circuit_breaker_active: cb_active,
+            authorization_scope: auth_scope,
+            last_telemetry,
         }
     }
 
@@ -1021,6 +1069,19 @@ impl AuraDaemon {
                     break;
                 }
             }
+
+            // Adaptive Telemetry & Workload Intelligence
+            let sample = self.telemetry_scheduler.collect_sample(None);
+            let (workload, _) = crate::workload_controller::WorkloadController::classify(&sample);
+            self.last_workload = Some(workload);
+
+            let now_ms = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0);
+            let _reverted = self
+                .continuous_coordinator
+                .evaluate_closed_loop(&sample, now_ms);
 
             let snap_now = collect_multi_resource(None);
             let now_inst = Instant::now();

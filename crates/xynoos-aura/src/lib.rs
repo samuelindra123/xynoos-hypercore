@@ -85,4 +85,18 @@ pub use profiler::{
     ShadowEvaluationReport, ShadowPlayer, TraceRecord, WorkloadTrace,
 };
 
+pub mod telemetry_scheduler;
+pub use telemetry_scheduler::{
+    PollingTier, TelemetrySample, TelemetryScheduler, TELEMETRY_SAMPLE_SCHEMA_VERSION,
+};
+
+pub mod workload_controller;
+pub use workload_controller::{WorkloadClass, WorkloadController, WorkloadRecommendation};
+
+pub mod continuous_coordinator;
+pub use continuous_coordinator::{
+    ContinuousCoordinator, CoordinatorState, InterventionRecord, InterventionStatus,
+    COORDINATOR_SCHEMA_VERSION,
+};
+
 pub use xynoos_linux_control;
