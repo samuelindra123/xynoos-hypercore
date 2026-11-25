@@ -55,14 +55,14 @@ impl WholeSystemPlanner {
         let is_throttled = inv.cpu.core_throttle_events > 0 || inv.cpu.package_throttle_events > 0;
         if is_throttled {
             for action in &mut actions {
-                if action.action_id.starts_with("CPU-") || action.action_id.starts_with("POWER-") {
-                    if action.classification == ActionClassification::Improve {
-                        action.classification = ActionClassification::Defer;
-                        action.potential_side_effects = format!(
-                            "Deferred due to active thermal throttling events (core: {}, pkg: {})",
-                            inv.cpu.core_throttle_events, inv.cpu.package_throttle_events
-                        );
-                    }
+                if (action.action_id.starts_with("CPU-") || action.action_id.starts_with("POWER-"))
+                    && action.classification == ActionClassification::Improve
+                {
+                    action.classification = ActionClassification::Defer;
+                    action.potential_side_effects = format!(
+                        "Deferred due to active thermal throttling events (core: {}, pkg: {})",
+                        inv.cpu.core_throttle_events, inv.cpu.package_throttle_events
+                    );
                 }
             }
         }

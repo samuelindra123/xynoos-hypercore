@@ -111,9 +111,7 @@ impl CpuPlanner {
             && current_gov != "powersave"
             && current_gov != "schedutil";
 
-        let (classification, desired_val, mutation) = if gov_matches {
-            (ActionClassification::Preserve, current_gov.clone(), None)
-        } else if is_admin_managed {
+        let (classification, desired_val, mutation) = if gov_matches || is_admin_managed {
             (ActionClassification::Preserve, current_gov.clone(), None)
         } else {
             (
@@ -204,11 +202,7 @@ impl CpuPlanner {
                 target_setting: "cpufreq.energy_performance_preference".into(),
                 current_observed_value: current_epp.clone(),
                 desired_value: desired_epp,
-                current_ownership: if epp_matches {
-                    ConfigurationOwnership::KernelDefault
-                } else {
-                    ConfigurationOwnership::KernelDefault
-                },
+                current_ownership: ConfigurationOwnership::KernelDefault,
                 required_privileges: PrivilegeLevel::RequiresRoot,
                 required_capability: "cpu.energy_performance_preference".into(),
                 expected_benefit: format!(

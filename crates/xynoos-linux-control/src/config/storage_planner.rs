@@ -159,18 +159,8 @@ impl StoragePlanner {
                 StorageMediaType::EmmcFlash | StorageMediaType::SataSsd
             ) {
                 if let Some(current_ra) = dev.read_ahead_kb {
-                    let target_ra: u32 = 128;
-                    let ra_matches = current_ra == target_ra as u64;
-
-                    let (ra_class, desired_ra, ra_mut) = if ra_matches {
-                        (ActionClassification::Preserve, current_ra.to_string(), None)
-                    } else {
-                        (
-                            ActionClassification::Preserve, // Conservative preserve unless explicitly tuned
-                            current_ra.to_string(),
-                            None,
-                        )
-                    };
+                    let (ra_class, desired_ra, ra_mut) =
+                        (ActionClassification::Preserve, current_ra.to_string(), None);
 
                     actions.push(ConfigurationAction {
                         schema_version: CONFIG_ACTION_SCHEMA_VERSION,

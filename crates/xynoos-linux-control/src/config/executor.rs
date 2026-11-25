@@ -457,9 +457,9 @@ impl ConfigExecutor {
                     let readback = fs::read_to_string(&thp_path)
                         .map_err(|e| format!("Failed reading back THP mode: {e}"))?;
                     let expected_bracket = format!("[{mode}]");
-                    if !readback.contains(&expected_bracket) {
+                    if readback.trim() != mode && !readback.contains(&expected_bracket) {
                         return Err(format!(
-                            "THP verification failed: expected {expected_bracket}, read {readback}"
+                            "THP verification failed: expected {expected_bracket} or {mode}, read {readback}"
                         ));
                     }
                 }
@@ -716,9 +716,9 @@ impl ConfigExecutor {
                         format!("Failed reading back I/O scheduler for {device_name}: {e}")
                     })?;
                     let expected_bracket = format!("[{scheduler}]");
-                    if !readback.contains(&expected_bracket) {
+                    if readback.trim() != scheduler && !readback.contains(&expected_bracket) {
                         return Err(format!(
-                            "I/O scheduler verification failed for {device_name}: expected {expected_bracket}, read {readback}"
+                            "I/O scheduler verification failed for {device_name}: expected {expected_bracket} or {scheduler}, read {readback}"
                         ));
                     }
                 }
