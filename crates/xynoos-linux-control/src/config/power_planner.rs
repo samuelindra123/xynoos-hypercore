@@ -78,9 +78,7 @@ impl PowerPlanner {
         // If platform profile is supported and unmanaged
         if let Some(active_profile) = &inv.power.platform_power_profile {
             let target_profile = if is_battery {
-                "balanced"
-            } else if is_throttled {
-                "balanced"
+                "power-saver"
             } else {
                 "balanced"
             };

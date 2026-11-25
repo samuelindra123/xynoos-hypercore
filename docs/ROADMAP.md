@@ -90,7 +90,7 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
 
 ## 3. Milestone Definition & Acceptance Criteria
 
-### Milestone K — Universal Hardware Intelligence, Kernel Capability Discovery & Existing Configuration Intelligence (Current)
+### Milestone K — Universal Hardware Intelligence, Kernel Capability Discovery & Existing Configuration Intelligence (Completed)
 - **Objective**: Establish read-only discovery, inventory schema, conflict analysis, and optimization planning.
 - **Scope**:
   - Real platform capability discovery (distro family, init system, cgroups, PSI).
@@ -105,7 +105,7 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
   - PASS: Physical read-only discovery executed and documented on N5000 reference hardware.
   - PASS: Setup planning strictly refuses `--apply` during Milestone K.
 
-### Milestone L — Reversible Configuration Engine, Universal Memory Optimization & Authorized Automatic Setup Foundation (Current)
+### Milestone L — Reversible Configuration Engine, Universal Memory Optimization & Authorized Automatic Setup Foundation (Completed)
 - **Objective**: Implement working, authorizable, reversible configuration execution system and universal memory optimization foundation.
 - **Scope**:
   - Deterministic versioned `ConfigurationAction` schema with typed allowlisted mutations.
@@ -126,26 +126,35 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
   - PASS: Refuses blind rollback if configuration files were tampered with or modified externally.
   - PASS: Real remote mutation qualification in disposable runners passes completely.
 
-### Milestone M — CPU, Scheduling, Thermal & Power Intelligence
-- **Objective**: Coordinate CPU frequency governors, idle states, and scheduling policies.
+### Milestone M — Universal Whole-System Optimization, CPU/GPU/Storage/Power Intelligence & Continuous Adaptive Runtime (Completed)
+- **Objective**: Expand HyperCore into a working whole-system adaptive optimization engine coordinating CPU, GPU-awareness, Storage/Block I/O, Power/Thermal, and continuous adaptive runtime.
 - **Scope**:
-  - Driver-specific scaling coordination (`intel_pstate`, `amd-pstate`, `acpi-cpufreq`).
-  - Energy Performance Preference (EPP) tuning based on AC/battery state.
-  - Heterogeneous core placement policies for big.LITTLE architectures.
-  - CFS autogroup coordination and thermal throttle mitigation.
+  - Expanded `TypedMutation` for CPU governor, EPP, frequency bounds, block I/O schedulers, read-ahead, and power profiles.
+  - Universal CPU policy planner (`CpuPlanner`) supporting Intel, AMD, ARM64, and virtualized systems with thermal safety.
+  - GPU-aware discovery and coordination (`GpuPlanner`) with shared system memory awareness and safe observe-only defaults.
+  - Storage block I/O optimization (`StoragePlanner`) aligning schedulers (`none`, `mq-deadline`, `bfq`) to media characteristics.
+  - Platform power and thermal planner (`PowerPlanner`) integrating ACPI platform profiles and coexisting with TLP/thermald.
+  - Unified multi-resource arbitration engine (`WholeSystemPlanner`) deferring aggressive tuning under thermal stress.
+  - Cryptographic SHA-256 ownership ledger integrity and hardened multi-scope authorization model.
+  - Guided setup CLI workflows (`setup --auto`, `setup --apply --authorized`, `setup --rollback`).
 - **Acceptance Criteria**:
-  - Observe-only by default; detect and defer when external daemons (TLP, auto-cpufreq) are active.
-  - Fail-safe fallback to distribution default governors.
+  - PASS: All whole-system mutations strictly require explicit typed authorization and valid SHA-256 plan fingerprint.
+  - PASS: Observe-only defaults for non-mutating discovery; respectful coexistence with third-party tools.
+  - PASS: Complete verified atomic rollback for all subsystems with zero residual drop-in files.
+  - PASS: Real disposable remote qualification passes across all 10 qualification scenarios.
+  - PASS: Physical read-only qualification on Intel N5000 / UHD 605 confirms zero drift and preserves existing configuration.
 
-### Milestone N — GPU-Aware & Storage-Aware Optimization
-- **Objective**: Optimize storage scheduling, queues, and graphics power profiles safely.
+### Milestone N — Continuous Self-Tuning Daemon & Workload-Aware Background Controller (Next)
+- **Objective**: Implement production-grade autonomous background daemon (`xynoosd`) with systemd service integration and real-time PSI-driven continuous self-tuning.
 - **Scope**:
-  - Storage media classification: NVMe (`none`), eMMC/SATA SSD (`mq-deadline`/`kyber`), HDD (`bfq`).
-  - Dynamic read-ahead scaling for bulk streaming versus random access.
-  - Intel/AMD GPU render node awareness for background batch processing deferral.
+  - Production systemd unit integration (`xynoosd.service`) with watchdog and cgroup management.
+  - Real-time PSI telemetry loop with hysteresis and intervention budget bounding.
+  - Workload-aware continuous dynamic memory reclaim and CPU weight adjustment.
+  - Battery/AC dynamic policy transitions and thermal throttling mitigation.
 - **Acceptance Criteria**:
-  - Zero direct PCI register writes; interact only through supported kernel sysfs/DRM interfaces.
-  - Preserves mount options and filesystem integrity.
+  - Steady-state daemon memory footprint strictly under 10 MiB RSS.
+  - Zero performance degradation or CPU spikes during background operation.
+  - Resilient fail-safe recovery on unhandled kernel pressure events.
 
 ### Milestone O — Full Cross-Subsystem Automatic Setup & System Coexistence
 - **Objective**: Deliver end-to-end multi-subsystem `xynoos setup --auto` coordination.

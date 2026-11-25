@@ -58,13 +58,7 @@ impl StoragePlanner {
                     return None;
                 }
             }
-            StorageMediaType::VirtualDisk => {
-                if available.iter().any(|s| s == "none") {
-                    "none"
-                } else {
-                    return None;
-                }
-            }
+            StorageMediaType::VirtualDisk if available.iter().any(|s| s == "none") => "none",
             _ => return None,
         };
 
@@ -121,8 +115,6 @@ impl StoragePlanner {
                     desired_value: desired_val,
                     current_ownership: if is_custom_tuned {
                         ConfigurationOwnership::AdministratorManaged
-                    } else if sched_matches {
-                        ConfigurationOwnership::KernelDefault
                     } else {
                         ConfigurationOwnership::KernelDefault
                     },

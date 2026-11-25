@@ -583,7 +583,7 @@ fn test_whole_system_planner_coordination() {
 
     let summary = WholeSystemPlanner::summarize(&actions);
     assert!(summary.total_actions > 0);
-    assert!(summary.required_scopes.len() >= 1);
+    assert!(!summary.required_scopes.is_empty());
 
     // Verify CPU planner chose schedutil or powersave appropriately
     let cpu_action = actions.iter().find(|a| a.action_id == "CPU-GOV-001");
