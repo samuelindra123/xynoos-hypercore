@@ -79,9 +79,13 @@ pub struct MemorySysctlValues {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OomManagement {
     pub earlyoom_present: bool,
+    pub earlyoom_active: bool,
     pub systemd_oomd_present: bool,
+    pub systemd_oomd_active: bool,
     pub nohang_present: bool,
+    pub nohang_active: bool,
     pub oomd_present: bool,
+    pub oomd_active: bool,
 }
 
 /// Discovered memory inventory.
@@ -137,9 +141,13 @@ impl Default for MemoryInventory {
             memory_sysctl: MemorySysctlValues::default(),
             oom_managers: OomManagement {
                 earlyoom_present: false,
+                earlyoom_active: false,
                 systemd_oomd_present: false,
+                systemd_oomd_active: false,
                 nohang_present: false,
+                nohang_active: false,
                 oomd_present: false,
+                oomd_active: false,
             },
             zram_tuning_services: Vec::new(),
             status: DiscoveryStatus::Unknown,
@@ -348,10 +356,22 @@ pub fn discover_memory(sys_root: &Path, proc_root: &Path, etc_root: &Path) -> Me
             if fname.chars().all(|c| c.is_ascii_digit()) {
                 if let Ok(comm) = read_bounded(&entry.path().join("comm")) {
                     match comm.as_str() {
-                        "earlyoom" => inv.oom_managers.earlyoom_present = true,
-                        "systemd-oomd" => inv.oom_managers.systemd_oomd_present = true,
-                        "nohang" => inv.oom_managers.nohang_present = true,
-                        "oomd" => inv.oom_managers.oomd_present = true,
+                        "earlyoom" => {
+                            inv.oom_managers.earlyoom_present = true;
+                            inv.oom_managers.earlyoom_active = true;
+                        }
+                        "systemd-oomd" => {
+                            inv.oom_managers.systemd_oomd_present = true;
+                            inv.oom_managers.systemd_oomd_active = true;
+                        }
+                        "nohang" => {
+                            inv.oom_managers.nohang_present = true;
+                            inv.oom_managers.nohang_active = true;
+                        }
+                        "oomd" => {
+                            inv.oom_managers.oomd_present = true;
+                            inv.oom_managers.oomd_active = true;
+                        }
                         _ => {}
                     }
                 }

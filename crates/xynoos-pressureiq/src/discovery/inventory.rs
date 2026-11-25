@@ -85,6 +85,16 @@ impl SystemInventory {
     }
 }
 
+impl Default for SystemInventory {
+    fn default() -> Self {
+        Self::collect_from(
+            Path::new("/nonexistent-sys"),
+            Path::new("/nonexistent-proc"),
+            Path::new("/nonexistent-etc"),
+        )
+    }
+}
+
 /// Bounded cached system inventory to prevent redundant expensive hardware/config probing.
 #[derive(Debug, Clone)]
 pub struct CachedSystemInventory {

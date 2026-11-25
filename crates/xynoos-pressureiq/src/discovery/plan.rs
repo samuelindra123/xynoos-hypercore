@@ -277,12 +277,12 @@ impl OptimizationPlan {
                     detected_ownership: ConfigurationOwnership::KernelDefault,
                     required_capability: "kernel.mm.thp".into(),
                     proposed_setting: Some("madvise".into()),
-                    rationale: "THP 'always' on <= 4 GiB systems causes memory fragmentation, internal bloat, and aggressive background compaction latency.".into(),
-                    expected_benefit: "Saves memory overhead and prevents random CPU latency spikes.".into(),
-                    potential_trade_offs: "Applications requiring automatic 2MB pages must opt-in via madvise.".into(),
+                    rationale: "THP 'always' on general-purpose <= 4 GiB systems can induce memory bloat and compaction stalls under mixed multitasking; 'madvise' allows opt-in for high-throughput processes without system-wide overhead.".into(),
+                    expected_benefit: "Reduces memory fragmentation risk and eliminates unexpected compaction latency spikes.".into(),
+                    potential_trade_offs: "Applications requiring automatic 2MB pages must opt-in via madvise; compute/database workloads benefiting from system-wide 2MB TLB mappings may see slight TLB miss increases.".into(),
                     required_privileges: PrivilegeLevel::RequiresRoot,
                     reversibility: ReversibilityGuarantee::FullyReversible,
-                    confidence: ConfidenceLevel::High,
+                    confidence: ConfidenceLevel::Medium,
                     evidence_references: vec!["thp:always".into(), format!("ram_bytes:{}", inv.memory.total_bytes)],
                 });
             } else {

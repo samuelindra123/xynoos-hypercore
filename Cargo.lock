@@ -154,6 +154,7 @@ dependencies = [
  "xynoos-core",
  "xynoos-decision",
  "xynoos-hypermemory",
+ "xynoos-linux-control",
  "xynoos-pressureiq",
 ]
 
