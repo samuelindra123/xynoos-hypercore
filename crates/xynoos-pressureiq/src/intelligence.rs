@@ -172,6 +172,7 @@ pub fn diagnose(a: &Observation, b: &Observation, interval: Duration, age: Durat
         "pgsteal_kswapd",
         "pswpin",
         "pswpout",
+        "pgmajfault",
     ] {
         let rate =
             a.vm.as_ref()
@@ -180,7 +181,7 @@ pub fn diagnose(a: &Observation, b: &Observation, interval: Duration, age: Durat
                 .and_then(|(x, y)| y.checked_sub(*x))
                 .filter(|_| valid_interval)
                 .map(|v| v as f64 / seconds);
-        if rate.is_none() {
+        if rate.is_none() && key != "pgmajfault" {
             d.limitations
                 .push(format!("{key}: unavailable or counter reset"));
         }
@@ -272,6 +273,28 @@ pub fn diagnose(a: &Observation, b: &Observation, interval: Duration, age: Durat
         d.classes.push("swap_thrashing".into());
         d.evidence
             .push("swap-in and swap-out both at least 10 pages/s with memory PSI stalls".into());
+    }
+    let swap_exhausted = match (b.swap_total, b.swap_free) {
+        (Some(total), Some(free)) if total > 0 => {
+            let free_pct = (free as f64) * 100.0 / (total as f64);
+            free_pct < 5.0 || free < 16 * 1024 * 1024
+        }
+        _ => false,
+    };
+    if swap_exhausted && d.available_pct.is_some_and(|p| p < 10.0) {
+        d.classes.push("swap_exhaustion_risk".into());
+        d.evidence.push(
+            "swap is nearly exhausted (< 5% free) with low available RAM (< 10%), posing imminent OOM risk"
+                .into(),
+        );
+    } else if let (Some(total), Some(free)) = (b.swap_total, b.swap_free) {
+        if total > 0 && ((free as f64) * 100.0 / (total as f64)) < 25.0 && !stalled && !swap {
+            d.classes.push("high_swap_utilization".into());
+            d.evidence.push(
+                "swap is utilized (> 75%) without active churn or memory stalls; native paging is absorbing allocations"
+                    .into(),
+            );
+        }
     }
     if b.zram.as_ref().is_some_and(|zs| {
         zs.iter().any(|z| {
@@ -410,5 +433,22 @@ mod tests {
         assert_eq!(d.rates_per_second["pswpin"], None);
         assert!(d.classes.contains(&"incomplete_or_unreliable".into()));
         assert!(!d.classes.contains(&"normal".into()));
+    }
+
+    #[test]
+    fn swap_exhaustion_and_utilization_signals() {
+        let a = sample();
+        let mut b_exhaust = a.clone();
+        b_exhaust.swap_total = Some(1000);
+        b_exhaust.swap_free = Some(20); // 2% swap free
+        b_exhaust.mem_available = Some(50); // 5% RAM available
+        let d_exhaust = diagnose(&a, &b_exhaust, Duration::from_secs(1), Duration::ZERO);
+        assert!(d_exhaust.classes.contains(&"swap_exhaustion_risk".into()));
+
+        let mut b_util = a.clone();
+        b_util.swap_total = Some(1000);
+        b_util.swap_free = Some(150); // 15% swap free, utilized but no stalls
+        let d_util = diagnose(&a, &b_util, Duration::from_secs(1), Duration::ZERO);
+        assert!(d_util.classes.contains(&"high_swap_utilization".into()));
     }
 }

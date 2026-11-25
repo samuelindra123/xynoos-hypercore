@@ -72,9 +72,10 @@ impl PressureBridge {
         let has_thrashing = has("swap_thrashing");
         let has_direct_reclaim = has("active_direct_reclaim");
         let has_sustained = has("sustained_pressure");
+        let has_exhaustion = has("swap_exhaustion_risk");
 
         // Kontradiksi 1: Status normal bersamaan dengan indikator tekanan parah
-        if has_normal && (has_thrashing || has_direct_reclaim || has_sustained) {
+        if has_normal && (has_thrashing || has_direct_reclaim || has_sustained || has_exhaustion) {
             return TelemetryValidation::ContradictorySignals;
         }
 
@@ -104,11 +105,23 @@ impl PressureBridge {
         let has = |class: &str| diagnosis.classes.iter().any(|c| c == class);
         let avail = diagnosis.available_pct.unwrap_or(100.0);
 
-        let pressure = if has("swap_thrashing") || avail < 5.0 {
+        let pressure = if has("swap_thrashing") || has("swap_exhaustion_risk") || avail < 3.0 {
             MemoryPressure::Critical
-        } else if has("active_direct_reclaim") || has("sustained_pressure") || avail < 15.0 {
+        } else if has("active_direct_reclaim")
+            || has("sustained_pressure")
+            || (avail < 5.0)
+            || (avail < 15.0
+                && (has("elevated_pressure")
+                    || has("swap_activity")
+                    || has("io_amplified_memory_stalls")))
+        {
             MemoryPressure::High
-        } else if has("elevated_pressure") || has("swap_activity") || avail < 25.0 {
+        } else if has("elevated_pressure")
+            || has("swap_activity")
+            || has("low_available_memory")
+            || has("high_swap_utilization")
+            || avail < 25.0
+        {
             MemoryPressure::Moderate
         } else {
             MemoryPressure::Low
@@ -674,7 +687,7 @@ mod tests {
             MemoryPressure::Moderate
         );
 
-        // 4. Sustained pressure, direct reclaim, atau RAM < 15% -> High
+        // 4. Sustained pressure, direct reclaim, atau RAM < 15% dengan tanda tekanan -> High
         let sustained = mock_diagnosis(vec!["sustained_pressure"], Some(18.0), true);
         assert_eq!(
             PressureBridge::evaluate_pressure(&sustained),
@@ -685,19 +698,30 @@ mod tests {
             PressureBridge::evaluate_pressure(&direct),
             MemoryPressure::High
         );
+        let vlow_elevated = mock_diagnosis(vec!["elevated_pressure"], Some(10.0), true);
+        assert_eq!(
+            PressureBridge::evaluate_pressure(&vlow_elevated),
+            MemoryPressure::High
+        );
+        // RAM < 15% tanpa tanda tekanan/stall -> Moderate (bukan High!)
         let vlow_ram = mock_diagnosis(vec![], Some(10.0), true);
         assert_eq!(
             PressureBridge::evaluate_pressure(&vlow_ram),
-            MemoryPressure::High
+            MemoryPressure::Moderate
         );
 
-        // 5. Swap thrashing atau RAM < 5% -> Critical
+        // 5. Swap thrashing, swap exhaustion, atau RAM < 3% -> Critical
         let thrashing = mock_diagnosis(vec!["swap_thrashing"], Some(4.0), true);
         assert_eq!(
             PressureBridge::evaluate_pressure(&thrashing),
             MemoryPressure::Critical
         );
-        let crit_ram = mock_diagnosis(vec![], Some(3.0), true);
+        let exhaustion = mock_diagnosis(vec!["swap_exhaustion_risk"], Some(8.0), true);
+        assert_eq!(
+            PressureBridge::evaluate_pressure(&exhaustion),
+            MemoryPressure::Critical
+        );
+        let crit_ram = mock_diagnosis(vec![], Some(2.5), true);
         assert_eq!(
             PressureBridge::evaluate_pressure(&crit_ram),
             MemoryPressure::Critical

@@ -642,6 +642,36 @@ impl AuraDaemon {
         }
     }
 
+    /// Menghitung batas penyesuaian kernel yang sadar-beban dengan pemeriksaan batasan
+    /// administrator yang sudah ada sebelumnya agar tidak melemahkan batas atau proteksi pra-ada.
+    pub fn compute_workload_aware_action_with_admin_guard(
+        &self,
+        recommendation: &KernelTuningRecommendation,
+        current_usage_bytes: u64,
+        pre_existing_control: Option<u64>,
+    ) -> Option<Action> {
+        let action = self.compute_workload_aware_action(recommendation, current_usage_bytes)?;
+        if let Some(orig) = pre_existing_control {
+            match action {
+                Action::MemoryHigh { bytes } | Action::MemoryMax { bytes } => {
+                    // Jika administrator sudah menyetel batas yang lebih ketat (< u64::MAX),
+                    // usulan nilai yang lebih tinggi akan memperlemah batas administrator.
+                    if orig != u64::MAX && bytes > orig {
+                        return None;
+                    }
+                }
+                Action::MemoryLow { bytes } => {
+                    // Jika administrator sudah memberikan proteksi memory.low yang lebih tinggi,
+                    // usulan nilai yang lebih rendah akan memperlemah proteksi administrator.
+                    if orig > 0 && bytes < orig {
+                        return None;
+                    }
+                }
+            }
+        }
+        Some(action)
+    }
+
     fn record_history(
         &mut self,
         raw: MemoryPressure,
@@ -801,92 +831,109 @@ impl AuraDaemon {
                                 }
                                 Ok(()) => {
                                     if let Ok(orig) = b.read_control(action) {
-                                        let wrote_journal = if let Some(journal_path) =
-                                            &self.config.journal_file
-                                        {
-                                            let journal = TransactionJournal {
-                                                schema_version:
-                                                    TransactionJournal::CURRENT_SCHEMA_VERSION,
-                                                lease_id: format!(
-                                                    "{}-{}-{}",
-                                                    std::process::id(),
-                                                    id.inode,
-                                                    action.control_filename()
-                                                ),
-                                                timestamp_epoch_secs: std::time::SystemTime::now()
-                                                    .duration_since(std::time::UNIX_EPOCH)
-                                                    .map(|d| d.as_secs())
-                                                    .unwrap_or(0),
-                                                boot_id: current_boot_id(),
-                                                owner_uid: xynoos_linux_control::current_euid(),
-                                                process_pid: std::process::id(),
-                                                process_start_ticks: process_start_ticks(
-                                                    std::process::id(),
-                                                ),
-                                                authorized_root: None,
-                                                identity: id,
-                                                action,
-                                                original_value: orig,
-                                                requested_value: action.bytes(),
-                                                status: JournalStatus::Pending,
-                                                integrity_crc: 0,
-                                            };
-                                            journal.persist(journal_path).is_ok()
-                                        } else {
-                                            false
+                                        // Refuse to weaken pre-existing administrator limits or protections
+                                        let weakens_admin = match action {
+                                            Action::MemoryHigh { bytes }
+                                            | Action::MemoryMax { bytes } => {
+                                                orig != u64::MAX && bytes > orig
+                                            }
+                                            Action::MemoryLow { bytes } => orig > 0 && bytes < orig,
                                         };
-
-                                        let report = transaction::run(b, snap, action, true);
-                                        match report.outcome {
-                                            Outcome::Restored => {
-                                                let dir = match action {
-                                                    Action::MemoryLow { .. } => 1,
-                                                    Action::MemoryHigh { .. } => -1,
-                                                    Action::MemoryMax { .. } => -1,
+                                        if weakens_admin {
+                                            let msg = format!(
+                                                "Declined kernel intervention: action {:?} would weaken pre-existing administrator configuration ({orig})",
+                                                action
+                                            );
+                                            self.record_failure(msg);
+                                        } else {
+                                            let wrote_journal = if let Some(journal_path) =
+                                                &self.config.journal_file
+                                            {
+                                                let journal = TransactionJournal {
+                                                    schema_version:
+                                                        TransactionJournal::CURRENT_SCHEMA_VERSION,
+                                                    lease_id: format!(
+                                                        "{}-{}-{}",
+                                                        std::process::id(),
+                                                        id.inode,
+                                                        action.control_filename()
+                                                    ),
+                                                    timestamp_epoch_secs:
+                                                        std::time::SystemTime::now()
+                                                            .duration_since(std::time::UNIX_EPOCH)
+                                                            .map(|d| d.as_secs())
+                                                            .unwrap_or(0),
+                                                    boot_id: current_boot_id(),
+                                                    owner_uid: xynoos_linux_control::current_euid(),
+                                                    process_pid: std::process::id(),
+                                                    process_start_ticks: process_start_ticks(
+                                                        std::process::id(),
+                                                    ),
+                                                    authorized_root: None,
+                                                    identity: id,
+                                                    action,
+                                                    original_value: orig,
+                                                    requested_value: action.bytes(),
+                                                    status: JournalStatus::Pending,
+                                                    integrity_crc: 0,
                                                 };
-                                                self.safety_guard.record_success(dir);
-                                                if wrote_journal {
-                                                    if let Some(journal_path) =
-                                                        &self.config.journal_file
-                                                    {
-                                                        let _ = TransactionJournal::cleanup(
-                                                            journal_path,
-                                                        );
+                                                journal.persist(journal_path).is_ok()
+                                            } else {
+                                                false
+                                            };
+
+                                            let report = transaction::run(b, snap, action, true);
+                                            match report.outcome {
+                                                Outcome::Restored => {
+                                                    let dir = match action {
+                                                        Action::MemoryLow { .. } => 1,
+                                                        Action::MemoryHigh { .. } => -1,
+                                                        Action::MemoryMax { .. } => -1,
+                                                    };
+                                                    self.safety_guard.record_success(dir);
+                                                    if wrote_journal {
+                                                        if let Some(journal_path) =
+                                                            &self.config.journal_file
+                                                        {
+                                                            let _ = TransactionJournal::cleanup(
+                                                                journal_path,
+                                                            );
+                                                        }
                                                     }
                                                 }
-                                            }
-                                            Outcome::Declined | Outcome::ApplyFailed => {
-                                                self.safety_guard.record_failure(&format!(
-                                                    "{:?}",
-                                                    report.outcome
-                                                ));
-                                                if wrote_journal {
-                                                    if let Some(journal_path) =
-                                                        &self.config.journal_file
-                                                    {
-                                                        let _ = TransactionJournal::cleanup(
-                                                            journal_path,
-                                                        );
+                                                Outcome::Declined | Outcome::ApplyFailed => {
+                                                    self.safety_guard.record_failure(&format!(
+                                                        "{:?}",
+                                                        report.outcome
+                                                    ));
+                                                    if wrote_journal {
+                                                        if let Some(journal_path) =
+                                                            &self.config.journal_file
+                                                        {
+                                                            let _ = TransactionJournal::cleanup(
+                                                                journal_path,
+                                                            );
+                                                        }
                                                     }
                                                 }
-                                            }
-                                            Outcome::Conflict | Outcome::VerificationFailed => {
-                                                let msg = format!(
-                                                    "Kernel transaction ended with {:?}: {:?}",
-                                                    report.outcome, report.events
-                                                );
-                                                self.safety_guard.record_failure(&msg);
-                                                self.record_failure(msg);
-                                                step_had_error = true;
-                                            }
-                                            Outcome::RollbackFailed => {
-                                                let msg = format!(
-                                                    "Kernel transaction ended with {:?}: {:?}",
-                                                    report.outcome, report.events
-                                                );
-                                                self.safety_guard.record_rollback_failure(&msg);
-                                                self.record_failure(msg);
-                                                step_had_error = true;
+                                                Outcome::Conflict | Outcome::VerificationFailed => {
+                                                    let msg = format!(
+                                                        "Kernel transaction ended with {:?}: {:?}",
+                                                        report.outcome, report.events
+                                                    );
+                                                    self.safety_guard.record_failure(&msg);
+                                                    self.record_failure(msg);
+                                                    step_had_error = true;
+                                                }
+                                                Outcome::RollbackFailed => {
+                                                    let msg = format!(
+                                                        "Kernel transaction ended with {:?}: {:?}",
+                                                        report.outcome, report.events
+                                                    );
+                                                    self.safety_guard.record_rollback_failure(&msg);
+                                                    self.record_failure(msg);
+                                                    step_had_error = true;
+                                                }
                                             }
                                         }
                                     }
@@ -1176,6 +1223,36 @@ mod tests {
         assert!(daemon
             .compute_workload_aware_action(&rec_throttle, 600 * 1024 * 1024)
             .is_none());
+
+        // Weakening administrator limits must be safely declined (None)
+        // 1. Proposed memory.high (125 MiB) higher than pre-existing limit (100 MiB) -> declined
+        assert!(daemon
+            .compute_workload_aware_action_with_admin_guard(
+                &rec_throttle,
+                100 * 1024 * 1024,
+                Some(100 * 1024 * 1024)
+            )
+            .is_none());
+        // 2. Proposed memory.high (125 MiB) under unconstrained pre-existing limit (u64::MAX) -> allowed
+        assert!(daemon
+            .compute_workload_aware_action_with_admin_guard(
+                &rec_throttle,
+                100 * 1024 * 1024,
+                Some(u64::MAX)
+            )
+            .is_some());
+        // 3. Proposed memory.low (11 MiB) lower than pre-existing protection (64 MiB) -> declined
+        assert!(daemon
+            .compute_workload_aware_action_with_admin_guard(
+                &rec,
+                10 * 1024 * 1024,
+                Some(64 * 1024 * 1024)
+            )
+            .is_none());
+        // 4. Proposed memory.low (11 MiB) higher than unconfigured protection (0) -> allowed
+        assert!(daemon
+            .compute_workload_aware_action_with_admin_guard(&rec, 10 * 1024 * 1024, Some(0))
+            .is_some());
 
         // u64::MAX must never panic or overflow
         assert!(daemon
