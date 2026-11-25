@@ -46,11 +46,17 @@ pub enum ActionClassification {
 }
 
 /// Explicit scope required for authorization.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuthorizationScope {
     /// Scope for memory, zram, zswap, swap, and memory sysctl actions.
     MemoryOptimization,
+    /// Scope for CPU frequency governors, EPP, and bounds.
+    CpuOptimization,
+    /// Scope for block device I/O schedulers and read-ahead.
+    StorageOptimization,
+    /// Scope for power management and thermal profiles.
+    PowerOptimization,
     /// System-wide setup scope covering all supported subsystems.
     FullSetup,
 }
@@ -70,6 +76,33 @@ pub enum VerificationProcedure {
     SysfsReadback {
         sysfs_path: String,
         expected_value: String,
+    },
+    /// Verify CPU scaling governor readback
+    CpuGovernorReadback {
+        cpu_range: String,
+        expected_governor: String,
+    },
+    /// Verify CPU energy performance preference readback
+    CpuEppReadback {
+        cpu_range: String,
+        expected_epp: String,
+    },
+    /// Verify block I/O scheduler readback
+    BlockIoSchedulerReadback {
+        device_name: String,
+        expected_scheduler: String,
+    },
+    /// Verify block device read-ahead readback
+    BlockReadAheadReadback {
+        device_name: String,
+        expected_kb: u32,
+    },
+    /// Verify active power profile readback
+    PowerProfileReadback { expected_profile: String },
+    /// Verify cgroup CPU weight readback
+    CgroupCpuWeightReadback {
+        cgroup_path: String,
+        expected_weight: u32,
     },
     /// No-op verification for preserved settings
     NoOpPreserved,
@@ -95,6 +128,33 @@ pub enum ReversalProcedure {
     ResetZramDevice { device_name: String },
     /// Restore Transparent Huge Pages mode
     RestoreThp { original_mode: String },
+    /// Restore CPU frequency governor
+    RestoreCpuGovernor {
+        cpu_range: String,
+        original_governor: String,
+    },
+    /// Restore CPU energy performance preference
+    RestoreCpuEpp {
+        cpu_range: String,
+        original_epp: String,
+    },
+    /// Restore block I/O scheduler
+    RestoreBlockIoScheduler {
+        device_name: String,
+        original_scheduler: String,
+    },
+    /// Restore block read-ahead in KB
+    RestoreBlockReadAhead {
+        device_name: String,
+        original_kb: u32,
+    },
+    /// Restore platform power profile
+    RestorePowerProfile { original_profile: String },
+    /// Restore cgroup CPU weight
+    RestoreCgroupCpuWeight {
+        cgroup_path: String,
+        original_weight: u32,
+    },
     /// Preserved configuration requires no rollback mutation
     NoOpPreserved,
 }
@@ -145,6 +205,49 @@ pub enum TypedMutation {
     ConfigureTransparentHugePages {
         mode: String,
         original_mode: Option<String>,
+    },
+    /// Apply CPU frequency scaling governor
+    ApplyCpuGovernor {
+        cpu_range: String,
+        governor: String,
+        original_governor: Option<String>,
+    },
+    /// Apply CPU energy performance preference (EPP)
+    ApplyCpuEpp {
+        cpu_range: String,
+        epp: String,
+        original_epp: Option<String>,
+    },
+    /// Apply CPU frequency scaling policy bounds
+    ApplyCpuFrequencyBounds {
+        cpu_range: String,
+        min_freq_khz: Option<u64>,
+        max_freq_khz: Option<u64>,
+        original_min: Option<u64>,
+        original_max: Option<u64>,
+    },
+    /// Apply block device I/O scheduler (e.g. none, mq-deadline, bfq)
+    ApplyBlockIoScheduler {
+        device_name: String,
+        scheduler: String,
+        original_scheduler: Option<String>,
+    },
+    /// Apply block device read-ahead
+    ApplyBlockReadAhead {
+        device_name: String,
+        read_ahead_kb: u32,
+        original_kb: Option<u32>,
+    },
+    /// Apply platform power profile (e.g. balanced, power-saver, performance)
+    ApplyPowerProfile {
+        profile: String,
+        original_profile: Option<String>,
+    },
+    /// Apply cgroup v2 CPU weight to managed workload slice
+    ApplyCgroupCpuWeight {
+        cgroup_path: String,
+        weight: u32,
+        original_weight: Option<u32>,
     },
 }
 

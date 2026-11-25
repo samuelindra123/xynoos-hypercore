@@ -50,7 +50,7 @@ def main():
     config = re.sub(r'directory = .*', 'directory = "vendor"', config)
     (tree / ".cargo/config.toml").write_text(config + "\n[net]\noffline = true\n")
     deps, notices, copyright_stanzas = [], [], []
-    allowed = {"MIT", "MIT OR Apache-2.0", "Unlicense OR MIT", "(MIT OR Apache-2.0) AND Unicode-3.0"}
+    allowed = {"MIT", "MIT OR Apache-2.0", "MIT/Apache-2.0", "Apache-2.0 OR MIT", "Apache-2.0/MIT", "Unlicense OR MIT", "(MIT OR Apache-2.0) AND Unicode-3.0"}
     lock = tomllib.loads(lock_before.decode())
     for package in lock["package"]:
         if "source" not in package:
