@@ -298,7 +298,19 @@ impl ResourceCostModel {
         let temp_scratch_overhead_bytes = match candidate_codec {
             CodecId::Raw => 0,
             CodecId::Lz4Standard => original_bytes.saturating_add(1024),
-            CodecId::Lz4Hc { .. } => 384 * 1024 + original_bytes,
+            CodecId::Lz4Hc { .. } => {
+                let hash_bytes: usize = if original_bytes <= 4096 {
+                    4096 * 4
+                } else if original_bytes <= 16_384 {
+                    8192 * 4
+                } else {
+                    32_768 * 4
+                };
+                let chain_bytes = original_bytes.min(65_536).saturating_mul(4);
+                hash_bytes
+                    .saturating_add(chain_bytes)
+                    .saturating_add(original_bytes)
+            }
         };
 
         let estimated_cpu_cost_ns = match candidate_codec {

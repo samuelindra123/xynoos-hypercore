@@ -18,6 +18,90 @@ const MANAGER: &str = include_str!("../../../distribution/manager.py");
 fn read(path: &str) -> Option<String> {
     fs::read_to_string(path).ok().map(|s| s.trim().to_string())
 }
+
+fn detect_init_system() -> Value {
+    let systemd_runtime = std::path::Path::new("/run/systemd/system").is_dir();
+    let pid1_comm = read("/proc/1/comm").map(|s| {
+        s.chars()
+            .filter(|c| c.is_ascii_graphic() || *c == ' ')
+            .take(32)
+            .collect::<String>()
+    });
+    let init_kind = if systemd_runtime {
+        "systemd".to_string()
+    } else if pid1_comm.as_deref() == Some("init") && std::path::Path::new("/etc/init.d").is_dir() {
+        "sysvinit".to_string()
+    } else if let Some(ref comm) = pid1_comm {
+        if comm.is_empty() {
+            "unknown".to_string()
+        } else {
+            comm.clone()
+        }
+    } else {
+        "unknown".to_string()
+    };
+    json!({
+        "init_system": init_kind,
+        "systemd_detected": systemd_runtime,
+        "pid1_comm": pid1_comm,
+    })
+}
+
+fn detect_daemon_state() -> Value {
+    let pid_path = std::path::Path::new("/run/xynoos/hypercore.pid");
+    let Ok(meta) = fs::symlink_metadata(pid_path) else {
+        return json!({"state": "not_running", "pid_file": pid_path.display().to_string()});
+    };
+    if !meta.is_file() || meta.len() > 1024 {
+        return json!({"state": "unknown", "pid_file": pid_path.display().to_string()});
+    }
+    let Ok(raw) = fs::read_to_string(pid_path) else {
+        return json!({"state": "permission_denied", "pid_file": pid_path.display().to_string()});
+    };
+    let pid_opt = serde_json::from_str::<Value>(&raw)
+        .ok()
+        .and_then(|v| v.get("pid").and_then(|p| p.as_u64()))
+        .or_else(|| raw.trim().parse::<u64>().ok());
+    match pid_opt {
+        Some(pid) if std::path::Path::new(&format!("/proc/{pid}")).exists() => {
+            json!({"state": "running", "pid": pid, "pid_file": pid_path.display().to_string()})
+        }
+        Some(pid) => {
+            json!({"state": "stale_pid_file", "pid": pid, "pid_file": pid_path.display().to_string()})
+        }
+        None => {
+            json!({"state": "unparseable_pid_file", "pid_file": pid_path.display().to_string()})
+        }
+    }
+}
+
+fn detect_cgroup_support() -> Value {
+    let controllers_path = std::path::Path::new("/sys/fs/cgroup/cgroup.controllers");
+    let cgroup_v2_available = controllers_path.exists();
+    let controllers = fs::read_to_string(controllers_path)
+        .ok()
+        .map(|s| s.trim().to_string());
+    let current_rel = fs::read_to_string("/proc/self/cgroup")
+        .ok()
+        .and_then(|txt| {
+            txt.lines()
+                .find_map(|l| l.strip_prefix("0::"))
+                .map(str::to_string)
+        });
+    let current_path = current_rel
+        .as_deref()
+        .map(|rel| format!("/sys/fs/cgroup{rel}"));
+    let delegated_writable = current_path.as_deref().is_some_and(|p| {
+        let sc = std::path::Path::new(p).join("cgroup.subtree_control");
+        fs::OpenOptions::new().write(true).open(sc).is_ok()
+    });
+    json!({
+        "cgroup_v2_available": cgroup_v2_available,
+        "controllers": controllers,
+        "current_cgroup": current_path,
+        "delegated_writable": delegated_writable,
+    })
+}
 fn state_dir() -> Option<PathBuf> {
     std::env::var_os("XDG_STATE_HOME")
         .map(PathBuf::from)
@@ -70,7 +154,10 @@ fn capabilities(s: &SystemSnapshot) -> Value {
         "memory_psi": availability(&s.memory.psi.result),
         "cpu_psi": availability(&s.cpu_psi), "io_psi": availability(&s.io_psi),
         "cgroup_v2_observation": availability(&s.cgroup),
+        "init_system_detection": "AVAILABLE",
+        "daemon_observe_only": "AVAILABLE",
         "policy_simulation": "EXPERIMENTAL", "cooperative_owned_memory": "EXPERIMENTAL",
+        "delegated_cgroup_control": "EXPERIMENTAL",
         "physical_kernel_mutation": "NOT AUTHORIZED", "active_zram_tuning": "UNAVAILABLE",
         "desktop_optimization": "UNAVAILABLE"
     })
@@ -90,9 +177,34 @@ fn snapshot(s: &SystemSnapshot) -> Value {
     let psi = |p: &Result<xynoos_pressureiq::Psi, xynoos_pressureiq::Error>| {
         p.as_ref().ok().map(|p| p.some.avg10)
     };
+    let init = detect_init_system();
+    let cgroup = detect_cgroup_support();
+    let daemon = detect_daemon_state();
+    let mut limitations = vec![
+        "HyperCore does not transparently compress arbitrary application memory.".to_string(),
+        "HyperCore does not replace Linux swap, zram, or zswap.".to_string(),
+    ];
+    if s.cpu_psi.is_err() || s.memory.psi.result.is_err() || s.io_psi.is_err() {
+        limitations.push(
+            "One or more PSI /proc/pressure interfaces are unavailable or restricted.".to_string(),
+        );
+    }
+    if !cgroup["delegated_writable"].as_bool().unwrap_or(false) {
+        limitations.push("No delegated writable cgroup v2 subtree for current process; transactional control remains disabled.".to_string());
+    }
     json!({
         "kernel": read("/proc/sys/kernel/osrelease"), "distribution": read("/etc/os-release"),
         "architecture": std::env::consts::ARCH, "hostname": read("/proc/sys/kernel/hostname"),
+        "init": init,
+        "cgroup": cgroup,
+        "daemon_state": daemon,
+        "supported_runtime_modes": ["observe-only", "advisory", "transactional"],
+        "psi_availability": {
+            "cpu": s.cpu_psi.is_ok(),
+            "memory": s.memory.psi.result.is_ok(),
+            "io": s.io_psi.is_ok(),
+        },
+        "active_limitations": limitations,
         "logical_cpus": s.cpu.as_ref().ok().map(|c| c.logical_cpus),
         "memory_total_bytes": bytes("MemTotal"), "memory_available_bytes": bytes("MemAvailable"),
         "swap_total_bytes": bytes("SwapTotal"), "swap_free_bytes": bytes("SwapFree"),
@@ -186,6 +298,13 @@ fn render(command: &str, v: &Value, color: bool) {
             "  PSI some 10s  CPU {}% / memory {}% / I/O {}%",
             h["cpu_psi_some_avg10_pct"], h["memory_psi_some_avg10_pct"], h["io_psi_some_avg10_pct"]
         );
+        println!(
+            "  Init / Cgroup {} / cgroup_v2={} (delegated_writable={})",
+            text(&h["init"]["init_system"]),
+            h["cgroup"]["cgroup_v2_available"],
+            h["cgroup"]["delegated_writable"]
+        );
+        println!("  Daemon state  {}", text(&h["daemon_state"]["state"]));
     }
     println!("  Engine        on-demand observation; no daemon");
     println!("  Intervention  none; physical kernel mutation DISABLED");

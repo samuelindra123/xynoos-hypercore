@@ -7,8 +7,7 @@ const MIN_MATCH: usize = 4;
 const LAST_LITERALS: usize = 5;
 const MF_LIMIT: usize = 12;
 const MAX_DISTANCE: usize = 65_535;
-const HASH_BITS: u32 = 15;
-const HASH_SIZE: usize = 1 << HASH_BITS;
+const MAX_HASH_BITS: u32 = 15;
 const CHAIN_SIZE: usize = 65_536;
 
 /// Metadata stored alongside every compressed or raw object in HyperMemory.
@@ -93,21 +92,29 @@ impl CodecScratch {
         Ok(&mut self.decode_buf[..needed])
     }
 
-    fn prepare_hc_tables(&mut self, input_len: usize) -> Result<(), Error> {
+    fn prepare_hc_tables(&mut self, input_len: usize) -> Result<u32, Error> {
+        let hash_bits = if input_len <= 4096 {
+            12
+        } else if input_len <= 16_384 {
+            13
+        } else {
+            MAX_HASH_BITS
+        };
+        let hash_size = 1usize << hash_bits;
         let chain_len = input_len.min(CHAIN_SIZE);
-        let needed_bytes = HASH_SIZE
+        let needed_bytes = hash_size
             .saturating_mul(4)
             .saturating_add(chain_len.saturating_mul(4));
         if needed_bytes > self.max_scratch_bytes {
             return Err(Error::BudgetExceeded);
         }
-        if self.hc_head.len() < HASH_SIZE {
+        if self.hc_head.len() < hash_size {
             self.hc_head
-                .try_reserve_exact(HASH_SIZE - self.hc_head.len())
+                .try_reserve_exact(hash_size - self.hc_head.len())
                 .map_err(|_| Error::Allocation)?;
-            self.hc_head.resize(HASH_SIZE, -1);
+            self.hc_head.resize(hash_size, -1);
         } else {
-            self.hc_head.fill(-1);
+            self.hc_head[..hash_size].fill(-1);
         }
         if self.hc_chain.len() < chain_len {
             self.hc_chain
@@ -117,14 +124,14 @@ impl CodecScratch {
         } else {
             self.hc_chain[..chain_len].fill(-1);
         }
-        Ok(())
+        Ok(hash_bits)
     }
 }
 
 #[inline]
-fn hash4(input: &[u8], pos: usize) -> usize {
+fn hash4(input: &[u8], pos: usize, hash_bits: u32) -> usize {
     let val = u32::from_le_bytes([input[pos], input[pos + 1], input[pos + 2], input[pos + 3]]);
-    (val.wrapping_mul(2_654_435_761) >> (32 - HASH_BITS)) as usize
+    (val.wrapping_mul(2_654_435_761) >> (32 - hash_bits)) as usize
 }
 
 #[inline]
@@ -168,8 +175,8 @@ fn emit_last_literals(out: &mut Vec<u8>, literals: &[u8]) {
 }
 
 #[inline]
-fn insert_hash(input: &[u8], pos: usize, head: &mut [i32], chain: &mut [i32]) {
-    let h = hash4(input, pos);
+fn insert_hash(input: &[u8], pos: usize, hash_bits: u32, head: &mut [i32], chain: &mut [i32]) {
+    let h = hash4(input, pos, hash_bits);
     let prev = head[h];
     head[h] = pos as i32;
     chain[pos & (CHAIN_SIZE - 1)] = prev;
@@ -179,6 +186,7 @@ fn find_best_match(
     input: &[u8],
     pos: usize,
     match_limit: usize,
+    hash_bits: u32,
     head: &[i32],
     chain: &[i32],
     max_attempts: usize,
@@ -186,7 +194,7 @@ fn find_best_match(
     if pos + MIN_MATCH > match_limit {
         return None;
     }
-    let h = hash4(input, pos);
+    let h = hash4(input, pos, hash_bits);
     let mut cand = head[h];
     let mut attempts = max_attempts;
     let mut best_len = MIN_MATCH - 1;
@@ -242,6 +250,12 @@ pub fn compress_lz4hc_into(
     level: u8,
     scratch: &mut CodecScratch,
 ) -> Result<usize, Error> {
+    if input.len() > i32::MAX as usize {
+        return Err(Error::InvalidLength {
+            expected: i32::MAX as usize,
+            actual: input.len(),
+        });
+    }
     let max_out = lz4_flex::block::get_maximum_output_size(input.len());
     scratch.ensure_encode_capacity(max_out)?;
 
@@ -269,7 +283,7 @@ pub fn compress_lz4hc_into(
         0usize
     };
 
-    scratch.prepare_hc_tables(input.len())?;
+    let hash_bits = scratch.prepare_hc_tables(input.len())?;
 
     let input_limit = input.len() - MF_LIMIT;
     let match_limit = input.len() - LAST_LITERALS;
@@ -284,21 +298,21 @@ pub fn compress_lz4hc_into(
     while ip <= input_limit {
         while next_hash_pos < ip {
             if next_hash_pos <= input_limit {
-                insert_hash(input, next_hash_pos, head, chain);
+                insert_hash(input, next_hash_pos, hash_bits, head, chain);
             }
             next_hash_pos += 1;
         }
 
         let Some((mut best_pos, mut best_len)) =
-            find_best_match(input, ip, match_limit, head, chain, max_attempts)
+            find_best_match(input, ip, match_limit, hash_bits, head, chain, max_attempts)
         else {
-            insert_hash(input, ip, head, chain);
+            insert_hash(input, ip, hash_bits, head, chain);
             next_hash_pos = ip + 1;
             ip += 1;
             continue;
         };
 
-        insert_hash(input, ip, head, chain);
+        insert_hash(input, ip, hash_bits, head, chain);
         next_hash_pos = ip + 1;
 
         // Lazy matching: inspect ip + 1 (and ip + 2 for higher levels) to find longer matches
@@ -306,11 +320,17 @@ pub fn compress_lz4hc_into(
             if ip + 1 > input_limit {
                 break;
             }
-            if let Some((next_pos, next_len)) =
-                find_best_match(input, ip + 1, match_limit, head, chain, max_attempts)
-            {
+            if let Some((next_pos, next_len)) = find_best_match(
+                input,
+                ip + 1,
+                match_limit,
+                hash_bits,
+                head,
+                chain,
+                max_attempts,
+            ) {
                 if next_len > best_len {
-                    insert_hash(input, ip + 1, head, chain);
+                    insert_hash(input, ip + 1, hash_bits, head, chain);
                     ip += 1;
                     next_hash_pos = ip + 1;
                     best_pos = next_pos;
@@ -327,7 +347,7 @@ pub fn compress_lz4hc_into(
         let match_end = ip + best_len;
         let hash_end = match_end.min(input_limit + 1);
         while next_hash_pos < hash_end {
-            insert_hash(input, next_hash_pos, head, chain);
+            insert_hash(input, next_hash_pos, hash_bits, head, chain);
             next_hash_pos += 1;
         }
         ip = match_end;

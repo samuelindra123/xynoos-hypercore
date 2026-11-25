@@ -2,7 +2,9 @@
 //! Explicitly opt in on an isolated, exclusively delegated test parent.
 use std::path::Path;
 use xynoos_linux_control::{
-    transaction::{run, Backend, DisposableCgroup, Identity, Outcome},
+    transaction::{
+        run, Backend, DisposableCgroup, Identity, Outcome, SustainedLease, WorkloadCgroup,
+    },
     Action,
 };
 
@@ -133,4 +135,67 @@ fn kernel_real_cgroup_conflict_and_restoration() {
     assert_eq!(target.read_low().unwrap(), original_low);
 
     target.cleanup().expect("cleanup disposable cgroup");
+}
+
+#[test]
+#[ignore = "requires an isolated delegated cgroup v2 parent and explicit opt-in"]
+fn kernel_sustained_workload_lease_and_recreation_fail_closed() {
+    use std::io::Write;
+    assert_eq!(
+        std::env::var("XYNOOS_KERNEL_TEST").as_deref(),
+        Ok("1"),
+        "explicit opt-in required"
+    );
+    let parent = std::env::var("XYNOOS_CGROUP_PARENT")
+        .expect("set XYNOOS_CGROUP_PARENT to an isolated delegated parent");
+    let wl_dir = Path::new(&parent).join("xynoos-workload-lease-test");
+    let _ = std::fs::remove_dir(&wl_dir);
+    std::fs::create_dir(&wl_dir).expect("create workload cgroup");
+
+    // Spawn a bounded child process inside wl_dir
+    let mut child = std::process::Command::new("sleep")
+        .arg("2")
+        .spawn()
+        .expect("spawn sleep child");
+    let mut procs = std::fs::OpenOptions::new()
+        .write(true)
+        .open(wl_dir.join("cgroup.procs"))
+        .expect("open cgroup.procs");
+    writeln!(procs, "{}", child.id()).expect("move child into workload cgroup");
+
+    let mut target = WorkloadCgroup::open(&wl_dir, true).expect("open WorkloadCgroup");
+    let sys = xynoos_pressureiq::system::collect_system();
+    let orig_low = target.read_low().unwrap();
+    let req_low = if orig_low == 4_194_304 {
+        8_388_608
+    } else {
+        4_194_304
+    };
+    let mut lease = SustainedLease::acquire(
+        &mut target,
+        &sys,
+        Action::MemoryLow { bytes: req_low },
+        true,
+    )
+    .expect("acquire sustained memory.low lease");
+    assert_eq!(target.read_low().unwrap(), req_low);
+    assert!(target.read_current_bytes().is_ok());
+
+    let release_report = lease.release(&mut target);
+    assert_eq!(release_report.outcome, Outcome::Restored);
+    assert_eq!(target.read_low().unwrap(), orig_low);
+
+    let _ = child.wait();
+    std::fs::remove_dir(&wl_dir).expect("remove empty workload cgroup");
+
+    // Verify cgroup disappearance & recreation triggers identity mismatch fail-closed
+    std::fs::create_dir(&wl_dir).expect("create first cgroup");
+    let mut first = WorkloadCgroup::open(&wl_dir, true).expect("open first");
+    std::fs::remove_dir(&wl_dir).expect("remove first");
+    std::fs::create_dir(&wl_dir).expect("recreate cgroup at same path");
+    assert!(
+        first.identity().is_err(),
+        "recreated cgroup at same path must fail identity verification"
+    );
+    std::fs::remove_dir(&wl_dir).expect("cleanup recreated cgroup");
 }

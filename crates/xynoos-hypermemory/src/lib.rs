@@ -12,11 +12,13 @@ pub use xynoos_core::{
 
 pub mod cluster;
 pub mod codec;
+pub mod pool;
 pub use cluster::*;
 pub use codec::{
     compress_adaptive, compress_exact, compress_lz4hc_into, decompress_with_codec, CodecScratch,
     CompressedObjectMeta,
 };
+pub use pool::{BufferHandle, HyperMemoryPool};
 
 /// Compute CRC32 IEEE checksum over arbitrary byte slice.
 pub fn crc32_ieee(data: &[u8]) -> u32 {
@@ -208,6 +210,10 @@ impl PageStore {
 
     pub fn default_codec(&self) -> CodecId {
         self.default_codec
+    }
+
+    pub fn page_size(&self) -> usize {
+        self.page_size
     }
 
     pub fn current_tick(&self) -> u64 {

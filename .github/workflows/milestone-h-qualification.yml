@@ -1,0 +1,74 @@
+name: Milestone H System Qualification Lab
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [feat/hypercore-milestone-h-system-qualification]
+  workflow_dispatch:
+    inputs:
+      trials:
+        description: "Paired repetitions per profile/workload (default 5)"
+        required: false
+        default: "5"
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: milestone-h-lab-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualification_lab:
+    name: Resource-Constrained Linux Benchmark Lab
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build Release Binaries
+        run: cargo build --release -p xynoos-cli -p xynoos-bench --locked
+      - name: Probe ZRAM / Swap & Runner Environment
+        run: |
+          set -euo pipefail
+          uname -a
+          lscpu | grep -E 'Model name|CPU\(s\)|Architecture' || true
+          free -m
+          cat /proc/swaps || true
+          ls -la /proc/pressure || true
+          which gcc google-chrome chromium firefox || true
+          if sudo modprobe zram num_devices=1 2>/dev/null; then
+            echo "ZRAM_MODULE_AVAILABLE=true"
+          else
+            echo "ZRAM_MODULE_AVAILABLE=false (not loadable on hosted runner kernel)"
+          fi
+      - name: Execute Controlled Paired Trials in Delegated Cgroup v2
+        env:
+          TRIALS: ${{ inputs.trials || '5' }}
+        run: |
+          set -euo pipefail
+          mkdir -p qualification-results
+          systemd-run --user --scope -p Delegate=yes -p MemoryAccounting=yes -p CPUAccounting=yes -p IOAccounting=yes bash -c '
+            set -euo pipefail
+            REL=$(awk -F: "\$1 == \"0\" {print \$3}" /proc/self/cgroup | head -n1)
+            PARENT="/sys/fs/cgroup${REL}"
+            mkdir -p "$PARENT/runner-leaf" "$PARENT/lab-parent"
+            for p in $(cat "$PARENT/cgroup.procs"); do echo "$p" > "$PARENT/runner-leaf/cgroup.procs" 2>/dev/null || true; done
+            echo "+memory +cpu" > "$PARENT/cgroup.subtree_control" 2>/dev/null || echo "+memory" > "$PARENT/cgroup.subtree_control"
+            echo "+memory +cpu" > "$PARENT/lab-parent/cgroup.subtree_control" 2>/dev/null || echo "+memory" > "$PARENT/lab-parent/cgroup.subtree_control"
+            python3 scripts/benchmark_lab.py \
+              --cgroup-parent "$PARENT/lab-parent" \
+              --xynoos-bin target/release/xynoos \
+              --out-dir qualification-results \
+              --trials "${TRIALS:-5}"
+          '
+      - name: Run Candidate F (HyperMemory Application-Owned Storage Benchmark)
+        run: |
+          target/release/xynoos-bench hypermemory-app-bench 5 | tee qualification-results/candidate_f_app.csv
+      - name: Archive Milestone H Qualification Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: milestone-h-qualification-results
+          path: qualification-results/
+          retention-days: 14

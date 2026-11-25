@@ -460,6 +460,14 @@ fn memory_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+static DAEMON_STOP_REQUESTED: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(unix)]
+extern "C" fn daemon_sig_handler(_: libc::c_int) {
+    DAEMON_STOP_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+}
+
 fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     let mut mode = xynoos_aura::DaemonMode::ObserveOnly;
     let mut interval_ms = 5000u64;
@@ -522,15 +530,34 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     };
 
     if status {
+        let init_system = if std::path::Path::new("/run/systemd/system").is_dir() {
+            "systemd".to_string()
+        } else {
+            std::fs::read_to_string("/proc/1/comm")
+                .ok()
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .unwrap_or_else(|| "unknown".to_string())
+        };
+        let cgroup_v2_available =
+            std::path::Path::new("/sys/fs/cgroup/cgroup.controllers").exists();
         println!(
             "{}",
             serde_json::to_string_pretty(&serde_json::json!({
                 "status": "configured",
                 "mode": config.mode,
+                "supported_modes": ["observe-only", "advisory", "transactional"],
                 "interval_ms": config.interval_ms,
                 "pid_file": config.pid_file,
                 "journal_file": config.journal_file,
                 "adaptive_polling": config.adaptive_polling,
+                "init_system": init_system,
+                "cgroup_v2_available": cgroup_v2_available,
+                "psi_available": {
+                    "cpu": std::path::Path::new("/proc/pressure/cpu").exists(),
+                    "memory": std::path::Path::new("/proc/pressure/memory").exists(),
+                    "io": std::path::Path::new("/proc/pressure/io").exists(),
+                },
             }))?
         );
         return Ok(());
@@ -541,11 +568,37 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         None => None,
     };
 
+    #[cfg(unix)]
+    unsafe {
+        libc::signal(
+            libc::SIGTERM,
+            daemon_sig_handler as *const () as libc::sighandler_t,
+        );
+        libc::signal(
+            libc::SIGINT,
+            daemon_sig_handler as *const () as libc::sighandler_t,
+        );
+    }
+
     let mut daemon = xynoos_aura::AuraDaemon::new(config)?;
     let stop_signal = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let stop_watcher = std::sync::Arc::clone(&stop_signal);
+    let watcher_handle = std::thread::spawn(move || {
+        while !stop_watcher.load(std::sync::atomic::Ordering::SeqCst) {
+            if DAEMON_STOP_REQUESTED.load(std::sync::atomic::Ordering::SeqCst) {
+                stop_watcher.store(true, std::sync::atomic::Ordering::SeqCst);
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+    });
+
     let diag = daemon
         .run_with_signal(stop_signal, max_cycles)
         .map_err(Box::<dyn Error>::from)?;
+
+    DAEMON_STOP_REQUESTED.store(true, std::sync::atomic::Ordering::SeqCst);
+    let _ = watcher_handle.join();
 
     if human {
         println!("AURA Daemon Status: {:?}", diag.mode);

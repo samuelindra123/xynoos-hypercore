@@ -1,0 +1,63 @@
+#!/bin/sh
+### BEGIN INIT INFO
+# Provides:          xynoos-hypercore
+# Required-Start:    $local_fs
+# Required-Stop:     $local_fs
+# Default-Start:
+# Default-Stop:      0 1 6
+# Short-Description: XYNOOS HyperCore Observe-Only Telemetry Daemon (Opt-In Reference)
+# Description:       Non-systemd reference SysVinit script for XYNOOS HyperCore.
+#                    Runs strictly in --mode observe-only by default and is NOT
+#                    auto-enabled on package installation.
+### END INIT INFO
+
+set -eu
+
+NAME="xynoos-hypercore"
+DAEMON="/usr/bin/xynoos"
+RUNDIR="/run/xynoos"
+PIDFILE="$RUNDIR/hypercore.pid"
+DAEMON_ARGS="daemon --mode observe-only --interval-ms 5000 --pid-file $PIDFILE"
+
+[ -x "$DAEMON" ] || exit 0
+
+do_start() {
+    mkdir -p "$RUNDIR"
+    chmod 0755 "$RUNDIR"
+    if start-stop-daemon --start --quiet --background --pidfile "$PIDFILE" \
+        --exec "$DAEMON" -- $DAEMON_ARGS; then
+        echo "$NAME started (observe-only)."
+    else
+        echo "$NAME already running or failed to start."
+        return 1
+    fi
+}
+
+do_stop() {
+    if start-stop-daemon --stop --quiet --retry=TERM/10/KILL/5 --pidfile "$PIDFILE"; then
+        rm -f "$PIDFILE"
+        echo "$NAME stopped."
+    else
+        echo "$NAME not running."
+    fi
+}
+
+do_status() {
+    if [ -f "$PIDFILE" ] && start-stop-daemon --status --pidfile "$PIDFILE" 2>/dev/null; then
+        echo "$NAME is running."
+        return 0
+    fi
+    echo "$NAME is not running."
+    return 3
+}
+
+case "${1:-}" in
+    start) do_start ;;
+    stop) do_stop ;;
+    restart) do_stop || true; do_start ;;
+    status) do_status ;;
+    *)
+        echo "Usage: $0 {start|stop|restart|status}" >&2
+        exit 2
+        ;;
+esac
