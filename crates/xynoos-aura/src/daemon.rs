@@ -8,7 +8,7 @@ use crate::tiering::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::VecDeque,
-    fs::{self, File, OpenOptions},
+    fs::{self, OpenOptions},
     io::{self, Write},
     path::{Path, PathBuf},
     sync::{
@@ -18,9 +18,9 @@ use std::{
     time::{Duration, Instant},
 };
 use xynoos_core::{MemoryPressure, MigrationBudget, ResourcePressureLevel};
-use xynoos_hypermemory::{crc32_ieee, ClusterStore, PageStore};
+use xynoos_hypermemory::{ClusterStore, PageStore};
 use xynoos_linux_control::{
-    transaction::{self, Backend, Identity, Outcome},
+    transaction::{self, Backend, Outcome},
     Action, MAX_HIGH_BYTES, MAX_LOW_BYTES,
 };
 use xynoos_pressureiq::{
@@ -298,147 +298,10 @@ impl Default for DaemonConfig {
     }
 }
 
-/// Jurnal pemulihan crash untuk mencatat transaksi aktif ke penyimpanan lokal sebelum eksekusi.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub struct TransactionJournal {
-    #[serde(default = "default_journal_schema")]
-    pub schema_version: u32,
-    pub timestamp_epoch_secs: u64,
-    #[serde(default)]
-    pub boot_id: Option<String>,
-    #[serde(default)]
-    pub process_pid: u32,
-    #[serde(default)]
-    pub process_start_ticks: Option<u64>,
-    pub identity: Identity,
-    pub action: Action,
-    pub original_value: u64,
-    pub requested_value: u64,
-    pub status: JournalStatus,
-    #[serde(default)]
-    pub integrity_crc: u32,
-}
-
-fn default_journal_schema() -> u32 {
-    1
-}
-
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum JournalStatus {
-    Pending,
-    Applied,
-    RolledBack,
-}
-
-impl TransactionJournal {
-    fn compute_crc(&self) -> io::Result<u32> {
-        let mut copy = self.clone();
-        copy.integrity_crc = 0;
-        let bytes =
-            serde_json::to_vec(&copy).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        Ok(crc32_ieee(&bytes))
-    }
-
-    /// Menulis status jurnal transaksi ke berkas secara atomik dan tahan crash:
-    /// tulis ke file sementara -> flush + fsync -> rename atomik -> sync direktori induk.
-    pub fn persist(&self, path: &Path) -> io::Result<()> {
-        let parent = path
-            .parent()
-            .filter(|p| !p.as_os_str().is_empty())
-            .unwrap_or_else(|| Path::new("."));
-        fs::create_dir_all(parent)?;
-
-        let mut stamped = self.clone();
-        if stamped.schema_version == 0 {
-            stamped.schema_version = 1;
-        }
-        if stamped.process_pid == 0 {
-            stamped.process_pid = std::process::id();
-        }
-        if stamped.process_start_ticks.is_none() {
-            stamped.process_start_ticks = process_start_ticks(stamped.process_pid);
-        }
-        if stamped.boot_id.is_none() {
-            stamped.boot_id = current_boot_id();
-        }
-        stamped.integrity_crc = stamped.compute_crc()?;
-
-        let data = serde_json::to_vec_pretty(&stamped)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-
-        let file_name = path
-            .file_name()
-            .and_then(|n| n.to_str())
-            .unwrap_or("hypercore_journal.json");
-        let tmp_path = parent.join(format!(".{file_name}.tmp.{}", std::process::id()));
-
-        {
-            let mut opts = OpenOptions::new();
-            opts.write(true).create(true).truncate(true);
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::OpenOptionsExt;
-                opts.mode(0o600);
-            }
-            let mut tmp = opts.open(&tmp_path)?;
-            tmp.write_all(&data)?;
-            tmp.flush()?;
-            tmp.sync_all()?;
-        }
-
-        fs::rename(&tmp_path, path)?;
-        if let Ok(dir) = File::open(parent) {
-            let _ = dir.sync_all();
-        }
-        Ok(())
-    }
-
-    /// Membaca dan memverifikasi integritas jurnal transaksi dari disk jika tersedia.
-    /// Jika berkas terkorupsi, salinan diagnostik (.corrupt.<epoch>) disimpan sebagai bukti forensik.
-    pub fn load(path: &Path) -> io::Result<Option<Self>> {
-        if !path.exists() {
-            return Ok(None);
-        }
-        let data = fs::read(path)?;
-        let journal: Self = match serde_json::from_slice(&data) {
-            Ok(j) => j,
-            Err(e) => {
-                let ts = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                let corrupt_path = path.with_extension(format!("corrupt.{ts}"));
-                let _ = fs::copy(path, corrupt_path);
-                return Err(io::Error::new(io::ErrorKind::InvalidData, e));
-            }
-        };
-        if journal.integrity_crc != 0 {
-            let expected = journal.compute_crc()?;
-            if journal.integrity_crc != expected {
-                let ts = std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0);
-                let corrupt_path = path.with_extension(format!("corrupt.crc.{ts}"));
-                let _ = fs::copy(path, corrupt_path);
-                return Err(io::Error::new(
-                    io::ErrorKind::InvalidData,
-                    "journal integrity CRC mismatch",
-                ));
-            }
-        }
-        Ok(Some(journal))
-    }
-
-    /// Menghapus berkas jurnal setelah transaksi selesai dipulihkan/dibersihkan.
-    pub fn cleanup(path: &Path) -> io::Result<()> {
-        if path.exists() {
-            fs::remove_file(path)?;
-        }
-        Ok(())
-    }
-}
+pub use xynoos_linux_control::journal::{
+    recover_durable_lease, JournalStatus, LeasePhase, RecoveryOutcome, RecoveryReport,
+    TransactionJournal,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct PidLockRecord {
@@ -714,84 +577,25 @@ impl AuraDaemon {
             None => return Ok(false),
         };
 
-        let journal = match TransactionJournal::load(journal_path) {
-            Ok(Some(j)) => j,
-            Ok(None) => return Ok(false),
-            Err(e) => {
-                return Err(format!(
-                    "Gagal membaca/memverifikasi jurnal pemulihan: {}",
-                    e
-                ))
+        let rep = recover_durable_lease(backend, journal_path)?;
+        match rep.outcome {
+            RecoveryOutcome::Restored => {
+                self.recovered_crashes = self.recovered_crashes.saturating_add(1);
+                Ok(true)
             }
-        };
-
-        if journal.status == JournalStatus::RolledBack {
-            let _ = TransactionJournal::cleanup(journal_path);
-            return Ok(false);
-        }
-
-        if let (Some(j_boot), Some(cur_boot)) = (&journal.boot_id, &current_boot_id()) {
-            if j_boot != cur_boot {
-                return Err(
-                    "Boot ID berubah sejak transaksi dicatat; rollback cgroup pra-reboot dicegah (fail-closed)"
-                        .into(),
-                );
+            RecoveryOutcome::AlreadyRestored | RecoveryOutcome::NoJournal => Ok(false),
+            RecoveryOutcome::Conflict => Err(format!(
+                "Konflik eksternal terdeteksi pada jurnal: {:?}; rollback dibatalkan",
+                rep.events
+            )),
+            RecoveryOutcome::Invalidated => Err(format!(
+                "Pemulihan crash tidak valid atau usang: {:?}; rollback dibatalkan (fail-closed)",
+                rep.events
+            )),
+            RecoveryOutcome::RecoveryFailed => {
+                Err(format!("Pemulihan crash gagal: {:?}", rep.events))
             }
         }
-
-        let current_id = backend.identity()?;
-        if current_id != journal.identity {
-            return Err(
-                "Identitas cgroup tidak cocok dengan jurnal crash; rollback dicegah demi keamanan"
-                    .into(),
-            );
-        }
-
-        let current_val = backend.read_control(journal.action)?;
-
-        match journal.status {
-            JournalStatus::Pending => {
-                if current_val == journal.original_value {
-                    // Crash occurred before the kernel write took place; safe to clean up.
-                    let _ = TransactionJournal::cleanup(journal_path);
-                    return Ok(false);
-                }
-                if current_val != journal.requested_value {
-                    return Err(format!(
-                        "Konflik eksternal terdeteksi pada jurnal Pending (nilai saat ini {}, diharapkan {} atau {}); rollback dibatalkan",
-                        current_val, journal.original_value, journal.requested_value
-                    ));
-                }
-            }
-            JournalStatus::Applied => {
-                if current_val == journal.original_value {
-                    // Already restored before/during previous shutdown
-                    let _ = TransactionJournal::cleanup(journal_path);
-                    return Ok(false);
-                }
-                if current_val != journal.requested_value {
-                    return Err(format!(
-                        "Konflik eksternal terdeteksi pada jurnal Applied (nilai saat ini {}, diharapkan {}); rollback dibatalkan",
-                        current_val, journal.requested_value
-                    ));
-                }
-            }
-            JournalStatus::RolledBack => {
-                let _ = TransactionJournal::cleanup(journal_path);
-                return Ok(false);
-            }
-        }
-
-        // Restore original baseline and verify readback
-        backend.write_control(journal.action, journal.original_value)?;
-        let restored_val = backend.read_control(journal.action)?;
-        if restored_val != journal.original_value {
-            return Err("Verifikasi nilai rollback setelah crash recovery gagal".into());
-        }
-
-        let _ = TransactionJournal::cleanup(journal_path);
-        self.recovered_crashes = self.recovered_crashes.saturating_add(1);
-        Ok(true)
     }
 
     /// Menghitung batas penyesuaian kernel yang sadar-beban (*workload-aware*) berdasarkan
@@ -989,16 +793,25 @@ impl AuraDaemon {
                                             &self.config.journal_file
                                         {
                                             let journal = TransactionJournal {
-                                                schema_version: 1,
+                                                schema_version:
+                                                    TransactionJournal::CURRENT_SCHEMA_VERSION,
+                                                lease_id: format!(
+                                                    "{}-{}-{}",
+                                                    std::process::id(),
+                                                    id.inode,
+                                                    action.control_filename()
+                                                ),
                                                 timestamp_epoch_secs: std::time::SystemTime::now()
                                                     .duration_since(std::time::UNIX_EPOCH)
                                                     .map(|d| d.as_secs())
                                                     .unwrap_or(0),
                                                 boot_id: current_boot_id(),
+                                                owner_uid: xynoos_linux_control::current_euid(),
                                                 process_pid: std::process::id(),
                                                 process_start_ticks: process_start_ticks(
                                                     std::process::id(),
                                                 ),
+                                                authorized_root: None,
                                                 identity: id,
                                                 action,
                                                 original_value: orig,
@@ -1249,6 +1062,7 @@ impl AuraDaemon {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use xynoos_linux_control::transaction::Identity;
 
     #[allow(dead_code)]
     struct MockBackend {
@@ -1349,6 +1163,7 @@ mod tests {
             device: 1,
             inode: 2,
             control_inode: 3,
+            mount_id: None,
         };
         let mut backend = MockBackend {
             id: mock_id,
@@ -1359,10 +1174,13 @@ mod tests {
 
         let journal = TransactionJournal {
             schema_version: 1,
+            lease_id: "test-lease".into(),
             timestamp_epoch_secs: 1234567,
             boot_id: current_boot_id(),
+            owner_uid: 1000,
             process_pid: std::process::id(),
             process_start_ticks: process_start_ticks(std::process::id()),
+            authorized_root: None,
             identity: mock_id,
             action: Action::MemoryLow {
                 bytes: 32 * 1024 * 1024,
@@ -1379,6 +1197,9 @@ mod tests {
         backend.low = 48 * 1024 * 1024;
         assert!(daemon.reconcile_crash_recovery(&mut backend).is_err());
         assert_eq!(backend.low, 48 * 1024 * 1024); // fail-closed: not overwritten!
+
+        // Re-write journal for normal crash recovery test
+        journal.persist(&journal_file).unwrap();
 
         // Normal crash recovery when value matches requested_value
         backend.low = 32 * 1024 * 1024;
@@ -1523,6 +1344,7 @@ mod tests {
                 device: 1,
                 inode: 2,
                 control_inode: 3,
+                mount_id: None,
             },
         };
 

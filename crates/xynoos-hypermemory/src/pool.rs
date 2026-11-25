@@ -173,6 +173,9 @@ impl HyperMemoryPool {
 
     /// Reads and verifies an explicitly stored buffer, returning an exact-length `Vec<u8>`.
     pub fn get(&self, handle: BufferHandle) -> Result<Vec<u8>, Error> {
+        if handle.0 == 0 || handle.id() == 0 || handle.generation() == 0 {
+            return Err(Error::NotFound);
+        }
         let meta = self
             .buffers
             .get(&handle.id())
@@ -203,6 +206,9 @@ impl HyperMemoryPool {
     ///
     /// Fails with `Error::OutputBufferTooSmall` if `out.len() < required_length`.
     pub fn get_into(&self, handle: BufferHandle, out: &mut [u8]) -> Result<usize, Error> {
+        if handle.0 == 0 || handle.id() == 0 || handle.generation() == 0 {
+            return Err(Error::NotFound);
+        }
         let meta = self
             .buffers
             .get(&handle.id())
@@ -235,6 +241,9 @@ impl HyperMemoryPool {
 
     /// Returns detailed metadata and stored size for a specific buffer handle.
     pub fn buffer_info(&self, handle: BufferHandle) -> Result<BufferInfo, Error> {
+        if handle.0 == 0 || handle.id() == 0 || handle.generation() == 0 {
+            return Err(Error::NotFound);
+        }
         let meta = self
             .buffers
             .get(&handle.id())
@@ -259,6 +268,9 @@ impl HyperMemoryPool {
     /// Explicitly removes a buffer and frees all backing pages.
     /// Increments generation to prevent stale handle reuse.
     pub fn remove(&mut self, handle: BufferHandle) -> Result<(), Error> {
+        if handle.0 == 0 || handle.id() == 0 || handle.generation() == 0 {
+            return Err(Error::NotFound);
+        }
         let meta = self
             .buffers
             .get(&handle.id())
@@ -273,6 +285,9 @@ impl HyperMemoryPool {
         }
         self.logical_bytes = self.logical_bytes.saturating_sub(len);
         self.current_generation = self.current_generation.wrapping_add(1);
+        if self.current_generation == 0 {
+            self.current_generation = 1;
+        }
         Ok(())
     }
 
@@ -282,6 +297,9 @@ impl HyperMemoryPool {
         handle: BufferHandle,
         target: CodecId,
     ) -> Result<usize, Error> {
+        if handle.0 == 0 || handle.id() == 0 || handle.generation() == 0 {
+            return Err(Error::NotFound);
+        }
         let meta = self
             .buffers
             .get(&handle.id())
@@ -436,5 +454,45 @@ mod tests {
         assert!(acct.stored_payload_bytes < acct.logical_payload_bytes);
         assert!(acct.net_savings_bytes > 0);
         assert!(acct.compression_ratio < 1.0);
+    }
+
+    #[test]
+    fn generation_counter_wrapping_never_produces_zero() {
+        let mut pool = HyperMemoryPool::with_budget(16, 65536).unwrap();
+        pool.current_generation = u32::MAX;
+        let h = pool.put(&[1, 2, 3, 4]).unwrap();
+        assert_eq!(h.generation(), u32::MAX);
+        pool.remove(h).unwrap();
+        // current_generation must have wrapped to 1, never 0
+        assert_eq!(pool.current_generation, 1);
+        let h2 = pool.put(&[5, 6, 7, 8]).unwrap();
+        assert_eq!(h2.generation(), 1);
+    }
+
+    #[test]
+    fn zero_and_corrupt_handles_rejected() {
+        let mut pool = HyperMemoryPool::with_budget(16, 65536).unwrap();
+        let zero_handle = BufferHandle(0);
+        let mut buf = [0u8; 16];
+        assert_eq!(pool.get(zero_handle).unwrap_err(), Error::NotFound);
+        assert_eq!(
+            pool.get_into(zero_handle, &mut buf).unwrap_err(),
+            Error::NotFound
+        );
+        assert_eq!(pool.buffer_info(zero_handle).unwrap_err(), Error::NotFound);
+        assert_eq!(pool.remove(zero_handle).unwrap_err(), Error::NotFound);
+
+        let corrupt_gen = BufferHandle::new(1, 0);
+        assert_eq!(pool.get(corrupt_gen).unwrap_err(), Error::NotFound);
+        let corrupt_id = BufferHandle::new(0, 1);
+        assert_eq!(pool.get(corrupt_id).unwrap_err(), Error::NotFound);
+    }
+
+    #[test]
+    fn slot_id_exhaustion_is_fail_closed() {
+        let mut pool = HyperMemoryPool::with_budget(16, 65536).unwrap();
+        pool.next_id = u32::MAX;
+        let err = pool.put(&[1, 2, 3]).unwrap_err();
+        assert_eq!(err, Error::IdExhausted);
     }
 }

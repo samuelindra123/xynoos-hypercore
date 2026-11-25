@@ -9,16 +9,29 @@ use std::{
         fd::{AsRawFd, FromRawFd},
         unix::fs::MetadataExt,
     },
-    path::Path,
+    path::{Path, PathBuf},
     time::Instant,
 };
 use xynoos_pressureiq::system::SystemSnapshot;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct Identity {
     pub device: u64,
     pub inode: u64,
     pub control_inode: u64,
+    #[serde(default)]
+    pub mount_id: Option<u64>,
+}
+
+impl Identity {
+    pub const fn new(device: u64, inode: u64, control_inode: u64) -> Self {
+        Self {
+            device,
+            inode,
+            control_inode,
+            mount_id: None,
+        }
+    }
 }
 
 /// Implementations must confine operations to one disposable target.
@@ -184,7 +197,7 @@ pub fn run<B: Backend + ?Sized>(
         .push("original state verified after restore".into());
     report
 }
-fn check<B: Backend + ?Sized>(
+pub fn check<B: Backend + ?Sized>(
     backend: &mut B,
     id: Identity,
     action: Action,
@@ -304,6 +317,7 @@ impl DisposableCgroup {
                 device: dm.dev(),
                 inode: dm.ino(),
                 control_inode: cm.ino(),
+                mount_id: crate::journal::cgroup2_mount_id(),
             };
             Ok(Self {
                 parent: parent.try_clone().map_err(|e| e.to_string())?,
@@ -383,6 +397,7 @@ impl Backend for DisposableCgroup {
             device: dm.dev(),
             inode: dm.ino(),
             control_inode: cm.ino(),
+            mount_id: crate::journal::cgroup2_mount_id(),
         };
         if id != self.id {
             return Err("cgroup identity changed".into());
@@ -551,8 +566,12 @@ impl WorkloadCgroup {
         let name_str = name_os.to_string_lossy();
         if name_str == "system.slice"
             || name_str == "user.slice"
+            || name_str == "machine.slice"
             || name_str == "init.scope"
             || name_str == "-.slice"
+            || name_str.ends_with(".mount")
+            || name_str.ends_with(".swap")
+            || name_str.ends_with(".automount")
         {
             return Err("system infrastructure cgroup targets are strictly prohibited".into());
         }
@@ -596,6 +615,7 @@ impl WorkloadCgroup {
                 device: dm.dev(),
                 inode: dm.ino(),
                 control_inode: cm.ino(),
+                mount_id: crate::journal::cgroup2_mount_id(),
             },
         })
     }
@@ -610,18 +630,42 @@ impl WorkloadCgroup {
 
 impl Backend for WorkloadCgroup {
     fn identity(&mut self) -> Result<Identity, String> {
+        // 1. Verify retained descriptor self.dir is still valid and points to the original cgroup
+        let retained_dm = self.dir.metadata().map_err(|e| e.to_string())?;
+        if retained_dm.dev() != self.id.device || retained_dm.ino() != self.id.inode {
+            return Err("workload cgroup retained handle invalidated".into());
+        }
+
+        // 2. Verify directory reopened from parent matches retained inode (detect directory replacement)
         let current = openat(
             self.parent.as_raw_fd(),
             &self.name,
             libc::O_RDONLY | libc::O_DIRECTORY,
         )?;
         let dm = current.metadata().map_err(|e| e.to_string())?;
+        if dm.dev() != self.id.device || dm.ino() != self.id.inode {
+            return Err("workload cgroup directory replaced or unlinked (inode mismatch)".into());
+        }
+
+        // 3. Verify control file inode matches original identity
         let control = openat(current.as_raw_fd(), c"memory.low", libc::O_RDONLY)?;
         let cm = control.metadata().map_err(|e| e.to_string())?;
+        if cm.ino() != self.id.control_inode {
+            return Err("workload cgroup control file replaced (control inode mismatch)".into());
+        }
+
+        // 4. Verify cgroup2 mount identity where available
+        let cur_mount_id = crate::journal::cgroup2_mount_id();
+        if self.id.mount_id.is_some() && cur_mount_id.is_some() && cur_mount_id != self.id.mount_id
+        {
+            return Err("workload cgroup mount ID changed".into());
+        }
+
         let id = Identity {
             device: dm.dev(),
             inode: dm.ino(),
             control_inode: cm.ino(),
+            mount_id: self.id.mount_id,
         };
         if id != self.id {
             return Err("workload cgroup identity changed".into());
@@ -639,6 +683,10 @@ impl Backend for WorkloadCgroup {
     fn write_low(&mut self, value: u64) -> Result<(), String> {
         use std::os::unix::fs::FileExt;
         let control = openat(self.dir.as_raw_fd(), c"memory.low", libc::O_RDWR)?;
+        let cm = control.metadata().map_err(|e| e.to_string())?;
+        if cm.dev() != self.id.device || cm.ino() != self.id.control_inode {
+            return Err("control inode mismatch before write".into());
+        }
         let s = value.to_string();
         let n = control
             .write_at(s.as_bytes(), 0)
@@ -662,6 +710,10 @@ impl Backend for WorkloadCgroup {
     fn write_high(&mut self, value: u64) -> Result<(), String> {
         use std::os::unix::fs::FileExt;
         let control = openat(self.dir.as_raw_fd(), c"memory.high", libc::O_RDWR)?;
+        let cm = control.metadata().map_err(|e| e.to_string())?;
+        if cm.dev() != self.id.device {
+            return Err("control device mismatch before write".into());
+        }
         let s = if value == u64::MAX {
             "max".to_string()
         } else {
@@ -689,6 +741,10 @@ impl Backend for WorkloadCgroup {
     fn write_max(&mut self, value: u64) -> Result<(), String> {
         use std::os::unix::fs::FileExt;
         let control = openat(self.dir.as_raw_fd(), c"memory.max", libc::O_RDWR)?;
+        let cm = control.metadata().map_err(|e| e.to_string())?;
+        if cm.dev() != self.id.device {
+            return Err("control device mismatch before write".into());
+        }
         let s = if value == u64::MAX {
             "max".to_string()
         } else {
@@ -706,6 +762,9 @@ impl Backend for WorkloadCgroup {
 
 /// Sustained bounded cgroup control lease, distinct from `transaction::run` (which restores
 /// immediately). Remains active until explicitly released and checks identity + conflict before restoring.
+///
+/// Can optionally bind to a durable on-disk `TransactionJournal` to guarantee crash recovery
+/// across abrupt process termination (SIGKILL, crash, power loss).
 #[derive(Debug)]
 pub struct SustainedLease {
     identity: Identity,
@@ -714,14 +773,46 @@ pub struct SustainedLease {
     requested: u64,
     no_op: bool,
     released: bool,
+    journal_path: Option<PathBuf>,
 }
 
 impl SustainedLease {
+    /// Acquires an in-memory sustained lease without on-disk crash journaling.
     pub fn acquire<B: Backend + ?Sized>(
         backend: &mut B,
         snapshot: &SystemSnapshot,
         action: Action,
         authorized: bool,
+    ) -> Result<Self, TransactionReport> {
+        Self::acquire_internal(backend, snapshot, action, authorized, None)
+    }
+
+    /// Acquires a durable sustained lease that commits pre-mutation intent to disk
+    /// before modifying the kernel cgroup control file.
+    ///
+    /// If writing the journal fails, kernel mutation is aborted fail-closed.
+    pub fn acquire_durable<B: Backend + ?Sized>(
+        backend: &mut B,
+        snapshot: &SystemSnapshot,
+        action: Action,
+        authorized: bool,
+        journal_path: &Path,
+    ) -> Result<Self, TransactionReport> {
+        Self::acquire_internal(
+            backend,
+            snapshot,
+            action,
+            authorized,
+            Some(journal_path.to_path_buf()),
+        )
+    }
+
+    fn acquire_internal<B: Backend + ?Sized>(
+        backend: &mut B,
+        snapshot: &SystemSnapshot,
+        action: Action,
+        authorized: bool,
+        journal_path: Option<PathBuf>,
     ) -> Result<Self, TransactionReport> {
         let bytes = action.bytes();
         let mut report = TransactionReport {
@@ -768,22 +859,135 @@ impl SustainedLease {
                 requested: bytes,
                 no_op: true,
                 released: false,
+                journal_path,
             });
         }
+
+        // CRITICAL-01 INVARIANT:
+        // Intent must be durably recorded to disk BEFORE mutating kernel state.
+        // If journal persistence fails, abort immediately without touching the kernel.
+        if let Some(ref j_path) = journal_path {
+            let journal = crate::journal::TransactionJournal {
+                schema_version: crate::journal::TransactionJournal::CURRENT_SCHEMA_VERSION,
+                lease_id: format!(
+                    "{}-{}-{}",
+                    std::process::id(),
+                    id.inode,
+                    action.control_filename()
+                ),
+                timestamp_epoch_secs: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+                boot_id: crate::journal::current_boot_id(),
+                owner_uid: unsafe { libc::geteuid() },
+                process_pid: std::process::id(),
+                process_start_ticks: crate::journal::process_start_ticks(std::process::id()),
+                authorized_root: None,
+                identity: id,
+                action,
+                original_value: original,
+                requested_value: bytes,
+                status: crate::journal::LeasePhase::Prepared,
+                integrity_crc: 0,
+            };
+            if let Err(e) = journal.persist(j_path) {
+                report.outcome = Outcome::ApplyFailed;
+                report
+                    .events
+                    .push(format!("durable journal persist failed (prepared): {e}"));
+                return Err(report);
+            }
+        }
+
         if let Err(e) = backend.write_control(action, bytes) {
             report.outcome = Outcome::ApplyFailed;
             report.events.push(format!("apply failed: {e}"));
+            if let Some(ref j_path) = journal_path {
+                let _ = crate::journal::TransactionJournal::cleanup(j_path);
+            }
             return Err(report);
         }
+
         if let Err(e) = check(backend, id, action, bytes) {
             report.events.push(format!("verification: {e}"));
-            report.outcome = if check(backend, id, action, original).is_ok() {
+            let is_orig = check(backend, id, action, original).is_ok();
+            report.outcome = if is_orig {
                 Outcome::VerificationFailed
             } else {
                 Outcome::Conflict
             };
+            if let Some(ref j_path) = journal_path {
+                if is_orig {
+                    let _ = crate::journal::TransactionJournal::cleanup(j_path);
+                } else {
+                    let conflict_journal = crate::journal::TransactionJournal {
+                        schema_version: crate::journal::TransactionJournal::CURRENT_SCHEMA_VERSION,
+                        lease_id: format!(
+                            "{}-{}-{}",
+                            std::process::id(),
+                            id.inode,
+                            action.control_filename()
+                        ),
+                        timestamp_epoch_secs: std::time::SystemTime::now()
+                            .duration_since(std::time::UNIX_EPOCH)
+                            .map(|d| d.as_secs())
+                            .unwrap_or(0),
+                        boot_id: crate::journal::current_boot_id(),
+                        owner_uid: unsafe { libc::geteuid() },
+                        process_pid: std::process::id(),
+                        process_start_ticks: crate::journal::process_start_ticks(std::process::id()),
+                        authorized_root: None,
+                        identity: id,
+                        action,
+                        original_value: original,
+                        requested_value: bytes,
+                        status: crate::journal::LeasePhase::Conflict,
+                        integrity_crc: 0,
+                    };
+                    let _ = conflict_journal.persist(j_path);
+                }
+            }
             return Err(report);
         }
+
+        // Successfully applied and verified: transition journal state to Applied.
+        if let Some(ref j_path) = journal_path {
+            let applied_journal = crate::journal::TransactionJournal {
+                schema_version: crate::journal::TransactionJournal::CURRENT_SCHEMA_VERSION,
+                lease_id: format!(
+                    "{}-{}-{}",
+                    std::process::id(),
+                    id.inode,
+                    action.control_filename()
+                ),
+                timestamp_epoch_secs: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+                boot_id: crate::journal::current_boot_id(),
+                owner_uid: unsafe { libc::geteuid() },
+                process_pid: std::process::id(),
+                process_start_ticks: crate::journal::process_start_ticks(std::process::id()),
+                authorized_root: None,
+                identity: id,
+                action,
+                original_value: original,
+                requested_value: bytes,
+                status: crate::journal::LeasePhase::Applied,
+                integrity_crc: 0,
+            };
+            if let Err(e) = applied_journal.persist(j_path) {
+                // Fail closed: if journal persist fails post-apply, roll back immediately
+                let _ = backend.write_control(action, original);
+                report.outcome = Outcome::ApplyFailed;
+                report
+                    .events
+                    .push(format!("durable journal persist failed (applied): {e}"));
+                return Err(report);
+            }
+        }
+
         Ok(Self {
             identity: id,
             action,
@@ -791,6 +995,7 @@ impl SustainedLease {
             requested: bytes,
             no_op: false,
             released: false,
+            journal_path,
         })
     }
 
@@ -810,6 +1015,10 @@ impl SustainedLease {
         self.requested
     }
 
+    pub fn journal_path(&self) -> Option<&Path> {
+        self.journal_path.as_deref()
+    }
+
     pub fn release<B: Backend + ?Sized>(&mut self, backend: &mut B) -> TransactionReport {
         let mut report = TransactionReport {
             outcome: Outcome::Restored,
@@ -825,13 +1034,74 @@ impl SustainedLease {
         self.released = true;
         if self.no_op {
             report.events.push("no-op lease released".into());
+            if let Some(ref j_path) = self.journal_path {
+                let _ = crate::journal::TransactionJournal::cleanup(j_path);
+            }
             return report;
         }
+
+        // Before restoration, record Restoring phase in journal
+        if let Some(ref j_path) = self.journal_path {
+            let restoring_journal = crate::journal::TransactionJournal {
+                schema_version: crate::journal::TransactionJournal::CURRENT_SCHEMA_VERSION,
+                lease_id: format!(
+                    "{}-{}-{}",
+                    std::process::id(),
+                    self.identity.inode,
+                    self.action.control_filename()
+                ),
+                timestamp_epoch_secs: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0),
+                boot_id: crate::journal::current_boot_id(),
+                owner_uid: unsafe { libc::geteuid() },
+                process_pid: std::process::id(),
+                process_start_ticks: crate::journal::process_start_ticks(std::process::id()),
+                authorized_root: None,
+                identity: self.identity,
+                action: self.action,
+                original_value: self.original,
+                requested_value: self.requested,
+                status: crate::journal::LeasePhase::Restoring,
+                integrity_crc: 0,
+            };
+            let _ = restoring_journal.persist(j_path);
+        }
+
         if let Err(e) = check(backend, self.identity, self.action, self.requested) {
             report.outcome = Outcome::Conflict;
             report.events.push(format!("conflict before restore: {e}"));
+            if let Some(ref j_path) = self.journal_path {
+                let conflict_journal = crate::journal::TransactionJournal {
+                    schema_version: crate::journal::TransactionJournal::CURRENT_SCHEMA_VERSION,
+                    lease_id: format!(
+                        "{}-{}-{}",
+                        std::process::id(),
+                        self.identity.inode,
+                        self.action.control_filename()
+                    ),
+                    timestamp_epoch_secs: std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0),
+                    boot_id: crate::journal::current_boot_id(),
+                    owner_uid: unsafe { libc::geteuid() },
+                    process_pid: std::process::id(),
+                    process_start_ticks: crate::journal::process_start_ticks(std::process::id()),
+                    authorized_root: None,
+                    identity: self.identity,
+                    action: self.action,
+                    original_value: self.original,
+                    requested_value: self.requested,
+                    status: crate::journal::LeasePhase::Conflict,
+                    integrity_crc: 0,
+                };
+                let _ = conflict_journal.persist(j_path);
+            }
             return report;
         }
+
         if let Err(e) = backend.write_control(self.action, self.original) {
             report.outcome = Outcome::RollbackFailed;
             report.events.push(format!("rollback write: {e}"));
@@ -842,9 +1112,29 @@ impl SustainedLease {
             report.events.push(format!("rollback verification: {e}"));
             return report;
         }
+
         report
             .events
             .push("sustained lease restored original control value".into());
+
+        if let Some(ref j_path) = self.journal_path {
+            let _ = crate::journal::TransactionJournal::cleanup(j_path);
+        }
         report
+    }
+}
+
+impl Drop for SustainedLease {
+    fn drop(&mut self) {
+        if !self.released && !self.no_op {
+            let journal_notice = match &self.journal_path {
+                Some(p) => format!("(durable crash journal persisted at: {})", p.display()),
+                None => "(in-memory lease without durable crash journal: unreleased controls require manual or startup recovery)".to_string(),
+            };
+            eprintln!(
+                "xynoos: WARNING - SustainedLease for {:?} dropped without explicit release (original: {}, requested: {}) {}",
+                self.action, self.original, self.requested, journal_notice
+            );
+        }
     }
 }

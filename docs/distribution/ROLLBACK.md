@@ -59,20 +59,21 @@ This document provides explicit, evidence-based recovery and rollback procedures
 
 ### Scenario C — Pending Transaction Recovery Journal / Conflict
 **Symptoms**:
-- Daemon startup logs: `Konflik eksternal terdeteksi pada jurnal Pending/Applied`
-- Journal file `/run/xynoos/hypercore_journal.json` present.
+- Daemon startup logs: `Konflik eksternal terdeteksi pada jurnal Pending/Applied` or `Recovery conflict detected`
+- Journal file `/run/xynoos/hypercore_journal.json` or `/run/xynoos/lease_journal.json` present.
 
 **Procedure**:
 1. Check journal status via doctor:
    ```bash
    xynoos doctor
    ```
-2. HyperCore's TransactionJournal is fail-closed: it refuses to overwrite values if an external administrator or tool modified the cgroup control file in the meantime.
+2. HyperCore's `TransactionJournal` is strictly fail-closed: it restores original cgroup values if and only if HyperCore's requested value remains active. If an external administrator or tool modified the control value, or if the cgroup was replaced with a new inode or boot ID changed, it marks `Conflict` or `Invalidated` and refuses rollback to prevent clobbering external state.
 3. If the cgroup workload has already terminated and the parent cgroup is clean:
    ```bash
    # Preserve forensic backup
-   sudo cp /run/xynoos/hypercore_journal.json /run/xynoos/hypercore_journal.json.bak
-   sudo rm -f /run/xynoos/hypercore_journal.json
+   sudo cp /run/xynoos/hypercore_journal.json /run/xynoos/hypercore_journal.json.bak 2>/dev/null || true
+   sudo cp /run/xynoos/lease_journal.json /run/xynoos/lease_journal.json.bak 2>/dev/null || true
+   sudo rm -f /run/xynoos/hypercore_journal.json /run/xynoos/lease_journal.json
    ```
 4. Start daemon in ObserveOnly mode to inspect system telemetry safely:
    ```bash

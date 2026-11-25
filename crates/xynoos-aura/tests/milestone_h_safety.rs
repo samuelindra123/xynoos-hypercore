@@ -87,6 +87,7 @@ fn observe_only_and_advisory_never_mutate_kernel_even_under_critical_pressure() 
                 device: 1,
                 inode: 10,
                 control_inode: 20,
+                mount_id: None,
             },
             low: 8 * 1024 * 1024,
             high: 64 * 1024 * 1024,
@@ -121,6 +122,7 @@ fn sustained_lease_and_crash_journal_lifecycle_and_fail_closed_cases() {
         device: 42,
         inode: 100,
         control_inode: 200,
+        mount_id: None,
     };
     let mut backend = SpyBackend {
         id,
@@ -157,10 +159,13 @@ fn sustained_lease_and_crash_journal_lifecycle_and_fail_closed_cases() {
 
     let journal = TransactionJournal {
         schema_version: 1,
+        lease_id: "test-lease".into(),
         timestamp_epoch_secs: 1_700_000_000,
         boot_id: None,
+        owner_uid: 1000,
         process_pid: std::process::id(),
         process_start_ticks: None,
+        authorized_root: None,
         identity: lease.identity(),
         action: lease.action(),
         original_value: lease.original(),

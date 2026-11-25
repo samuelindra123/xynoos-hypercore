@@ -57,6 +57,9 @@ pub enum SafetyRejection {
     RollbackFailureTripped {
         detail: String,
     },
+    InvalidTelemetry {
+        metric: &'static str,
+    },
 }
 
 impl std::fmt::Display for SafetyRejection {
@@ -121,6 +124,12 @@ impl std::fmt::Display for SafetyRejection {
             }
             Self::RollbackFailureTripped { detail } => {
                 write!(f, "circuit breaker tripped by rollback failure: {detail}")
+            }
+            Self::InvalidTelemetry { metric } => {
+                write!(
+                    f,
+                    "invalid or non-finite telemetry reading for metric: {metric}"
+                )
             }
         }
     }
@@ -220,8 +229,13 @@ impl RuntimeSafetyGuard {
             });
         }
 
-        // 2. Telemetry bounds checking
+        // 2. Telemetry bounds checking (must be finite, non-negative, and <= 100.0%)
         if let Some(cpu) = cpu_psi_avg10 {
+            if cpu.is_nan() || cpu.is_infinite() || cpu < 0.0 || cpu > 100.0 {
+                return Err(SafetyRejection::InvalidTelemetry {
+                    metric: "cpu_psi_avg10",
+                });
+            }
             if cpu > self.config.max_cpu_pressure_pct {
                 return Err(SafetyRejection::ExcessiveCpuPressure {
                     avg10_pct: cpu,
@@ -230,6 +244,11 @@ impl RuntimeSafetyGuard {
             }
         }
         if let Some(io) = io_psi_avg10 {
+            if io.is_nan() || io.is_infinite() || io < 0.0 || io > 100.0 {
+                return Err(SafetyRejection::InvalidTelemetry {
+                    metric: "io_psi_avg10",
+                });
+            }
             if io > self.config.max_io_pressure_pct {
                 return Err(SafetyRejection::ExcessiveIoPressure {
                     avg10_pct: io,
@@ -238,6 +257,11 @@ impl RuntimeSafetyGuard {
             }
         }
         if let Some(mem) = mem_psi_avg10 {
+            if mem.is_nan() || mem.is_infinite() || mem < 0.0 || mem > 100.0 {
+                return Err(SafetyRejection::InvalidTelemetry {
+                    metric: "mem_psi_avg10",
+                });
+            }
             if mem > self.config.max_memory_pressure_pct {
                 return Err(SafetyRejection::ExcessiveMemoryPressure {
                     avg10_pct: mem,
@@ -456,5 +480,37 @@ mod tests {
         ));
         // Breaker itself remains Closed
         assert_eq!(guard.state(), CircuitState::Closed);
+    }
+
+    #[test]
+    fn invalid_telemetry_nan_and_inf_rejected() {
+        let guard = RuntimeSafetyGuard::new(SafetyGuardConfig::default());
+
+        // NaN CPU rejected
+        let res_nan_cpu = guard.can_intervene(Some(f64::NAN), Some(10.0), Some(10.0));
+        assert!(matches!(
+            res_nan_cpu,
+            Err(SafetyRejection::InvalidTelemetry {
+                metric: "cpu_psi_avg10"
+            })
+        ));
+
+        // Infinite IO rejected
+        let res_inf_io = guard.can_intervene(Some(10.0), Some(f64::INFINITY), Some(10.0));
+        assert!(matches!(
+            res_inf_io,
+            Err(SafetyRejection::InvalidTelemetry {
+                metric: "io_psi_avg10"
+            })
+        ));
+
+        // Negative memory rejected
+        let res_neg_mem = guard.can_intervene(Some(10.0), Some(10.0), Some(-5.0));
+        assert!(matches!(
+            res_neg_mem,
+            Err(SafetyRejection::InvalidTelemetry {
+                metric: "mem_psi_avg10"
+            })
+        ));
     }
 }

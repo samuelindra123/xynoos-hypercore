@@ -205,6 +205,7 @@ fn milestone_g_daemon_hardening_and_fault_injection_recovery() {
         device: 7,
         inode: 8,
         control_inode: 9,
+        mount_id: None,
     };
     let mut backend = MockCgroupBackend {
         id,
@@ -214,10 +215,13 @@ fn milestone_g_daemon_hardening_and_fault_injection_recovery() {
     };
     let pending = TransactionJournal {
         schema_version: 1,
+        lease_id: "test-lease".into(),
         timestamp_epoch_secs: 1700000001,
         boot_id: None,
+        owner_uid: 1000,
         process_pid: std::process::id(),
         process_start_ticks: None,
+        authorized_root: None,
         identity: id,
         action: Action::MemoryHigh { bytes: 32768 },
         original_value: 16384,

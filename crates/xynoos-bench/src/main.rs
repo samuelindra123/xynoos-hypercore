@@ -813,6 +813,7 @@ impl Backend for BenchMockBackend {
             device: 1,
             inode: 200,
             control_inode: 201,
+            mount_id: None,
         })
     }
     fn read_low(&mut self) -> Result<u64, String> {
@@ -1784,22 +1785,47 @@ fn run_workload_lease(
         .map_err(|e| format!("open bg cgroup failed: {e}"))?;
     let snap = xynoos_pressureiq::system::collect_system();
 
-    let mut fg_lease = SustainedLease::acquire(
-        &mut fg_backend,
-        &snap,
-        Action::MemoryLow { bytes: fg_low },
-        true,
-    )
+    let journal_dir = std::env::var("XYNOOS_LEASE_JOURNAL_DIR").ok();
+    let mut fg_lease = match &journal_dir {
+        Some(dir) => {
+            let jpath = std::path::Path::new(dir).join("fg_lease_journal.json");
+            SustainedLease::acquire_durable(
+                &mut fg_backend,
+                &snap,
+                Action::MemoryLow { bytes: fg_low },
+                true,
+                &jpath,
+            )
+        }
+        None => SustainedLease::acquire(
+            &mut fg_backend,
+            &snap,
+            Action::MemoryLow { bytes: fg_low },
+            true,
+        ),
+    }
     .map_err(|r| format!("fg lease acquire failed: {:?}", r.events))?;
 
     let mut bg_lease_opt = if bg_high > 0 {
         Some(
-            SustainedLease::acquire(
-                &mut bg_backend,
-                &snap,
-                Action::MemoryHigh { bytes: bg_high },
-                true,
-            )
+            match &journal_dir {
+                Some(dir) => {
+                    let jpath = std::path::Path::new(dir).join("bg_lease_journal.json");
+                    SustainedLease::acquire_durable(
+                        &mut bg_backend,
+                        &snap,
+                        Action::MemoryHigh { bytes: bg_high },
+                        true,
+                        &jpath,
+                    )
+                }
+                None => SustainedLease::acquire(
+                    &mut bg_backend,
+                    &snap,
+                    Action::MemoryHigh { bytes: bg_high },
+                    true,
+                ),
+            }
             .map_err(|r| {
                 let _ = fg_lease.release(&mut fg_backend);
                 format!("bg lease acquire failed: {:?}", r.events)

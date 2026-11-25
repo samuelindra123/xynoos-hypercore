@@ -25,6 +25,12 @@ pub enum Action {
     MemoryMax { bytes: u64 },
 }
 
+impl Default for Action {
+    fn default() -> Self {
+        Self::MemoryLow { bytes: 0 }
+    }
+}
+
 impl Action {
     pub const fn control_filename(&self) -> &'static str {
         match self {
@@ -153,7 +159,13 @@ fn validate_telemetry(
     Ok(())
 }
 
+pub mod journal;
 pub mod transaction;
+
+pub use journal::{
+    current_euid, recover_durable_lease, LeasePhase, RecoveryOutcome, RecoveryReport,
+    TransactionJournal,
+};
 
 /// Builds the v1 contract at decision time, so its age cannot be frozen by a caller.
 /// Only memory PSI and meminfo are used; their scope is visible-system, not target-specific.
