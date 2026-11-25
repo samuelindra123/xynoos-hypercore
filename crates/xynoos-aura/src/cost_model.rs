@@ -90,10 +90,10 @@ impl RollingCostStats {
 /// Mathematical Cost Function:
 /// Let:
 ///   - $\Delta B_{\text{net}}$ = expected net bytes saved after metadata and recompression overhead
-///   - $W_{\text{mem}}(P_{\text{mem}})$ = memory value weight in ns/byte (Low=1, Moderate=8, High=32, Critical=128)
+///   - $W_{\text{mem}}(P_{\text{mem}})$ = memory value weight in ns/byte (Low=4, Moderate=64, High=512, Critical=1024)
 ///   - $C_{\text{cpu}}$ = estimated compression CPU cost (ns) + recompression penalty (ns)
 ///   - $C_{\text{lat}}$ = expected additional decompression latency over expected future reads (ns)
-///   - $M_{\text{cpu}}(P_{\text{cpu}})$ = CPU contention multiplier in permille (Low=1000, Mod=2000, High=8000, Crit=32000)
+///   - $M_{\text{cpu}}(P_{\text{cpu}})$ = CPU contention multiplier in permille (Low=1000, Mod=2500, High=8000, Crit=32000)
 ///   - $P_{\text{scratch}}$ = temporary scratch buffer penalty if available RAM is constrained
 ///
 /// Then:
@@ -234,10 +234,10 @@ impl ResourceCostModel {
 
     pub const fn memory_value_ns_per_byte(pressure: MemoryPressure) -> i64 {
         match pressure {
-            MemoryPressure::Low => 1,
-            MemoryPressure::Moderate => 8,
-            MemoryPressure::High => 32,
-            MemoryPressure::Critical => 128,
+            MemoryPressure::Low => 4,
+            MemoryPressure::Moderate => 64,
+            MemoryPressure::High => 512,
+            MemoryPressure::Critical => 1024,
         }
     }
 

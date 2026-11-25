@@ -993,9 +993,9 @@ mod tests {
         }
 
         let mut out = vec![0u8; 4096];
-        for idx in 0..4 {
+        for (idx, expected) in pages.iter().enumerate() {
             store.get_page_into(id, idx, &mut out).unwrap();
-            assert_eq!(out, pages[idx]);
+            assert_eq!(out, *expected);
         }
     }
 }

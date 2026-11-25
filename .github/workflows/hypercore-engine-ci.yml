@@ -154,15 +154,22 @@ jobs:
               REL=$(awk -F: "\$1 == \"0\" {print \$3}" /proc/self/cgroup | head -n1)
               PARENT="/sys/fs/cgroup${REL}"
               echo "Scope cgroup: $PARENT"
-              if [ -w "$PARENT/cgroup.subtree_control" ]; then
+              echo "Available controllers: $(cat "$PARENT/cgroup.controllers" 2>/dev/null || echo none)"
+              if grep -qw memory "$PARENT/cgroup.controllers" 2>/dev/null && [ -w "$PARENT" ]; then
+                mkdir -p "$PARENT/runner-leaf" "$PARENT/test-parent"
+                # Respect cgroup v2 no-internal-processes rule before writing subtree_control
+                for p in $(cat "$PARENT/cgroup.procs"); do echo "$p" > "$PARENT/runner-leaf/cgroup.procs" 2>/dev/null || true; done
                 echo "+memory" > "$PARENT/cgroup.subtree_control" 2>/dev/null || true
-              fi
-              if [ -w "$PARENT" ] && grep -qw memory "$PARENT/cgroup.subtree_control" 2>/dev/null; then
-                echo "STATUS: DELEGATED_MEMORY_CONTROLLER_AVAILABLE_VIA_SYSTEMD_USER"
-                XYNOOS_KERNEL_TEST=1 XYNOOS_CGROUP_PARENT="$PARENT" \
-                  cargo test -p xynoos-linux-control --test kernel_transaction --locked -- --ignored --nocapture
+                echo "+memory" > "$PARENT/test-parent/cgroup.subtree_control" 2>/dev/null || true
+                if grep -qw memory "$PARENT/test-parent/cgroup.subtree_control" 2>/dev/null; then
+                  echo "STATUS: DELEGATED_MEMORY_CONTROLLER_AVAILABLE_VIA_SYSTEMD_USER"
+                  XYNOOS_KERNEL_TEST=1 XYNOOS_CGROUP_PARENT="$PARENT/test-parent" \
+                    cargo test -p xynoos-linux-control --test kernel_transaction --locked -- --ignored --nocapture
+                else
+                  echo "STATUS: NOT_RUN_OR_BLOCKED (failed to enable +memory in test-parent subtree_control)"
+                fi
               else
-                echo "STATUS: NOT_RUN_OR_BLOCKED (no delegated writable memory controller in user scope)"
+                echo "STATUS: NOT_RUN_OR_BLOCKED (memory controller not delegated to user scope)"
               fi
             ' || echo "STATUS: NOT_RUN_OR_BLOCKED (systemd-run --user unavailable)"
           else
