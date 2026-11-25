@@ -126,7 +126,10 @@ impl std::fmt::Display for SafetyRejection {
                 write!(f, "circuit breaker tripped by rollback failure: {detail}")
             }
             Self::InvalidTelemetry { metric } => {
-                write!(f, "invalid or non-finite telemetry reading for metric: {metric}")
+                write!(
+                    f,
+                    "invalid or non-finite telemetry reading for metric: {metric}"
+                )
             }
         }
     }
@@ -487,21 +490,27 @@ mod tests {
         let res_nan_cpu = guard.can_intervene(Some(f64::NAN), Some(10.0), Some(10.0));
         assert!(matches!(
             res_nan_cpu,
-            Err(SafetyRejection::InvalidTelemetry { metric: "cpu_psi_avg10" })
+            Err(SafetyRejection::InvalidTelemetry {
+                metric: "cpu_psi_avg10"
+            })
         ));
 
         // Infinite IO rejected
         let res_inf_io = guard.can_intervene(Some(10.0), Some(f64::INFINITY), Some(10.0));
         assert!(matches!(
             res_inf_io,
-            Err(SafetyRejection::InvalidTelemetry { metric: "io_psi_avg10" })
+            Err(SafetyRejection::InvalidTelemetry {
+                metric: "io_psi_avg10"
+            })
         ));
 
         // Negative memory rejected
         let res_neg_mem = guard.can_intervene(Some(10.0), Some(10.0), Some(-5.0));
         assert!(matches!(
             res_neg_mem,
-            Err(SafetyRejection::InvalidTelemetry { metric: "mem_psi_avg10" })
+            Err(SafetyRejection::InvalidTelemetry {
+                metric: "mem_psi_avg10"
+            })
         ));
     }
 }
