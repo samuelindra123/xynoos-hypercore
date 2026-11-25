@@ -79,6 +79,7 @@ fn detect_storage_free_bytes() -> Option<u64> {
     #[cfg(unix)]
     unsafe {
         let mut st = std::mem::MaybeUninit::<libc::statvfs>::uninit();
+        #[allow(clippy::unnecessary_cast)]
         if libc::statvfs(c"/".as_ptr(), st.as_mut_ptr()) == 0 {
             let s = st.assume_init();
             return Some((s.f_bavail as u64).saturating_mul(s.f_frsize as u64));

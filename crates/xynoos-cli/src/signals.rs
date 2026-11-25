@@ -40,7 +40,7 @@ pub fn install_daemon_signals() -> Result<(), std::io::Error> {
     #[cfg(unix)]
     unsafe {
         let mut act: libc::sigaction = std::mem::zeroed();
-        act.sa_sigaction = posix_termination_handler as usize;
+        act.sa_sigaction = posix_termination_handler as *const () as usize;
         // Block all other standard termination signals while handling
         libc::sigemptyset(&mut act.sa_mask);
         libc::sigaddset(&mut act.sa_mask, libc::SIGINT);
