@@ -1,0 +1,214 @@
+name: Milestone Q Production Release Candidate, Crash Recovery & Deployment Qualification
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, "feat/*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qualification-q-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  crash-recovery-and-security:
+    name: Durable Crash Recovery, SIGKILL Resilience & Sandboxing
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Code Formatting Check
+        run: cargo fmt --all -- --check
+
+      - name: Strict Clippy Lints
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Build Workspace Artifacts (Release Mode)
+        run: cargo build --workspace --all-targets --release --locked
+
+      - name: Execute Workspace Test Suite
+        run: cargo test --workspace --all-targets --locked
+
+      - name: Execute Milestone Q Crash Recovery Test Suite
+        run: |
+          echo "=== Milestone Q Durable Crash Recovery Test Suite ==="
+          cargo test -p xynoos-linux-control --test milestone_q_crash_recovery_tests -- --nocapture
+
+      - name: Execute Milestone Q Daemon Crash Recovery Test Suite
+        run: |
+          echo "=== Milestone Q Daemon Crash Recovery Test Suite ==="
+          cargo test -p xynoos-aura --test milestone_q_daemon_crash_tests -- --nocapture
+
+      - name: Systemd Service Sandboxing & Hardening Invariants
+        run: |
+          echo "=== Systemd Service Hardening Invariant Inspection ==="
+          UNIT="systemd/xynoos-hypercore.service"
+          test -f "$UNIT"
+
+          grep -q "^ProtectSystem=strict" "$UNIT"
+          grep -q "^ProtectHome=yes" "$UNIT"
+          grep -q "^PrivateTmp=yes" "$UNIT"
+          grep -q "^ProtectClock=yes" "$UNIT"
+          grep -q "^ProtectHostname=yes" "$UNIT"
+          grep -q "^ProtectKernelTunables=yes" "$UNIT"
+          grep -q "^ProtectKernelModules=yes" "$UNIT"
+          grep -q "^NoNewPrivileges=yes" "$UNIT"
+          grep -q "^RestrictSUIDSGID=yes" "$UNIT"
+          grep -q "^RemoveIPC=yes" "$UNIT"
+          grep -q "^SystemCallArchitectures=native" "$UNIT"
+          grep -q "^CapabilityBoundingSet=" "$UNIT"
+          grep -q "^AmbientCapabilities=" "$UNIT"
+          grep -q "^RestrictAddressFamilies=AF_UNIX AF_NETLINK" "$UNIT"
+          grep -q "^LockPersonality=yes" "$UNIT"
+          grep -q "^RestrictRealtime=yes" "$UNIT"
+          grep -q "^UMask=0027" "$UNIT"
+          echo "All systemd sandboxing invariants verified successfully!"
+
+  cross-distribution-qualification:
+    name: Cross-Distribution Packaging & Structure Verification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Multi-Distribution Packaging Verification
+        run: |
+          echo "=== Multi-Distribution Packaging Validation ==="
+          # 1. RPM spec
+          test -f packaging/rpm/xynoos-hypercore.spec
+          grep -q "Name:.*xynoos-hypercore" packaging/rpm/xynoos-hypercore.spec
+          grep -q "%dir %attr(0755, root, root) %{_sharedstatedir}/xynoos" packaging/rpm/xynoos-hypercore.spec
+
+          # 2. Arch PKGBUILD
+          test -f packaging/arch/PKGBUILD
+          bash -n packaging/arch/PKGBUILD
+          bash -n packaging/arch/xynoos-hypercore.install
+
+          # 3. Void template & runit
+          test -f packaging/void/template
+          bash -n packaging/void/template
+          sh -n packaging/void/runit/xynoos-hypercore/run
+          sh -n packaging/void/runit/xynoos-hypercore/finish
+
+          # 4. Alpine APKBUILD & OpenRC
+          test -f packaging/alpine/APKBUILD
+          sh -n packaging/alpine/APKBUILD
+          sh -n packaging/alpine/xynoos-hypercore.initd
+          test -f packaging/alpine/xynoos-hypercore.confd
+
+          # 5. Standalone installer
+          test -f packaging/standalone/install.sh
+          bash -n packaging/standalone/install.sh
+          python3 -m py_compile packaging/standalone/build_standalone.py
+
+          echo "Cross-distribution packaging structures and syntax validated successfully!"
+
+  benchmark-and-performance:
+    name: Performance, Latency & Resource Footprint Laboratory (Configs A–F)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Benchmark Laboratory Artifacts
+        run: cargo build -p xynoos-bench --release --locked
+
+      - name: Execute Milestone Q Benchmark Laboratory
+        run: |
+          echo "=== Milestone Q Empirical Benchmark Laboratory Qualification ==="
+          target/release/xynoos-bench milestone-q-qualification --json > benchmark-results.json
+          cat benchmark-results.json | jq '.'
+
+      - name: Validate Benchmark Acceptance Targets
+        run: |
+          echo "=== Validating Acceptance Targets Across Profiles ==="
+          python3 - << 'EOF'
+          import json, sys
+
+          data = json.load(open('benchmark-results.json'))
+          for profile_rep in data:
+              prof = profile_rep['memory_profile']
+              results = {c['config_id']: c for c in profile_rep['configurations']}
+
+              # 1. Interactive Responsiveness: Config F must improve over A and B
+              lat_a = results['A']['interactive_latency_us']['mean']
+              lat_b = results['B']['interactive_latency_us']['mean']
+              lat_f = results['F']['interactive_latency_us']['mean']
+              improvement_vs_a = (lat_a - lat_f) / lat_a * 100.0
+              improvement_vs_b = (lat_b - lat_f) / lat_b * 100.0
+              print(f"[{prof}] Interactive latency: A={lat_a:.1f}us, B={lat_b:.1f}us, F={lat_f:.1f}us -> Imp vs A: {improvement_vs_a:.1f}%, vs B: {improvement_vs_b:.1f}%")
+              assert improvement_vs_a >= 10.0, f"Interactive latency improvement vs A < 10% in {prof}"
+
+              # 2. Background Compilation: Config F regression must not exceed 10%
+              comp_b = results['B']['background_compilation_ops_s']['mean']
+              comp_f = results['F']['background_compilation_ops_s']['mean']
+              comp_reg = (comp_b - comp_f) / comp_b * 100.0
+              print(f"[{prof}] Background compilation: B={comp_b:.1f} ops/s, F={comp_f:.1f} ops/s -> Regression: {comp_reg:.1f}%")
+              assert comp_reg <= 10.0, f"Background compilation regression > 10% in {prof}"
+
+              # 3. Multitasking: Foreground stall reduction under build contention
+              mt_lat_b = results['B']['multitasking_latency_us']['mean']
+              mt_lat_f = results['F']['multitasking_latency_us']['mean']
+              mt_imp = (mt_lat_b - mt_lat_f) / mt_lat_b * 100.0
+              print(f"[{prof}] Multitasking foreground latency: B={mt_lat_b:.1f}us, F={mt_lat_f:.1f}us -> Imp: {mt_imp:.1f}%")
+              assert mt_imp >= 10.0, f"Multitasking improvement < 10% in {prof}"
+
+              # 4. Resource Overhead: Idle RSS < 10 MiB, CPU < 0.5%
+              for cfg in ['C', 'D', 'F']:
+                  rss_kib = results[cfg]['daemon_idle_rss_kib']
+                  cpu_pct = results[cfg]['daemon_idle_cpu_pct']
+                  assert rss_kib < 10240.0, f"Daemon RSS exceeds 10 MiB: {rss_kib} KiB"
+                  assert cpu_pct < 0.5, f"Daemon CPU exceeds 0.5%: {cpu_pct}%"
+
+              # 5. Zero OOM events and zero uncontrolled oscillations
+              for c in profile_rep['configurations']:
+                  assert c['oom_events'] == 0
+                  assert c['oscillation_events'] == 0
+
+          print("ALL MILESTONE Q BENCHMARK ACCEPTANCE TARGETS PASSED!")
+          EOF
+
+  lifecycle-and-tuning-preservation:
+    name: Lifecycle, Tuning Preservation & Authorization Qualification
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build CLI Artifact
+        run: cargo build -p xynoos-cli --release --locked
+
+      - name: Rootless CLI Diagnostics Verification
+        run: |
+          echo "=== Rootless Inspection & Doctor Invariants ==="
+          target/release/xynoos inspect --json > inspect.json
+          cat inspect.json | jq '.'
+          test "$(jq -r '.platform.is_root' inspect.json)" = "false"
+
+          target/release/xynoos doctor --json > doctor.json
+          cat doctor.json | jq '.'
+          test "$(jq -r '.checks[0].pass' doctor.json)" = "true"
+
+      - name: Existing Tuning Preservation Verification
+        run: |
+          echo "=== Optimization Plan & Tuning Preservation ==="
+          target/release/xynoos setup --plan --json > plan.json
+          cat plan.json | jq '.plan_summary'
+          # Ensure plan does not produce unmitigated conflicts
+          test "$(jq -r '.plan_summary.conflict_actions' plan.json)" = "0"
+
+      - name: Runtime Recovery Command Verification
+        run: |
+          echo "=== Runtime Recover CLI Command Check ==="
+          target/release/xynoos runtime recover --json > recover.json
+          cat recover.json | jq '.'
+          test "$(jq -r '.operation' recover.json)" = "runtime_recover"

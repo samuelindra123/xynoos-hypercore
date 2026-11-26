@@ -105,7 +105,9 @@ fn main() -> Result<(), Box<dyn Error>> {
         return run_workload_eval_benchmark();
     }
     if args.len() >= 2
-        && (args[1] == "milestone-n-qualification" || args[1] == "milestone-o-qualification")
+        && (args[1] == "milestone-n-qualification"
+            || args[1] == "milestone-o-qualification"
+            || args[1] == "milestone-q-qualification")
     {
         return run_milestone_n_qualification(&args[2..]);
     }

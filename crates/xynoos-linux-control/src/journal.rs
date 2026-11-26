@@ -503,3 +503,474 @@ pub fn recover_durable_lease<B: Backend + ?Sized>(
     let _ = TransactionJournal::cleanup(journal_path);
     Ok(report)
 }
+
+/// A durable multi-cycle cgroup intervention record persisted to survive SIGKILL or abrupt daemon crash.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DurableInterventionRecord {
+    pub lease_id: String,
+    pub target_id: String,
+    pub control: String,
+    pub cgroup_inode: u64,
+    pub control_inode: u64,
+    pub original_value: u64,
+    pub applied_value: u64,
+    pub applied_at_epoch_ms: u64,
+    pub lease_duration_ms: u64,
+    pub boot_id: String,
+    pub owner_uid: u32,
+    pub process_pid: u32,
+    pub status: LeasePhase,
+}
+
+/// Durable on-disk multi-intervention ledger stored in state directory
+/// (e.g. /var/lib/xynoos/active_interventions.json) to survive SIGKILL and abrupt restarts.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct DurableInterventionLedger {
+    pub schema_version: u32,
+    pub updated_at_epoch_ms: u64,
+    pub boot_id: String,
+    pub records: Vec<DurableInterventionRecord>,
+    #[serde(default)]
+    pub integrity_crc: u32,
+}
+
+impl Default for DurableInterventionLedger {
+    fn default() -> Self {
+        Self {
+            schema_version: Self::CURRENT_SCHEMA_VERSION,
+            updated_at_epoch_ms: 0,
+            boot_id: current_boot_id().unwrap_or_else(|| "unknown-boot-id".into()),
+            records: Vec::new(),
+            integrity_crc: 0,
+        }
+    }
+}
+
+impl DurableInterventionLedger {
+    pub const CURRENT_SCHEMA_VERSION: u32 = 1;
+
+    pub fn new(boot_id: String) -> Self {
+        Self {
+            schema_version: Self::CURRENT_SCHEMA_VERSION,
+            updated_at_epoch_ms: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_millis() as u64)
+                .unwrap_or(0),
+            boot_id,
+            records: Vec::new(),
+            integrity_crc: 0,
+        }
+    }
+
+    /// Computes the IEEE CRC32 checksum over the serialized ledger with integrity_crc set to 0.
+    pub fn compute_crc(&self) -> io::Result<u32> {
+        let mut copy = self.clone();
+        copy.integrity_crc = 0;
+        let bytes =
+            serde_json::to_vec(&copy).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+        Ok(crc32fast::hash(&bytes))
+    }
+
+    /// Atomically persists the durable intervention ledger to disk with crash resilience (O_EXCL, fsync, rename).
+    pub fn persist(&mut self, path: &Path) -> io::Result<()> {
+        if path.is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "symlink substitution rejected for intervention ledger path",
+            ));
+        }
+
+        let parent = path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+
+        fs::create_dir_all(parent)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = fs::set_permissions(parent, fs::Permissions::from_mode(0o700));
+        }
+
+        self.updated_at_epoch_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0);
+        self.integrity_crc = self.compute_crc()?;
+
+        let data = serde_json::to_vec_pretty(self)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+
+        let file_name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("active_interventions.json");
+
+        let ts_nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let seq = JOURNAL_SEQ.fetch_add(1, Ordering::Relaxed);
+        let tmp_path = parent.join(format!(
+            ".{file_name}.tmp.{}.{}.{}",
+            std::process::id(),
+            ts_nanos,
+            seq
+        ));
+
+        {
+            let mut opts = OpenOptions::new();
+            opts.write(true).create_new(true);
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::OpenOptionsExt;
+                opts.mode(0o600);
+            }
+            let mut tmp = opts.open(&tmp_path)?;
+            tmp.write_all(&data)?;
+            tmp.flush()?;
+            tmp.sync_all()?;
+        }
+
+        fs::rename(&tmp_path, path)?;
+        if let Ok(dir) = File::open(parent) {
+            let _ = dir.sync_all();
+        }
+        Ok(())
+    }
+
+    /// Loads and verifies the integrity of an on-disk intervention ledger file.
+    pub fn load(path: &Path) -> io::Result<Option<Self>> {
+        if !path.exists() {
+            return Ok(None);
+        }
+        if path.is_symlink() {
+            return Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "symlink rejected for intervention ledger load",
+            ));
+        }
+
+        let data = fs::read(path)?;
+        let ledger: Self = match serde_json::from_slice(&data) {
+            Ok(l) => l,
+            Err(e) => {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let corrupt_path = path.with_extension(format!("corrupt.{ts}"));
+                let _ = fs::copy(path, corrupt_path);
+                return Err(io::Error::new(io::ErrorKind::InvalidData, e));
+            }
+        };
+
+        if ledger.integrity_crc != 0 {
+            let expected = ledger.compute_crc()?;
+            if ledger.integrity_crc != expected {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let corrupt_path = path.with_extension(format!("corrupt.crc.{ts}"));
+                let _ = fs::copy(path, corrupt_path);
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "intervention ledger integrity CRC mismatch",
+                ));
+            }
+        }
+        Ok(Some(ledger))
+    }
+
+    /// Safely removes a completed intervention ledger file.
+    pub fn cleanup(path: &Path) -> io::Result<()> {
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+        Ok(())
+    }
+
+    /// Upsert an intervention record by target_id and control.
+    pub fn upsert_record(&mut self, record: DurableInterventionRecord) {
+        if let Some(existing) = self
+            .records
+            .iter_mut()
+            .find(|r| r.target_id == record.target_id && r.control == record.control)
+        {
+            *existing = record;
+        } else {
+            self.records.push(record);
+        }
+    }
+
+    /// Remove an intervention record by target_id and control.
+    pub fn remove_record(
+        &mut self,
+        target_id: &str,
+        control: &str,
+    ) -> Option<DurableInterventionRecord> {
+        if let Some(pos) = self
+            .records
+            .iter()
+            .position(|r| r.target_id == target_id && r.control == control)
+        {
+            Some(self.records.remove(pos))
+        } else {
+            None
+        }
+    }
+}
+
+/// Reconciles a durable on-disk intervention ledger against actual cgroup sysfs filesystem state.
+///
+/// Designed to recover safely from SIGKILL, OOM termination, or abrupt daemon crashes:
+/// 1. Boot ID check: Rejects stale interventions from a prior boot fail-closed to avoid clobbering new boot cgroups.
+/// 2. Cgroup & Control Inode check: Validates target path and inodes to avoid clobbering recreated or recycled inodes.
+/// 3. Conflict detection: Detects external administrator tuning (current != applied && current != original).
+/// 4. Atomic restore: Restores baseline original_value iff target is still at HyperCore's applied_value.
+pub fn reconcile_durable_interventions_sysfs(
+    ledger_path: &Path,
+    cgroup_root: Option<&Path>,
+) -> Result<RecoveryReport, String> {
+    let mut report = RecoveryReport {
+        outcome: RecoveryOutcome::NoJournal,
+        original_value: None,
+        current_value: None,
+        requested_value: None,
+        events: Vec::new(),
+    };
+
+    let mut ledger = match DurableInterventionLedger::load(ledger_path) {
+        Ok(Some(l)) => l,
+        Ok(None) => return Ok(report),
+        Err(e) => {
+            report.outcome = RecoveryOutcome::RecoveryFailed;
+            report.events.push(format!(
+                "failed to load or verify durable intervention ledger: {e}"
+            ));
+            return Err(format!("intervention ledger load failed: {e}"));
+        }
+    };
+
+    if ledger.records.is_empty() {
+        let _ = DurableInterventionLedger::cleanup(ledger_path);
+        report.outcome = RecoveryOutcome::AlreadyRestored;
+        report
+            .events
+            .push("intervention ledger is empty; cleaned up".into());
+        return Ok(report);
+    }
+
+    // 1. Boot Identity Check: prevent restoring prior-boot values into current boot cgroups.
+    if let Some(cur_boot) = current_boot_id() {
+        if ledger.boot_id != cur_boot {
+            report.outcome = RecoveryOutcome::Invalidated;
+            report.events.push(format!(
+                "boot ID mismatch (ledger: {}, current: {}); prior-boot interventions invalidated fail-closed",
+                ledger.boot_id, cur_boot
+            ));
+            let ts = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0);
+            let _ = fs::rename(
+                ledger_path,
+                ledger_path.with_extension(format!("invalidated.boot.{ts}")),
+            );
+            return Ok(report);
+        }
+    }
+
+    let default_root = Path::new("/sys/fs/cgroup");
+    let cg_root = cgroup_root.unwrap_or(default_root);
+
+    let mut had_conflict = false;
+    let mut had_invalidated = false;
+    let mut had_success = false;
+
+    let records_to_reconcile = ledger.records.clone();
+    let mut remaining_records = Vec::new();
+
+    for mut record in records_to_reconcile {
+        let clean_target = record.target_id.trim_start_matches('/');
+        if clean_target.is_empty()
+            || clean_target.contains("..")
+            || record.control.contains("..")
+            || record.control.contains('/')
+        {
+            record.status = LeasePhase::Invalidated;
+            had_invalidated = true;
+            report.events.push(format!(
+                "invalid target or control path in record: {}/{}",
+                record.target_id, record.control
+            ));
+            continue;
+        }
+
+        let target_dir = cg_root.join(clean_target);
+        let control_path = target_dir.join(&record.control);
+
+        // Check cgroup directory and control file exist and are not symlinks
+        if !target_dir.exists()
+            || target_dir.is_symlink()
+            || !control_path.exists()
+            || control_path.is_symlink()
+        {
+            record.status = LeasePhase::Invalidated;
+            had_invalidated = true;
+            report.events.push(format!(
+                "target cgroup or control file missing or symlink for {}/{}",
+                record.target_id, record.control
+            ));
+            continue;
+        }
+
+        // Verify inode identities if recorded
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::MetadataExt;
+            if record.cgroup_inode > 0 {
+                if let Ok(dir_meta) = fs::symlink_metadata(&target_dir) {
+                    if dir_meta.ino() != record.cgroup_inode {
+                        record.status = LeasePhase::Invalidated;
+                        had_invalidated = true;
+                        report.events.push(format!(
+                            "cgroup inode mismatch for {} (recorded: {}, actual: {}); target recreated",
+                            record.target_id, record.cgroup_inode, dir_meta.ino()
+                        ));
+                        continue;
+                    }
+                }
+            }
+            if record.control_inode > 0 {
+                if let Ok(file_meta) = fs::symlink_metadata(&control_path) {
+                    if file_meta.ino() != record.control_inode {
+                        record.status = LeasePhase::Invalidated;
+                        had_invalidated = true;
+                        report.events.push(format!(
+                            "control inode mismatch for {}/{} (recorded: {}, actual: {}); control recreated",
+                            record.target_id, record.control, record.control_inode, file_meta.ino()
+                        ));
+                        continue;
+                    }
+                }
+            }
+        }
+
+        // Read current control value
+        let current_val_str = match fs::read_to_string(&control_path) {
+            Ok(s) => s.trim().to_string(),
+            Err(e) => {
+                report.events.push(format!(
+                    "failed to read control {}: {e}",
+                    control_path.display()
+                ));
+                remaining_records.push(record);
+                continue;
+            }
+        };
+
+        let current_val: u64 = if current_val_str == "max" {
+            u64::MAX
+        } else {
+            match current_val_str.parse() {
+                Ok(v) => v,
+                Err(e) => {
+                    report.events.push(format!(
+                        "failed to parse control value from {}: {e}",
+                        control_path.display()
+                    ));
+                    remaining_records.push(record);
+                    continue;
+                }
+            }
+        };
+
+        report.original_value = Some(record.original_value);
+        report.current_value = Some(current_val);
+        report.requested_value = Some(record.applied_value);
+
+        if current_val == record.original_value {
+            report.events.push(format!(
+                "control {}/{} is already at baseline value {}",
+                record.target_id, record.control, record.original_value
+            ));
+            had_success = true;
+            continue;
+        }
+
+        if current_val != record.applied_value {
+            had_conflict = true;
+            record.status = LeasePhase::Conflict;
+            report.events.push(format!(
+                "external conflict detected on {}/{}: current ({current_val}) matches neither original ({}) nor applied ({}); refusing blind rollback",
+                record.target_id, record.control, record.original_value, record.applied_value
+            ));
+            remaining_records.push(record);
+            continue;
+        }
+
+        // Current value matches HyperCore's applied value -> restore original baseline
+        let orig_str = if record.original_value == u64::MAX {
+            "max".to_string()
+        } else {
+            record.original_value.to_string()
+        };
+
+        if let Err(e) = fs::write(&control_path, orig_str.as_bytes()) {
+            report.events.push(format!(
+                "failed to write baseline to {}: {e}",
+                control_path.display()
+            ));
+            remaining_records.push(record);
+            continue;
+        }
+
+        // Verify readback immediately
+        let verified_str = fs::read_to_string(&control_path).unwrap_or_default();
+        let verified_trimmed = verified_str.trim();
+        let verified_val: u64 = if verified_trimmed == "max" {
+            u64::MAX
+        } else {
+            verified_trimmed.parse().unwrap_or(0)
+        };
+
+        if verified_val != record.original_value {
+            had_conflict = true;
+            record.status = LeasePhase::Conflict;
+            report.events.push(format!(
+                "readback verification failed for {}/{}: got {verified_val}, expected {}",
+                record.target_id, record.control, record.original_value
+            ));
+            remaining_records.push(record);
+            continue;
+        }
+
+        had_success = true;
+        report.events.push(format!(
+            "successfully restored original baseline {} on {}/{}",
+            record.original_value, record.target_id, record.control
+        ));
+    }
+
+    ledger.records = remaining_records;
+
+    if ledger.records.is_empty() {
+        let _ = DurableInterventionLedger::cleanup(ledger_path);
+    } else {
+        let _ = ledger.persist(ledger_path);
+    }
+
+    if had_conflict {
+        report.outcome = RecoveryOutcome::Conflict;
+    } else if had_invalidated && !had_success {
+        report.outcome = RecoveryOutcome::Invalidated;
+    } else if had_success {
+        report.outcome = RecoveryOutcome::Restored;
+    } else {
+        report.outcome = RecoveryOutcome::AlreadyRestored;
+    }
+
+    Ok(report)
+}

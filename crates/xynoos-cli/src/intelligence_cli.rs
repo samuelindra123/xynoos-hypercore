@@ -965,8 +965,44 @@ pub fn runtime_command(args: &[String]) -> Result<(), Box<dyn Error>> {
             println!("To re-enable runtime management in the future, run: xynoos setup --auto --authorized");
             Ok(())
         }
+        Some("recover") => {
+            let active_ledger_path = roots.state_dir.join("active_interventions.json");
+            let rep = xynoos_aura::reconcile_durable_interventions_sysfs(&active_ledger_path, None)
+                .map_err(|e| format!("Recovery reconciliation failed: {e}"))?;
+
+            if roots.json {
+                let out = serde_json::json!({
+                    "operation": "runtime_recover",
+                    "outcome": rep.outcome,
+                    "original_value": rep.original_value,
+                    "current_value": rep.current_value,
+                    "requested_value": rep.requested_value,
+                    "events": rep.events,
+                });
+                println!("{}", serde_json::to_string_pretty(&out)?);
+                return Ok(());
+            }
+
+            println!("XYNOOS HyperCore — Crash Recovery & Lease Reconciliation");
+            println!("======================================================");
+            println!("Outcome : {:?}", rep.outcome);
+            if let Some(orig) = rep.original_value {
+                println!("Original Baseline : {orig}");
+            }
+            if let Some(curr) = rep.current_value {
+                println!("Current Kernel Val: {curr}");
+            }
+            if let Some(req) = rep.requested_value {
+                println!("Requested Action  : {req}");
+            }
+            println!("Events  :");
+            for ev in &rep.events {
+                println!("  - {ev}");
+            }
+            Ok(())
+        }
         _ => Err(
-            "usage: xynoos runtime (status | explain | disable) [--json] [--state-dir PATH]".into(),
+            "usage: xynoos runtime (status | explain | disable | recover) [--json] [--state-dir PATH]".into(),
         ),
     }
 }

@@ -629,10 +629,17 @@ fn daemon_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         })
     };
 
+    let resolved_active_interventions = if max_cycles.is_some() {
+        None
+    } else {
+        Some(PathBuf::from("/var/lib/xynoos/active_interventions.json"))
+    };
+
     let config = xynoos_aura::DaemonConfig {
         mode,
         interval_ms,
         pid_file: resolved_pid_file.clone(),
+        active_interventions_file: resolved_active_interventions,
         ..Default::default()
     };
 

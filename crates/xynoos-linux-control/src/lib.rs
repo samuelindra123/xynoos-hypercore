@@ -163,8 +163,9 @@ pub mod journal;
 pub mod transaction;
 
 pub use journal::{
-    current_euid, recover_durable_lease, LeasePhase, RecoveryOutcome, RecoveryReport,
-    TransactionJournal,
+    current_euid, reconcile_durable_interventions_sysfs, recover_durable_lease,
+    DurableInterventionLedger, DurableInterventionRecord, LeasePhase, RecoveryOutcome,
+    RecoveryReport, TransactionJournal,
 };
 
 /// Builds the v1 contract at decision time, so its age cannot be frozen by a caller.
