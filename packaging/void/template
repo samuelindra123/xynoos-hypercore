@@ -1,0 +1,18 @@
+# Template file for 'xynoos-hypercore'
+pkgname=xynoos-hypercore
+version=0.1.0
+revision=1
+build_style=cargo
+configure_args="--bin xynoos"
+short_desc="Universal Adaptive Linux Optimization Engine"
+maintainer="Samuel Indra Bastian <comdonate9@gmail.com>"
+license="Apache-2.0, MIT"
+homepage="https://github.com/samuelindra123/xynoos-hypercore"
+distfiles="https://github.com/samuelindra123/xynoos-hypercore/archive/v${version}.tar.gz"
+checksum=SKIP
+
+post_install() {
+    vman debian/xynoos.1
+    vsv xynoos-hypercore
+    vmkdir var/lib/xynoos 0755
+}

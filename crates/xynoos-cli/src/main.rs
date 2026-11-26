@@ -11,13 +11,19 @@ mod intelligence_cli;
 mod product;
 mod signals;
 
-use intelligence_cli::{inspect_command, runtime_command, setup_command, tuning_command};
+use intelligence_cli::{
+    doctor_command, inspect_command, runtime_command, setup_command, tuning_command,
+};
 
 fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<_> = std::env::args().skip(1).collect();
     let exe = std::env::args().next().unwrap_or_default();
     if exe.ends_with("xynoosd") {
         return daemon_command(&args);
+    }
+
+    if args.first().map(String::as_str) == Some("doctor") {
+        return doctor_command(&args[1..]);
     }
 
     if args.first().map(String::as_str) == Some("inspect") {

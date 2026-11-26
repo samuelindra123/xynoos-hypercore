@@ -7,7 +7,7 @@ rust-version.workspace = true
 license = "GPL-3.0-only"
 [features]
 # Distribution builds use dpkg/APT and emit diagnostics only to stdout.
-debian-package = []
+debian-package = ["xynoos-linux-control/debian-package"]
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 xynoos-aura = { path = "../xynoos-aura" }

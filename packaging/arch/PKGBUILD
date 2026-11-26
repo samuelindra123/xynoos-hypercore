@@ -1,0 +1,26 @@
+# Maintainer: Samuel Indra Bastian <comdonate9@gmail.com>
+pkgname=xynoos-hypercore
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Universal Adaptive Linux Optimization Engine"
+arch=('x86_64')
+url="https://github.com/samuelindra123/xynoos-hypercore"
+license=('Apache-2.0' 'MIT')
+depends=('glibc' 'gcc-libs')
+makedepends=('cargo')
+install=xynoos-hypercore.install
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+    cd "$srcdir/$pkgname-$pkgver"
+    cargo build --frozen --release -p xynoos-cli --bin xynoos
+}
+
+package() {
+    cd "$srcdir/$pkgname-$pkgver"
+    install -Dm755 "target/release/xynoos" "$pkgdir/usr/bin/xynoos"
+    install -Dm644 "systemd/xynoos-hypercore.service" "$pkgdir/usr/lib/systemd/system/xynoos-hypercore.service"
+    install -Dm644 "debian/xynoos.1" "$pkgdir/usr/share/man/man1/xynoos.1"
+    install -dm755 "$pkgdir/var/lib/xynoos"
+}

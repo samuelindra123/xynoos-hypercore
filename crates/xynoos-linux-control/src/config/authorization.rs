@@ -188,9 +188,18 @@ impl RuntimeAuthorizationContract {
         if self.is_revoked {
             return false;
         }
+        // Reject path traversal and root cgroup escape attempts
+        if target_identity.is_empty()
+            || target_identity.contains("..")
+            || target_identity == "/"
+            || target_identity == "/sys/fs/cgroup"
+        {
+            return false;
+        }
         self.allowed_target_identities.iter().any(|pattern| {
             if pattern == "*" {
-                true
+                // Permitted for any non-root target within cgroups
+                !target_identity.is_empty() && target_identity != "/"
             } else if pattern.ends_with('*') {
                 target_identity.starts_with(pattern.trim_end_matches('*'))
             } else {
@@ -235,6 +244,19 @@ impl RuntimeAuthorizationContract {
     pub fn load_from(path: &Path) -> io::Result<Self> {
         if !path.exists() {
             return Ok(Self::default());
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = fs::metadata(path) {
+                // Reject world-writable contract files to prevent untrusted manipulation
+                if meta.permissions().mode() & 0o002 != 0 {
+                    return Err(io::Error::new(
+                        io::ErrorKind::PermissionDenied,
+                        "Insecure authorization contract file: world-writable",
+                    ));
+                }
+            }
         }
         let mut f = File::open(path)?;
         let mut s = String::new();

@@ -168,41 +168,55 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
   - PASS: Remote CI verification passing across formatting, clippy, unit tests, integration tests, benchmark qualification, and soak testing.
   - PASS: Physical read-only N5000 qualification confirms zero system mutation and preserves host configuration.
 
-### Milestone O — Full Cross-Subsystem Automatic Setup & System Coexistence
-- **Objective**: Deliver end-to-end multi-subsystem `xynoos setup --auto` coordination.
+### Milestone O — Universal Linux Compatibility, One-Time Installation, Authorized Setup & Complete Deployment Lifecycle (Current)
+- **Objective**: Transform XYNOOS HyperCore into a universal, installable, maintainable, cross-distribution Linux product with capability-based architecture, multi-distribution packaging, unified init system adapters, one-time authorized setup, and complete lifecycle verification.
 - **Scope**:
-  - Unified one-time setup orchestrating CPU, Memory, GPU, Storage, and Power policies.
-  - Global cross-subsystem conflict resolution.
-  - Whole-system transactional verification and unified multi-file rollback.
+  - Universal platform compatibility architecture and formalized compatibility assessment (`assess_compatibility`, `CompatibilityTier`, `LibcKind`, `PackageBackendKind`).
+  - Multi-distribution packaging suite: Debian (`.deb`), RPM (`.spec`), Arch (`PKGBUILD`), Void (`template` & runit), Alpine (`APKBUILD` & OpenRC), and Standalone portable archive (`install.sh`).
+  - Unified init system lifecycle adapters supporting Systemd, SysVinit, OpenRC, and Runit with status, start, stop, restart, enable, disable, and clean removal.
+  - End-to-end one-time guided automatic setup (`xynoos setup --auto`) with scoped authorization contract binding, optional init service activation, and explicit rollback/disable instructions.
+  - Universal platform diagnostics command (`xynoos doctor`) reporting compatibility tiers, init status, kernel capabilities, and tuning readiness.
+  - Runtime safety audit fixes: wildcard target matching scope tightening, rejection of path traversal (`..`) and root escapes, world-writable authorization contract rejection, and robust 25% memory PSI regression evaluation handling low baselines and noise floors.
+  - Empirical benchmark suite (`xynoos-bench milestone-o-qualification`) evaluating Configurations A through F with comprehensive latency, throughput, PSI, and resource metrics.
+  - Comprehensive Indonesian engineering qualification report (`docs/reports/MILESTONE-O-UNIVERSAL-DEPLOYMENT-AND-SETUP-LIFECYCLE-REPORT.md`).
 - **Acceptance Criteria**:
-  - Zero uncoordinated writes across disparate hardware subsystems.
-  - Verified atomic restoration back to baseline on any failure or user rollback request.
+  - PASS: Platform compatibility architecture correctly categorizes distribution family, libc implementation, init system, and feature readiness.
+  - PASS: Multi-distribution packaging syntax and layout validated across Debian, RPM, Arch, Void, Alpine, and Standalone archives.
+  - PASS: Unified init system adapters verified across Systemd, SysVinit, OpenRC, and Runit in isolated fixtures.
+  - PASS: Scoped authorization contracts reject path traversal attacks, root cgroup escapes, and world-writable state files.
+  - PASS: One-time guided setup (`xynoos setup --auto --authorized`) executes without side-effect regressions, activates services cleanly, and supports full atomic rollback (`xynoos setup --rollback`).
+  - PASS: Live platform doctor (`xynoos doctor`) provides complete diagnostics and versioned JSON telemetry.
+  - PASS: Remote CI qualification workflow (`milestone-o-qualification.yml`) passing across all validation targets.
+  - PASS: Physical N5000 / UHD 605 developer workstation strictly preserved in read-only qualification.
 
-### Milestone P — Cross-Distribution Packaging & Init Compatibility
-- **Objective**: Broaden package availability across major Linux distributions.
+### Milestone P — Final Security Audit, Privilege Separation, Isolation & Adversarial Qualification
+- **Objective**: Harden daemon security boundaries, implement strict privilege separation, sandboxing, and adversarial qualification.
 - **Scope**:
-  - Native packages for Debian/Ubuntu (.deb), Fedora/RHEL (.rpm), Arch (PKGBUILD), Alpine (APK), Void (XBPS).
-  - Service unit support for Systemd, SysVinit, OpenRC, and Runit.
+  - Non-privileged daemon execution with capabilities (`CAP_SYS_RESOURCE`) where feasible.
+  - Hardened systemd sandboxing (`ProtectSystem=strict`, `ProtectHome=yes`, `NoNewPrivileges=yes`, `PrivateDevices=yes`).
+  - Adversarial fuzzing of configuration parser, journal recovery, and contract schemas.
+  - Attack surface minimization against symlink races and FIFO attacks.
 - **Acceptance Criteria**:
-  - Clean lintian and distribution packaging compliance.
-  - Disposable container lifecycle verification across all target distros.
+  - Zero privilege escalation paths from unprivileged users to root configuration.
+  - Bounded resource consumption under adversarial telemetry and malformed plan inputs.
 
-### Milestone Q — Whole-System Adaptive Performance Qualification
-- **Objective**: Rigorous empirical performance qualification across physical hardware tiers.
+### Milestone Q — Signed Distribution, Physical Installation, Real-World Deployment & Release Candidate Acceptance
+- **Objective**: Full production release preparation, cryptographic identity configuration, and physical deployment qualification.
 - **Scope**:
-  - Long-duration soak testing under memory pressure, compilation, gaming, and multitasking.
-  - Physical reference qualification on Intel Pentium Silver N5000.
-  - Independent statistical audit of performance gains versus un-tuned baseline.
+  - Resolution of Issue #36 (dedicated APT signing identity, OpenPGP keys, release attestations).
+  - Resolution of Issue #42 (physical deployment and qualification on Intel Pentium Silver N5000 / MX Linux).
+  - Independent statistical audit of performance gains versus un-tuned baselines.
+  - Release candidate tagging and signed distribution tarballs.
 - **Acceptance Criteria**:
-  - Statistically significant reduction in latency / PSI stalls demonstrated.
-  - Steady-state daemon memory footprint remains strictly under 10 MiB.
+  - Production APT metadata cryptographically signed with dedicated approved identity.
+  - Verified physical deployment on hardware reference system.
 
 ### Milestone R — Stable Universal Product Release (v1.0.0)
 - **Objective**: First production-ready general release.
 - **Scope**:
-  - Independent security audit and vulnerability assessment.
+  - Independent security audit and vulnerability assessment sign-off.
   - Production cryptographic signing and immutable release distribution.
-  - Stable CLI/API contracts.
+  - Stable CLI/API contracts and finalized user documentation.
 - **Acceptance Criteria**:
   - All outstanding security and infrastructure blockers resolved.
   - Formal maintainer sign-off.

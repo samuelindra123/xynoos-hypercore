@@ -492,12 +492,13 @@ pub mod multi_resource;
 
 pub mod discovery;
 pub use discovery::{
-    BlockDeviceInfo, CachedSystemInventory, CgroupHierarchy, ConfidenceLevel, ConfigItem,
-    ConfigurationInventory, ConfigurationOwnership, ConflictFinding, ConflictSeverity,
-    ContainerEnvironment, CpuInventory, CpuPolicy, DiscoveryStatus, DistributionFamily, GpuDevice,
-    GpuInventory, GpuType, GpuVendor, InitSystem, MemoryInventory, OptimizationPlan,
-    PlatformInventory, PowerDaemons, PowerInventory, PrivilegeLevel, ProposedAction,
-    ProposedActionType, ReversibilityGuarantee, ServiceState, StorageInventory, StorageMediaType,
-    Subsystem, SwapDevice, SystemInventory, ThermalZoneInfo, ZramDevice, ZswapConfiguration,
-    INVENTORY_SCHEMA_VERSION, PLAN_SCHEMA_VERSION,
+    assess_compatibility, BlockDeviceInfo, CachedSystemInventory, CgroupHierarchy,
+    CompatibilityTier, ConfidenceLevel, ConfigItem, ConfigurationInventory, ConfigurationOwnership,
+    ConflictFinding, ConflictSeverity, ContainerEnvironment, CpuInventory, CpuPolicy,
+    DiscoveryStatus, DistributionFamily, GpuDevice, GpuInventory, GpuType, GpuVendor, InitSystem,
+    LibcKind, MemoryInventory, OptimizationPlan, PackageBackendKind,
+    PlatformCompatibilityAssessment, PlatformInventory, PowerDaemons, PowerInventory,
+    PrivilegeLevel, ProposedAction, ProposedActionType, ReversibilityGuarantee, ServiceState,
+    StorageInventory, StorageMediaType, Subsystem, SwapDevice, SystemInventory, ThermalZoneInfo,
+    ZramDevice, ZswapConfiguration, INVENTORY_SCHEMA_VERSION, PLAN_SCHEMA_VERSION,
 };

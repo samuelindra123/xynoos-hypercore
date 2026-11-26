@@ -57,6 +57,40 @@ pub enum InitSystem {
     Unknown,
 }
 
+/// Standard C library implementation detection.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LibcKind {
+    Glibc,
+    Musl,
+    Unknown,
+}
+
+/// Compatibility tier classification.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CompatibilityTier {
+    SupportedAndVerified,
+    Experimental,
+    FixtureTestedOnly,
+    PlanningOnly,
+    Unsupported,
+    Blocked,
+}
+
+/// Primary packaging backend categorization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PackageBackendKind {
+    Debian,
+    Rpm,
+    Arch,
+    VoidXbps,
+    AlpineApk,
+    Standalone,
+    Unknown,
+}
+
 /// Container virtualization environment detection.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -118,6 +152,7 @@ pub struct PlatformInventory {
     pub virtualization: VirtualizationEnvironment,
     pub is_wsl: bool,
     pub is_root: bool,
+    pub libc_kind: LibcKind,
     pub status: DiscoveryStatus,
 }
 
@@ -144,6 +179,7 @@ impl Default for PlatformInventory {
             virtualization: VirtualizationEnvironment::Physical,
             is_wsl: false,
             is_root: false,
+            libc_kind: LibcKind::Unknown,
             status: DiscoveryStatus::Unknown,
         }
     }
@@ -401,8 +437,137 @@ pub fn discover_platform(sys_root: &Path, proc_root: &Path, etc_root: &Path) -> 
         }
     }
 
+    // 11. Detect libc kind
+    let check_lib_path = |sub: &str| {
+        etc_root.join(format!("../lib/{sub}")).exists()
+            || etc_root.join(format!("../usr/lib/{sub}")).exists()
+            || etc_root.join(format!("../lib64/{sub}")).exists()
+            || Path::new(&format!("/lib/{sub}")).exists()
+            || Path::new(&format!("/usr/lib/{sub}")).exists()
+            || Path::new(&format!("/lib64/{sub}")).exists()
+    };
+    if check_lib_path("ld-musl-x86_64.so.1")
+        || check_lib_path("ld-musl-aarch64.so.1")
+        || check_lib_path("libc.musl-x86_64.so.1")
+        || inv.distribution_family == DistributionFamily::Alpine
+    {
+        inv.libc_kind = LibcKind::Musl;
+    } else if check_lib_path("ld-linux-x86-64.so.2")
+        || check_lib_path("ld-linux-aarch64.so.1")
+        || check_lib_path("libc.so.6")
+        || inv.distribution_family == DistributionFamily::Debian
+        || inv.distribution_family == DistributionFamily::RedHat
+        || inv.distribution_family == DistributionFamily::Arch
+    {
+        inv.libc_kind = LibcKind::Glibc;
+    } else {
+        inv.libc_kind = LibcKind::Unknown;
+    }
+
     inv.status = DiscoveryStatus::Available;
     inv
+}
+
+/// Formalized platform compatibility assessment.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PlatformCompatibilityAssessment {
+    pub tier: CompatibilityTier,
+    pub primary_package_backend: PackageBackendKind,
+    pub supported_init_adapters: Vec<InitSystem>,
+    pub cgroup_v2_ready: bool,
+    pub psi_ready: bool,
+    pub memory_optimization_supported: bool,
+    pub cpu_optimization_supported: bool,
+    pub storage_optimization_supported: bool,
+    pub power_optimization_supported: bool,
+    pub requires_musl_build: bool,
+    pub is_read_only_mode: bool,
+    pub notes: Vec<String>,
+}
+
+/// Assess whole-system compatibility and operational tier for the discovered platform.
+pub fn assess_compatibility(inv: &PlatformInventory) -> PlatformCompatibilityAssessment {
+    let mut notes = Vec::new();
+
+    // 1. Package backend
+    let primary_package_backend = match inv.distribution_family {
+        DistributionFamily::Debian => PackageBackendKind::Debian,
+        DistributionFamily::RedHat | DistributionFamily::Suse => PackageBackendKind::Rpm,
+        DistributionFamily::Arch => PackageBackendKind::Arch,
+        DistributionFamily::Void => PackageBackendKind::VoidXbps,
+        DistributionFamily::Alpine => PackageBackendKind::AlpineApk,
+        _ => PackageBackendKind::Standalone,
+    };
+
+    // 2. Supported init adapters
+    let mut supported_init_adapters = Vec::new();
+    match inv.init_system {
+        InitSystem::Systemd => supported_init_adapters.push(InitSystem::Systemd),
+        InitSystem::SysVinit => supported_init_adapters.push(InitSystem::SysVinit),
+        InitSystem::OpenRC => supported_init_adapters.push(InitSystem::OpenRC),
+        InitSystem::Runit => supported_init_adapters.push(InitSystem::Runit),
+        _ => {}
+    }
+
+    // 3. Capabilities
+    let cgroup_v2_ready = inv.cgroup_hierarchy == CgroupHierarchy::V2Unified;
+    let psi_ready = inv.psi_available;
+    let memory_optimization_supported = true;
+    let cpu_optimization_supported = true;
+    let storage_optimization_supported = true;
+    let power_optimization_supported = true;
+    let requires_musl_build = inv.libc_kind == LibcKind::Musl;
+    let is_read_only_mode = !inv.is_root;
+
+    if is_read_only_mode {
+        notes.push("Non-root environment: mutating setup requires root privileges; operating in read-only observe mode.".into());
+    }
+
+    if !cgroup_v2_ready {
+        notes.push("Cgroup v2 unified hierarchy unavailable: fine-grained memory/cpu cgroup throttling disabled, falling back to sysctl tuning.".into());
+    }
+
+    if !psi_ready {
+        notes.push("Kernel PSI metrics unavailable: memory pressure detection operates via meminfo/vmstat metrics.".into());
+    }
+
+    if requires_musl_build {
+        notes.push("Musl libc detected: requires musl-compiled binary artifact.".into());
+    }
+
+    if inv.container_environment != ContainerEnvironment::None {
+        notes.push(format!("Container environment detected ({:?}): host-wide kernel mutations (swap, sysctl) may be restricted.", inv.container_environment));
+    }
+
+    // 4. Determine overall compatibility tier
+    let tier = match inv.distribution_family {
+        DistributionFamily::Debian => {
+            if inv.init_system == InitSystem::Systemd || inv.init_system == InitSystem::SysVinit {
+                CompatibilityTier::SupportedAndVerified
+            } else {
+                CompatibilityTier::Experimental
+            }
+        }
+        DistributionFamily::RedHat | DistributionFamily::Arch => CompatibilityTier::Experimental,
+        DistributionFamily::Void | DistributionFamily::Alpine => CompatibilityTier::Experimental,
+        DistributionFamily::Unknown => CompatibilityTier::PlanningOnly,
+        _ => CompatibilityTier::Experimental,
+    };
+
+    PlatformCompatibilityAssessment {
+        tier,
+        primary_package_backend,
+        supported_init_adapters,
+        cgroup_v2_ready,
+        psi_ready,
+        memory_optimization_supported,
+        cpu_optimization_supported,
+        storage_optimization_supported,
+        power_optimization_supported,
+        requires_musl_build,
+        is_read_only_mode,
+        notes,
+    }
 }
 
 #[cfg(test)]

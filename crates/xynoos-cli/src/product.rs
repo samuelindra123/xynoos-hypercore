@@ -134,13 +134,17 @@ fn state_dir() -> Option<PathBuf> {
 fn diagnostic_path() -> Option<PathBuf> {
     state_dir().map(|p| p.join("last-diagnostic.json"))
 }
-fn last_diagnostic() -> Option<Value> {
+pub(crate) fn last_diagnostic() -> Option<Value> {
     let p = diagnostic_path()?;
     let meta = fs::symlink_metadata(&p).ok()?;
     if !meta.is_file() || meta.len() > 1_048_576 {
         return None;
     }
     serde_json::from_slice(&fs::read(p).ok()?).ok()
+}
+pub(crate) fn installation_info() -> Value {
+    manager(&["health".into(), "--json".into()])
+        .unwrap_or_else(|e| json!({"status":"UNAVAILABLE","detail":e.to_string()}))
 }
 #[cfg(feature = "debian-package")]
 fn manager(_args: &[String]) -> Result<Value, Box<dyn Error>> {

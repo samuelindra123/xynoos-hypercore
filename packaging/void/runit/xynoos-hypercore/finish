@@ -1,0 +1,5 @@
+#!/bin/sh
+# Runit finish script for xynoos-hypercore
+exec 2>&1
+# Clean up transient PID file on shutdown
+rm -f /run/xynoos/xynoos.pid

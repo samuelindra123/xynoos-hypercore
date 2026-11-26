@@ -1,0 +1,8 @@
+# /etc/conf.d/xynoos-hypercore
+# Configuration for XYNOOS HyperCore OpenRC service
+
+# Daemon operating mode: observe-only, advisory, or transactional
+XYNOOS_MODE="observe-only"
+
+# Polling interval in milliseconds
+XYNOOS_INTERVAL_MS="2000"
