@@ -991,12 +991,66 @@ pub fn doctor_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         roots.etc_root.clone(),
         roots.state_dir.clone(),
     );
-    let ledger = executor.load_ledger().ok();
+    let ledger = executor.load_ledger().ok().unwrap_or_default();
     let auth_path = roots.state_dir.join("authorization.json");
     let auth = RuntimeAuthorizationContract::load_from(&auth_path).ok();
 
     if roots.json {
+        let mut checks = Vec::new();
+        let cgroup_ok = inv.platform.cgroup_hierarchy
+            == xynoos_pressureiq::discovery::platform::CgroupHierarchy::V2Unified;
+        checks.push(serde_json::json!({
+            "name": "Cgroup v2 Unified",
+            "pass": cgroup_ok,
+            "message": if cgroup_ok { "Unified hierarchy active" } else { "Legacy or Hybrid cgroups (limited isolation)" },
+        }));
+
+        let psi_ok = inv.platform.psi_available;
+        checks.push(serde_json::json!({
+            "name": "Pressure Stall Information (PSI)",
+            "pass": psi_ok,
+            "message": if psi_ok { "PSI controllers available" } else { "PSI unavailable in kernel" },
+        }));
+
+        let active_oom_count = (inv.memory.oom_managers.earlyoom_active as usize)
+            + (inv.memory.oom_managers.systemd_oomd_active as usize)
+            + (inv.memory.oom_managers.nohang_active as usize)
+            + (inv.memory.oom_managers.oomd_active as usize);
+        checks.push(serde_json::json!({
+            "name": "OOM Manager Coexistence",
+            "pass": active_oom_count <= 1,
+            "message": if active_oom_count == 0 {
+                "Kernel default OOM killer active"
+            } else if active_oom_count == 1 {
+                "Single active userspace manager (cooperative)"
+            } else {
+                "Multiple competing userspace OOM killers running"
+            },
+        }));
+
+        let mut ledger_tampered = false;
+        for entry in ledger.entries.values() {
+            if ledger.check_entry_integrity(entry, &roots.etc_root)
+                == xynoos_linux_control::config::IntegrityStatus::ModifiedExternally
+            {
+                ledger_tampered = true;
+                break;
+            }
+        }
+        checks.push(serde_json::json!({
+            "name": "Configuration Ownership Ledger",
+            "pass": !ledger_tampered,
+            "message": if ledger_tampered { "External file tampering detected" } else { "Clean and synchronized" },
+        }));
+
+        let cgroup_v2_avail = inv.platform.cgroup_hierarchy
+            == xynoos_pressureiq::discovery::platform::CgroupHierarchy::V2Unified;
+        let init_name = format!("{:?}", inv.platform.init_system);
+
         let out = serde_json::json!({
+            "product": "Xynoos HyperCore",
+            "version": env!("CARGO_PKG_VERSION"),
+            "physical_kernel_mutation": false,
             "schema_version": 1,
             "platform": inv.platform,
             "compatibility": assessment,
@@ -1006,13 +1060,31 @@ pub fn doctor_command(args: &[String]) -> Result<(), Box<dyn Error>> {
                 "state": format!("{:?}", service_status)
             },
             "ownership": {
-                "managed_entries": ledger.as_ref().map(|l| l.entries.len()).unwrap_or(0),
-                "is_active": ledger.as_ref().map(|l| !l.entries.is_empty()).unwrap_or(false)
+                "managed_entries": ledger.entries.len(),
+                "is_active": !ledger.entries.is_empty()
             },
             "authorization": {
                 "contract_present": auth_path.exists(),
                 "is_revoked": auth.as_ref().map(|a| a.is_revoked).unwrap_or(true),
                 "authorized_by": auth.as_ref().map(|a| a.authorized_by.clone()).unwrap_or_default(),
+            },
+            "checks": checks,
+            "ledger_entries_count": ledger.entries.len(),
+            "active_conflicts_count": inv.conflicts.len(),
+            "host": {
+                "init": {
+                    "init_system": init_name,
+                },
+                "cgroup": {
+                    "cgroup_v2_available": cgroup_v2_avail,
+                },
+                "psi_availability": {
+                    "memory": inv.platform.psi_available,
+                },
+                "daemon_state": {
+                    "state": if matches!(service_status, ServiceState::Active { .. }) { "running" } else { "not_running" },
+                },
+                "active_limitations": Vec::<String>::new(),
             }
         });
         println!("{}", serde_json::to_string_pretty(&out)?);
@@ -1125,7 +1197,7 @@ pub fn doctor_command(args: &[String]) -> Result<(), Box<dyn Error>> {
     );
     println!(
         "   Ownership Ledger   : {} active configuration entries",
-        ledger.as_ref().map(|l| l.entries.len()).unwrap_or(0)
+        ledger.entries.len()
     );
 
     if !assessment.notes.is_empty() {
