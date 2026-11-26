@@ -243,17 +243,22 @@ impl ContinuousCoordinator {
                 record.post_psi_cpu = sample.psi_cpu_some_avg10;
                 record.post_psi_io = sample.psi_io_some_avg10;
 
-                // Evaluate whether intervention caused regression
+                // Evaluate whether intervention caused regression (handling zero/near-zero baselines & noise)
                 let mut regressed = false;
                 if let (Some(pre), Some(post)) =
                     (record.pre_psi_memory, sample.psi_memory_some_avg10)
                 {
-                    if post > pre + 10.0 {
+                    if (pre < 1.0 && post >= 10.0)
+                        || (pre >= 1.0 && post > pre * 1.25 && (post - pre) >= 5.0)
+                        || (post >= 30.0 && pre < 15.0)
+                    {
                         regressed = true;
                     }
                 }
                 if let (Some(pre), Some(post)) = (record.pre_psi_cpu, sample.psi_cpu_some_avg10) {
-                    if post > pre + 25.0 {
+                    if (pre < 1.0 && post >= 25.0)
+                        || (pre >= 1.0 && post > pre * 1.25 && (post - pre) >= 15.0)
+                    {
                         regressed = true;
                     }
                 }

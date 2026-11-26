@@ -1,0 +1,28 @@
+post_install() {
+    echo "XYNOOS HyperCore installed successfully."
+    echo "To diagnose compatibility and view optimization plans without root:"
+    echo "  xynoos doctor"
+    echo "  xynoos setup --plan"
+    echo "To perform authorized setup with root:"
+    echo "  sudo xynoos setup --auto --authorized"
+}
+
+post_upgrade() {
+    echo "XYNOOS HyperCore upgraded."
+    echo "To check live status or re-evaluate plans:"
+    echo "  xynoos doctor"
+}
+
+pre_remove() {
+    if systemctl is-active --quiet xynoos-hypercore.service 2>/dev/null; then
+        systemctl stop xynoos-hypercore.service 2>/dev/null || true
+    fi
+    if systemctl is-enabled --quiet xynoos-hypercore.service 2>/dev/null; then
+        systemctl disable xynoos-hypercore.service 2>/dev/null || true
+    fi
+}
+
+post_remove() {
+    echo "XYNOOS HyperCore removed."
+    echo "Note: Historical configuration journals in /var/lib/xynoos are preserved for forensics."
+}

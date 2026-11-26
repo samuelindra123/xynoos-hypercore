@@ -1,0 +1,5 @@
+#!/bin/sh
+exec 2>&1
+[ -r ./conf ] && . ./conf
+mkdir -p /run/xynoos /var/lib/xynoos
+exec /usr/bin/xynoos daemon run --mode "${XYNOOS_MODE:-observe-only}" --interval-ms "${XYNOOS_INTERVAL_MS:-2000}"

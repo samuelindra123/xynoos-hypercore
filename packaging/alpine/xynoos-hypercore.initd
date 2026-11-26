@@ -1,0 +1,18 @@
+#!/sbin/openrc-run
+name="XYNOOS HyperCore Optimization Engine"
+description="Continuous self-tuning daemon for Linux"
+command="/usr/bin/xynoos"
+command_args="daemon run --mode ${XYNOOS_MODE:-observe-only} --interval-ms ${XYNOOS_INTERVAL_MS:-2000}"
+command_background="yes"
+pidfile="/run/xynoos/xynoos.pid"
+output_log="/var/log/xynoos.log"
+error_log="/var/log/xynoos.err"
+
+depend() {
+    need localmount
+    after bootmisc
+}
+
+start_pre() {
+    checkpath --directory --owner root:root --mode 0755 /run/xynoos /var/lib/xynoos
+}

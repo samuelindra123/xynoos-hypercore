@@ -1,0 +1,214 @@
+name: Milestone O Remote Universal Deployment & Setup Lifecycle Qualification
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, "feat/*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qualification-o-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualification:
+    name: Universal Deployment, Multi-Distro Packaging & Setup Lifecycle
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Code Formatting Check
+        run: cargo fmt --all -- --check
+
+      - name: Strict Clippy Lints
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Build Workspace Artifacts (Release Mode)
+        run: cargo build --workspace --all-targets --release --locked
+
+      - name: Execute Workspace Test Suite
+        run: cargo test --workspace --all-targets --locked
+
+      - name: Empirical Workload Benchmark Laboratory (Configurations A through F)
+        run: |
+          echo "=== Milestone O Empirical Benchmark Laboratory Qualification ==="
+          target/release/xynoos-bench milestone-o-qualification --json > benchmark-laboratory-results.json
+          cat benchmark-laboratory-results.json | jq '.'
+          target/release/xynoos-bench milestone-o-qualification
+
+      - name: Validate Benchmark Acceptance Targets
+        run: |
+          echo "=== Validating Acceptance Targets Across Profiles ==="
+          python3 - << 'EOF'
+          import json, sys
+
+          data = json.load(open('benchmark-laboratory-results.json'))
+          for profile_rep in data:
+              prof = profile_rep['memory_profile']
+              results = {c['config_id']: c for c in profile_rep['configurations']}
+
+              # 1. Interactive Responsiveness: Config F must improve over A and B
+              lat_a = results['A']['interactive_latency_us']['mean']
+              lat_b = results['B']['interactive_latency_us']['mean']
+              lat_f = results['F']['interactive_latency_us']['mean']
+              improvement_vs_a = (lat_a - lat_f) / lat_a * 100.0
+              improvement_vs_b = (lat_b - lat_f) / lat_b * 100.0
+              print(f"[{prof}] Interactive latency: A={lat_a:.1f}us, B={lat_b:.1f}us, F={lat_f:.1f}us -> Imp vs A: {improvement_vs_a:.1f}%, vs B: {improvement_vs_b:.1f}%")
+              assert improvement_vs_a >= 10.0, f"Interactive latency improvement vs A < 10% in {prof}"
+
+              # 2. Background Compilation: Config F regression must not exceed 10%
+              comp_b = results['B']['background_compilation_ops_s']['mean']
+              comp_f = results['F']['background_compilation_ops_s']['mean']
+              comp_reg = (comp_b - comp_f) / comp_b * 100.0
+              print(f"[{prof}] Background compilation: B={comp_b:.1f} ops/s, F={comp_f:.1f} ops/s -> Regression: {comp_reg:.1f}%")
+              assert comp_reg <= 10.0, f"Background compilation regression > 10% in {prof}"
+
+              # 3. Multitasking: Foreground stall reduction under build contention
+              mt_lat_b = results['B']['multitasking_latency_us']['mean']
+              mt_lat_f = results['F']['multitasking_latency_us']['mean']
+              mt_imp = (mt_lat_b - mt_lat_f) / mt_lat_b * 100.0
+              print(f"[{prof}] Multitasking foreground latency: B={mt_lat_b:.1f}us, F={mt_lat_f:.1f}us -> Imp: {mt_imp:.1f}%")
+              assert mt_imp >= 10.0, f"Multitasking improvement < 10% in {prof}"
+
+              # 4. Resource Overhead: Idle RSS < 10 MiB, CPU < 0.5%
+              for cfg in ['C', 'D', 'F']:
+                  rss_kib = results[cfg]['daemon_idle_rss_kib']
+                  cpu_pct = results[cfg]['daemon_idle_cpu_pct']
+                  assert rss_kib < 10240.0, f"Daemon RSS exceeds 10 MiB: {rss_kib} KiB"
+                  assert cpu_pct < 0.5, f"Daemon CPU exceeds 0.5%: {cpu_pct}%"
+
+              # 5. Zero OOM events and zero uncontrolled oscillations
+              for c in profile_rep['configurations']:
+                  assert c['oom_events'] == 0
+                  assert c['oscillation_events'] == 0
+
+          print("ALL MILESTONE O BENCHMARK ACCEPTANCE TARGETS PASSED!")
+          EOF
+
+      - name: Multi-Distribution Packaging Syntax & Structure Validation
+        run: |
+          echo "=== Multi-Distribution Packaging Validation ==="
+          # Check RPM Spec syntax
+          test -f packaging/rpm/xynoos-hypercore.spec
+          grep -q "Name:.*xynoos-hypercore" packaging/rpm/xynoos-hypercore.spec
+          grep -q "%systemd_post" packaging/rpm/xynoos-hypercore.spec
+
+          # Check Arch PKGBUILD syntax
+          test -f packaging/arch/PKGBUILD
+          bash -n packaging/arch/PKGBUILD
+          test -f packaging/arch/xynoos-hypercore.install
+          bash -n packaging/arch/xynoos-hypercore.install
+
+          # Check Void Linux XBPS template & runit scripts
+          test -f packaging/void/template
+          bash -n packaging/void/template
+          test -f packaging/void/runit/xynoos-hypercore/run
+          sh -n packaging/void/runit/xynoos-hypercore/run
+          test -f packaging/void/runit/xynoos-hypercore/finish
+          sh -n packaging/void/runit/xynoos-hypercore/finish
+
+          # Check Alpine Linux APKBUILD & OpenRC init scripts
+          test -f packaging/alpine/APKBUILD
+          sh -n packaging/alpine/APKBUILD
+          test -f packaging/alpine/xynoos-hypercore.initd
+          sh -n packaging/alpine/xynoos-hypercore.initd
+          test -f packaging/alpine/xynoos-hypercore.confd
+
+          # Check Standalone installer script
+          test -f packaging/standalone/install.sh
+          sh -n packaging/standalone/install.sh
+
+      - name: Build & Validate Standalone Distribution Archive
+        run: |
+          echo "=== Standalone Distribution Packaging & Self-Test ==="
+          python3 packaging/standalone/build_standalone.py
+          test -f target/standalone/xynoos-hypercore-standalone-x86_64.tar.gz
+          test -f target/standalone/SHA256SUMS
+          cd target/standalone && sha256sum -c SHA256SUMS && cd ../..
+
+          # Extract and test standalone installer in dry-run mode
+          mkdir -p target/test-standalone-extract
+          tar -xzf target/standalone/xynoos-hypercore-standalone-x86_64.tar.gz -C target/test-standalone-extract
+          target/test-standalone-extract/xynoos-hypercore-standalone/install.sh --dry-run
+          target/test-standalone-extract/xynoos-hypercore-standalone/install.sh --prefix target/test-standalone-install
+          test -x target/test-standalone-install/bin/xynoos
+          test -x target/test-standalone-install/bin/xynoosd
+          target/test-standalone-install/bin/xynoos --help > /dev/null
+          target/test-standalone-extract/xynoos-hypercore-standalone/install.sh --prefix target/test-standalone-install --uninstall
+          test ! -f target/test-standalone-install/bin/xynoos
+
+      - name: Live Platform Doctor & Setup Lifecycle Verification
+        run: |
+          echo "=== Universal Platform Doctor Execution ==="
+          target/release/xynoos doctor
+          target/release/xynoos doctor --json > doctor-output.json
+          cat doctor-output.json | jq '.'
+
+          echo "=== Setup Plan & Status Inspection ==="
+          target/release/xynoos setup --plan
+          target/release/xynoos setup --status
+
+          echo "=== Authorized Auto Setup Lifecycle ==="
+          sudo target/release/xynoos setup --auto --authorized --state-dir /var/lib/xynoos
+          sudo target/release/xynoos setup --status --state-dir /var/lib/xynoos
+          test -f /var/lib/xynoos/authorization.json
+          test -f /var/lib/xynoos/owned-configs.json
+
+          echo "=== Runtime Disable & Rollback Lifecycle ==="
+          sudo target/release/xynoos runtime disable --state-dir /var/lib/xynoos
+          sudo target/release/xynoos runtime status --state-dir /var/lib/xynoos
+          sudo target/release/xynoos setup --rollback --state-dir /var/lib/xynoos
+          sudo target/release/xynoos setup --status --state-dir /var/lib/xynoos
+
+      - name: Fresh vs Optimized Linux Scenario Qualification
+        run: |
+          echo "=== Scenario Qualification Suite ==="
+          python3 - << 'EOF'
+          import subprocess, json, tempfile, os
+          from pathlib import Path
+
+          with tempfile.TemporaryDirectory() as td:
+              root = Path(td)
+              sys_d = root / "sys"
+              proc_d = root / "proc"
+              etc_d = root / "etc"
+              state_d = root / "state"
+
+              for d in [sys_d, proc_d, etc_d, state_d]:
+                  d.mkdir(parents=True)
+
+              # Scenario A: Fresh Linux without prior tuning
+              (etc_d / "os-release").write_text("ID=ubuntu\nVERSION_ID=\"24.04\"\nPRETTY_NAME=\"Ubuntu 24.04\"\n")
+              (proc_d / "sys/kernel").mkdir(parents=True)
+              (proc_d / "sys/kernel/osrelease").write_text("6.8.0-generic\n")
+              (proc_d / "meminfo").write_text("MemTotal: 4000000 kB\nMemAvailable: 2500000 kB\nSwapTotal: 0 kB\nSwapFree: 0 kB\n")
+              (proc_d / "cpuinfo").write_text("processor: 0\nmodel name: Intel Core\n\nprocessor: 1\nmodel name: Intel Core\n\n")
+
+              cmd = [
+                  "target/release/xynoos", "setup", "--auto",
+                  "--sys-root", str(sys_d), "--proc-root", str(proc_d),
+                  "--etc-root", str(etc_d), "--state-dir", str(state_d), "--json"
+              ]
+              res = subprocess.run(cmd, capture_output=True, text=True, check=True)
+              data = json.loads(res.stdout)
+              assert data["mode"] == "guided_setup_preview"
+              assert data["authorization_required"] == True
+              print("Scenario A (Fresh Linux) passed: preview emitted without unauthorized mutation.")
+
+              # Scenario B: Previously Optimized Linux
+              (etc_d / "sysctl.d").mkdir(parents=True)
+              (etc_d / "sysctl.d/99-admin.conf").write_text("vm.swappiness=100\nvm.page-cluster=0\n")
+              (etc_d / "systemd/zram-generator.conf").parent.mkdir(parents=True, exist_ok=True)
+              (etc_d / "systemd/zram-generator.conf").write_text("[zram0]\nzram-size = ram / 2\ncompression-algorithm = lz4\n")
+
+              res_b = subprocess.run(cmd, capture_output=True, text=True, check=True)
+              data_b = json.loads(res_b.stdout)
+              print(f"Scenario B (Previously Optimized) passed: discovered {data_b['summary']['preserved_actions']} preserved settings.")
+          EOF

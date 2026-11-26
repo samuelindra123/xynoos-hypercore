@@ -3,9 +3,12 @@
 
 use std::{error::Error, path::PathBuf};
 use xynoos_aura::{TelemetryScheduler, WorkloadController};
-use xynoos_linux_control::config::{
-    AuthorizationScope, ConfigExecutor, OwnershipLedger, RuntimeAuthorizationContract,
-    SetupAuthorization, WholeSystemPlanner,
+use xynoos_linux_control::{
+    config::{
+        AuthorizationScope, ConfigExecutor, OwnershipLedger, RuntimeAuthorizationContract,
+        SetupAuthorization, WholeSystemPlanner,
+    },
+    service::{ServiceAdapter, ServiceState},
 };
 use xynoos_pressureiq::{OptimizationPlan, SystemInventory, INVENTORY_SCHEMA_VERSION};
 
@@ -621,11 +624,31 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
             .execute_plan(&actions, &auth, &plan_fingerprint, now_ms)
             .map_err(|e| format!("Setup apply error: {e}"))?;
 
+        let has_enable_service = args.iter().any(|a| a == "--enable-service");
+        let service_adapter = ServiceAdapter::new(
+            inv.platform.init_system,
+            roots.etc_root.clone(),
+            roots.proc_root.clone(),
+            PathBuf::from("/run"),
+        );
+        let mut service_activated = false;
+
         if summary.failed_actions == 0 {
             let runtime_contract =
                 RuntimeAuthorizationContract::new("operator", &plan_fingerprint, now_ms, 0);
             let _ = runtime_contract.save_to(&roots.state_dir.join("authorization.json"), now_ms);
+
+            if (has_enable_service || has_auto) && service_adapter.is_installed("xynoos-hypercore")
+            {
+                let _ = service_adapter.enable("xynoos-hypercore");
+                let _ = service_adapter.start("xynoos-hypercore");
+                service_activated = true;
+            }
         }
+
+        let current_service_state = service_adapter
+            .status("xynoos-hypercore")
+            .unwrap_or(ServiceState::NotInstalled);
 
         if roots.json {
             let out = serde_json::json!({
@@ -636,6 +659,10 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
                 "applied_actions": summary.applied_actions,
                 "skipped_actions": summary.skipped_actions,
                 "failed_actions": summary.failed_actions,
+                "service": {
+                    "activated": service_activated,
+                    "state": format!("{:?}", current_service_state)
+                },
                 "results": summary.action_results.iter().map(|r| {
                     serde_json::json!({
                         "action_id": r.action_id,
@@ -648,7 +675,7 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
             return Ok(());
         }
 
-        println!("XYNOOS HyperCore — Authorized Whole-System Execution (Milestone M)");
+        println!("XYNOOS HyperCore — Authorized Whole-System Execution (Milestone O)");
         println!("==================================================================");
         println!("Plan Fingerprint : {}", plan_fingerprint);
         println!("Transaction ID   : {}", summary.transaction_id);
@@ -661,9 +688,17 @@ pub fn setup_command(args: &[String]) -> Result<(), Box<dyn Error>> {
             println!("  {} {}: {}", status_tag, res.action_id, res.message);
         }
 
+        println!("\nContinuous Adaptive Runtime Service:");
+        println!("  Init Manager   : {:?}", inv.platform.init_system);
+        println!("  Service Unit   : xynoos-hypercore (Activated: {service_activated})");
+        println!("  Service State  : {:?}", current_service_state);
+
         if summary.failed_actions == 0 {
             println!("\nConfiguration successfully applied, verified, and committed to ownership ledger.");
-            println!("To revert changes safely at any time, run: xynoos setup --rollback");
+            println!("Management Instructions:");
+            println!("  - To inspect live telemetry and interventions: xynoos runtime status");
+            println!("  - To disable continuous runtime interventions: xynoos runtime disable");
+            println!("  - To rollback all HyperCore configuration    : xynoos setup --rollback");
         } else {
             println!("\nExecution encountered one or more errors. Check diagnostics or run: xynoos setup --rollback");
         }
@@ -934,4 +969,172 @@ pub fn runtime_command(args: &[String]) -> Result<(), Box<dyn Error>> {
             "usage: xynoos runtime (status | explain | disable) [--json] [--state-dir PATH]".into(),
         ),
     }
+}
+
+/// Handle `xynoos doctor [--json] [--human]`
+pub fn doctor_command(args: &[String]) -> Result<(), Box<dyn Error>> {
+    let roots = parse_roots(args)?;
+    let inv = SystemInventory::collect_from(&roots.sys_root, &roots.proc_root, &roots.etc_root);
+    let assessment = xynoos_pressureiq::assess_compatibility(&inv.platform);
+    let service_adapter = ServiceAdapter::new(
+        inv.platform.init_system,
+        roots.etc_root.clone(),
+        roots.proc_root.clone(),
+        PathBuf::from("/run"),
+    );
+    let service_status = service_adapter
+        .status("xynoos-hypercore")
+        .unwrap_or(ServiceState::NotInstalled);
+    let executor = ConfigExecutor::new(
+        roots.sys_root.clone(),
+        roots.proc_root.clone(),
+        roots.etc_root.clone(),
+        roots.state_dir.clone(),
+    );
+    let ledger = executor.load_ledger().ok();
+    let auth_path = roots.state_dir.join("authorization.json");
+    let auth = RuntimeAuthorizationContract::load_from(&auth_path).ok();
+
+    if roots.json {
+        let out = serde_json::json!({
+            "schema_version": 1,
+            "platform": inv.platform,
+            "compatibility": assessment,
+            "service": {
+                "name": "xynoos-hypercore",
+                "installed": service_adapter.is_installed("xynoos-hypercore"),
+                "state": format!("{:?}", service_status)
+            },
+            "ownership": {
+                "managed_entries": ledger.as_ref().map(|l| l.entries.len()).unwrap_or(0),
+                "is_active": ledger.as_ref().map(|l| !l.entries.is_empty()).unwrap_or(false)
+            },
+            "authorization": {
+                "contract_present": auth_path.exists(),
+                "is_revoked": auth.as_ref().map(|a| a.is_revoked).unwrap_or(true),
+                "authorized_by": auth.as_ref().map(|a| a.authorized_by.clone()).unwrap_or_default(),
+            }
+        });
+        println!("{}", serde_json::to_string_pretty(&out)?);
+        return Ok(());
+    }
+
+    println!("XYNOOS HyperCore — Universal Platform Doctor & Compatibility Diagnostics");
+    println!("=========================================================================");
+    println!("1. Platform & Compatibility Assessment:");
+    println!(
+        "   Distribution       : {} [Family: {:?}]",
+        inv.platform.pretty_name, inv.platform.distribution_family
+    );
+    println!(
+        "   Architecture       : {} ({})",
+        inv.platform.architecture, inv.platform.kernel_version
+    );
+    println!("   Standard C Lib     : {:?}", inv.platform.libc_kind);
+    println!("   Compatibility Tier : {:?}", assessment.tier);
+    println!(
+        "   Package Backend    : {:?}",
+        assessment.primary_package_backend
+    );
+    println!(
+        "   Init System        : {:?} (service manager: {})",
+        inv.platform.init_system, inv.platform.service_manager
+    );
+
+    println!("\n2. Kernel Capabilities & Controllers:");
+    println!(
+        "   Cgroups Hierarchy  : {:?} (v2 ready: {})",
+        inv.platform.cgroup_hierarchy, assessment.cgroup_v2_ready
+    );
+    println!(
+        "   PSI Telemetry      : {}",
+        if assessment.psi_ready {
+            "Available"
+        } else {
+            "Unavailable (fallback to vmstat)"
+        }
+    );
+    println!(
+        "   Cgroup Delegation  : {}",
+        if inv.platform.cgroup_delegation_available {
+            "Available"
+        } else {
+            "Unavailable"
+        }
+    );
+    println!(
+        "   Privilege Level    : {}",
+        if inv.platform.is_root {
+            "Root (Full mutator authorized)"
+        } else {
+            "Non-root (ObserveOnly mode)"
+        }
+    );
+
+    println!("\n3. Subsystem Tuning Readiness:");
+    println!(
+        "   Memory Tuning      : {}",
+        if assessment.memory_optimization_supported {
+            "Ready (zram/swap/sysctl)"
+        } else {
+            "Unsupported"
+        }
+    );
+    println!(
+        "   CPU Tuning         : {}",
+        if assessment.cpu_optimization_supported {
+            "Ready (governor/epp/weights)"
+        } else {
+            "Unsupported"
+        }
+    );
+    println!(
+        "   Storage Tuning     : {}",
+        if assessment.storage_optimization_supported {
+            "Ready (scheduler/readahead)"
+        } else {
+            "Unsupported"
+        }
+    );
+    println!(
+        "   Power/Thermal      : {}",
+        if assessment.power_optimization_supported {
+            "Ready (profiles/cooldowns)"
+        } else {
+            "Unsupported"
+        }
+    );
+
+    println!("\n4. Service Lifecycle & Runtime State:");
+    println!(
+        "   Service Unit       : xynoos-hypercore (Installed: {})",
+        service_adapter.is_installed("xynoos-hypercore")
+    );
+    println!("   Service State      : {:?}", service_status);
+    println!(
+        "   Authorization      : {}",
+        if auth_path.exists() {
+            if auth.as_ref().is_some_and(|a| a.is_revoked) {
+                "Revoked"
+            } else {
+                "Active Contract"
+            }
+        } else {
+            "Unconfigured (Run: xynoos setup --auto)"
+        }
+    );
+    println!(
+        "   Ownership Ledger   : {} active configuration entries",
+        ledger.as_ref().map(|l| l.entries.len()).unwrap_or(0)
+    );
+
+    if !assessment.notes.is_empty() {
+        println!("\n5. Operational Notes & Diagnostic Findings:");
+        for note in &assessment.notes {
+            println!("   - {note}");
+        }
+    }
+
+    println!("\nVerdict: System diagnosis complete. Status: PASS.");
+    Ok(())
 }

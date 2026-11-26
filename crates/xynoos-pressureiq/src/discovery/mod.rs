@@ -23,8 +23,9 @@ pub use plan::{
     OptimizationPlan, ProposedAction, ProposedActionType, Subsystem, PLAN_SCHEMA_VERSION,
 };
 pub use platform::{
-    discover_platform, CgroupHierarchy, ContainerEnvironment, DistributionFamily, InitSystem,
-    PlatformInventory, VirtualizationEnvironment,
+    assess_compatibility, discover_platform, CgroupHierarchy, CompatibilityTier,
+    ContainerEnvironment, DistributionFamily, InitSystem, LibcKind, PackageBackendKind,
+    PlatformCompatibilityAssessment, PlatformInventory, VirtualizationEnvironment,
 };
 pub use power::{discover_power, PowerDaemons, PowerInventory, ServiceState, ThermalZoneInfo};
 pub use storage::{discover_storage, BlockDeviceInfo, StorageInventory, StorageMediaType};
