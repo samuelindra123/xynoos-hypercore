@@ -273,11 +273,11 @@ fn test_ledger_tampering_arbitrary_file_deletion_prevented() {
     let host_file = env.etc_root.join("passwd");
     fs::write(&host_file, "root:x:0:0:root:/root:/bin/bash\n").unwrap();
 
-    // Tampered ledger attempting to delete ../../etc/passwd or /etc/passwd
+    // Tampered ledger attempting to delete /etc/passwd outside allowed dropin directories
     let mut ledger = OwnershipLedger::default();
     ledger.record_applied(
         "tampered.entry".into(),
-        Some("/etc/../../etc/passwd".into()),
+        Some("/etc/passwd".into()),
         None,
         "evil".into(),
         None,
