@@ -52,12 +52,14 @@ fn test_daemon_pid_lock_symlink_attack_rejected() {
 
 #[test]
 fn test_daemon_reverts_active_interventions_on_shutdown() {
-    let mut config = DaemonConfig::default();
-    config.mode = DaemonMode::ObserveOnly;
-    config.interval_ms = 100;
-    config.pid_file = None;
-    config.journal_file = None;
-    config.auth_file = None;
+    let config = DaemonConfig {
+        mode: DaemonMode::ObserveOnly,
+        interval_ms: 100,
+        pid_file: None,
+        journal_file: None,
+        auth_file: None,
+        ..Default::default()
+    };
 
     let mut daemon = AuraDaemon::new(config).unwrap();
 
