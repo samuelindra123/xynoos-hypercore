@@ -19,14 +19,16 @@ fn make_temp_dir(tag: &str) -> std::path::PathBuf {
 
 #[test]
 fn test_platform_compatibility_assessment_debian_systemd() {
-    let mut inv = PlatformInventory::default();
-    inv.distribution_id = "debian".into();
-    inv.distribution_family = DistributionFamily::Debian;
-    inv.init_system = InitSystem::Systemd;
-    inv.cgroup_hierarchy = CgroupHierarchy::V2Unified;
-    inv.psi_available = true;
-    inv.is_root = true;
-    inv.libc_kind = LibcKind::Glibc;
+    let inv = PlatformInventory {
+        distribution_id: "debian".into(),
+        distribution_family: DistributionFamily::Debian,
+        init_system: InitSystem::Systemd,
+        cgroup_hierarchy: CgroupHierarchy::V2Unified,
+        psi_available: true,
+        is_root: true,
+        libc_kind: LibcKind::Glibc,
+        ..Default::default()
+    };
 
     let assessment = assess_compatibility(&inv);
     assert_eq!(assessment.tier, CompatibilityTier::SupportedAndVerified);
@@ -42,14 +44,16 @@ fn test_platform_compatibility_assessment_debian_systemd() {
 
 #[test]
 fn test_platform_compatibility_assessment_alpine_musl() {
-    let mut inv = PlatformInventory::default();
-    inv.distribution_id = "alpine".into();
-    inv.distribution_family = DistributionFamily::Alpine;
-    inv.init_system = InitSystem::OpenRC;
-    inv.cgroup_hierarchy = CgroupHierarchy::V2Unified;
-    inv.psi_available = true;
-    inv.is_root = false;
-    inv.libc_kind = LibcKind::Musl;
+    let inv = PlatformInventory {
+        distribution_id: "alpine".into(),
+        distribution_family: DistributionFamily::Alpine,
+        init_system: InitSystem::OpenRC,
+        cgroup_hierarchy: CgroupHierarchy::V2Unified,
+        psi_available: true,
+        is_root: false,
+        libc_kind: LibcKind::Musl,
+        ..Default::default()
+    };
 
     let assessment = assess_compatibility(&inv);
     assert_eq!(assessment.tier, CompatibilityTier::Experimental);
@@ -129,8 +133,10 @@ fn test_service_adapter_openrc_lifecycle_in_fixture() {
 
 #[test]
 fn test_wildcard_scope_enforcement_and_traversal_rejection() {
-    let mut auth = RuntimeAuthorizationContract::default();
-    auth.allowed_target_identities = vec!["xynoos/*".into(), "user.slice/*".into()];
+    let mut auth = RuntimeAuthorizationContract {
+        allowed_target_identities: vec!["xynoos/*".into(), "user.slice/*".into()],
+        ..Default::default()
+    };
 
     // Permitted valid targets
     assert!(auth.is_target_allowed("xynoos/session-1"));
