@@ -5,6 +5,7 @@ pub mod action;
 pub mod authorization;
 pub mod cpu_planner;
 pub mod executor;
+pub mod fs_safety;
 pub mod gpu_planner;
 pub mod journal;
 pub mod ledger;

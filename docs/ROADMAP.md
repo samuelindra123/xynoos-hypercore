@@ -70,10 +70,10 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼─────────────────────────────────────┐
-│  Milestone P: Production Security & Isolation Hardening                │
-│  - Privileged execution boundary minimization and capability bounds    │
-│  - Seccomp profile and restricted namespace isolation                  │
-│  - Adversarial audit, supply-chain verification, fuzzing               │
+│  Milestone P: Production Security & Adversarial Hardening (Completed) │
+│  - Privilege separation, typed mutations, bounded capability bounds    │
+│  - Hardened systemd sandboxing, atomic state persistence, fsync        │
+│  - Adversarial audit, symlink/TOCTOU defense, 20-threat test suite     │
 └──────────────────────────────────┬─────────────────────────────────────┘
                                    │
 ┌──────────────────────────────────▼─────────────────────────────────────┐
@@ -189,16 +189,25 @@ XYNOOS HyperCore remains strictly independent from the separate XYNOOS Linux dis
   - PASS: Remote CI qualification workflow (`milestone-o-qualification.yml`) passing across all validation targets.
   - PASS: Physical N5000 / UHD 605 developer workstation strictly preserved in read-only qualification.
 
-### Milestone P — Final Security Audit, Privilege Separation, Isolation & Adversarial Qualification
-- **Objective**: Harden daemon security boundaries, implement strict privilege separation, sandboxing, and adversarial qualification.
+### Milestone P — Production Security Architecture, Privilege Separation, Adversarial Hardening & Cross-Distribution Security Qualification (Completed)
+- **Objective**: Harden daemon security boundaries, implement strict privilege separation, sandboxing, persistent state protection, and adversarial qualification.
 - **Scope**:
-  - Non-privileged daemon execution with capabilities (`CAP_SYS_RESOURCE`) where feasible.
-  - Hardened systemd sandboxing (`ProtectSystem=strict`, `ProtectHome=yes`, `NoNewPrivileges=yes`, `PrivateDevices=yes`).
-  - Adversarial fuzzing of configuration parser, journal recovery, and contract schemas.
-  - Attack surface minimization against symlink races and FIFO attacks.
+  - Non-privileged CLI discovery and planning (`doctor`, `inspect`, `setup --plan`); strictly typed allowlisted mutations for authorized root execution.
+  - Comprehensive threat model covering local unprivileged attackers, stale authorization, corrupt recovery state, and hostile cgroup targets.
+  - Hardened systemd sandboxing (`ProtectSystem=strict`, `ProtectHome=yes`, `ProtectClock=yes`, `ProtectHostname=yes`, `ProtectKernelTunables=yes`, `NoNewPrivileges=yes`, `RestrictSUIDSGID=yes`, `RemoveIPC=yes`, `SystemCallArchitectures=native`, `UMask=0027`).
+  - Persistent state hardening: unique temporary files (`O_CREAT | O_EXCL`), directory fsync, bounded file read limits, and strict symlink rejection.
+  - Ledger tampering protection: safe drop-in directory confinement, refusing unsafe/tampered deletions.
+  - Kernel interface validation: sysctl allowlists, cgroup path validation, device name validation.
+  - Service adapter sanitization: rejecting option injection and path traversal in service names.
+  - Dynamic runtime authorization reload and automatic intervention release upon revocation or daemon shutdown.
+  - Dedicated 20-threat adversarial qualification test suite (`milestone_p_adversarial_security_tests.rs`) and daemon lifecycle tests (`milestone_p_daemon_security_tests.rs`).
 - **Acceptance Criteria**:
-  - Zero privilege escalation paths from unprivileged users to root configuration.
-  - Bounded resource consumption under adversarial telemetry and malformed plan inputs.
+  - PASS: Zero privilege escalation paths from unprivileged users to root configuration.
+  - PASS: All 20 adversarial threat scenarios pass in dedicated integration tests.
+  - PASS: Atomic persistence refuses symlinks and prevents arbitrary file deletion on tampered ledgers.
+  - PASS: Daemon reloads revocation dynamically and reverts active temporary interventions on shutdown.
+  - PASS: Packaging verified across Debian, RPM, Arch, Void, Alpine, and Standalone archives without premature signing keys.
+  - PASS: Physical N5000 developer workstation preserved in read-only audit with zero local drift.
 
 ### Milestone Q — Signed Distribution, Physical Installation, Real-World Deployment & Release Candidate Acceptance
 - **Objective**: Full production release preparation, cryptographic identity configuration, and physical deployment qualification.

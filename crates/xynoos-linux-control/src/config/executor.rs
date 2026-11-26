@@ -4,6 +4,10 @@
 use super::{
     action::{ActionClassification, ConfigurationAction, TypedMutation},
     authorization::SetupAuthorization,
+    fs_safety::{
+        atomic_write_file, sanitize_dropin_target_file, validate_cgroup_path, validate_device_name,
+        validate_sysctl_key, verify_not_symlink,
+    },
     journal::{ConfigJournal, ConfigJournalItem, ConfigTxPhase},
     ledger::{IntegrityStatus, OwnershipLedger},
 };
@@ -286,12 +290,16 @@ impl ConfigExecutor {
                 target_value,
                 original_value,
             } => {
+                validate_sysctl_key(key).map_err(|e| format!("Invalid sysctl key: {e}"))?;
                 let sysctl_rel = format!("sys/{}", key.replace('.', "/"));
                 let sysctl_path = self.proc_root.join(&sysctl_rel);
 
                 if let Some(parent) = sysctl_path.parent() {
                     let _ = fs::create_dir_all(parent);
                 }
+
+                verify_not_symlink(&sysctl_path)
+                    .map_err(|e| format!("Security violation for sysctl {key}: {e}"))?;
 
                 // Write runtime sysctl
                 let val_str = target_value.to_string();
@@ -338,24 +346,13 @@ impl ConfigExecutor {
                 key,
                 target_value,
             } => {
-                let dropin_dir = self.etc_root.join("sysctl.d");
-                fs::create_dir_all(&dropin_dir)
-                    .map_err(|e| format!("Failed creating sysctl.d: {e}"))?;
-
-                let dropin_path = self.sanitize_path(&dropin_dir, dropin_filename)?;
+                let dropin_path = sanitize_dropin_target_file(
+                    &format!("sysctl.d/{dropin_filename}"),
+                    &self.etc_root,
+                )?;
                 let bytes = content.as_bytes();
 
-                // Atomic write via temp file
-                let tmp_path = dropin_path.with_extension("tmp");
-                {
-                    let mut f = File::create(&tmp_path)
-                        .map_err(|e| format!("Failed creating temp dropin: {e}"))?;
-                    f.write_all(bytes)
-                        .map_err(|e| format!("Failed writing temp dropin: {e}"))?;
-                    f.sync_all()
-                        .map_err(|e| format!("Failed syncing temp dropin: {e}"))?;
-                }
-                fs::rename(&tmp_path, &dropin_path)
+                atomic_write_file(&dropin_path, bytes, 0o644)
                     .map_err(|e| format!("Failed installing dropin {dropin_filename}: {e}"))?;
 
                 let rel_path = format!("etc/sysctl.d/{dropin_filename}");
@@ -897,15 +894,14 @@ impl ConfigExecutor {
                         "Cgroup CPU weight {weight} out of bounds (1..=10000)"
                     ));
                 }
-                let cg_clean = cgroup_path.trim_start_matches('/');
-                if cg_clean.contains("..") {
-                    return Err(format!("Unsafe cgroup path: {cgroup_path}"));
-                }
+                let cg_clean = validate_cgroup_path(cgroup_path)
+                    .map_err(|e| format!("Invalid cgroup path: {e}"))?;
                 let w_path = self
                     .sys_root
                     .join("fs/cgroup")
-                    .join(cg_clean)
+                    .join(&cg_clean)
                     .join("cpu.weight");
+                verify_not_symlink(&w_path).map_err(|e| format!("Security violation: {e}"))?;
                 if w_path.exists() {
                     fs::write(&w_path, weight.to_string().as_bytes())
                         .map_err(|e| format!("Failed writing cpu.weight: {e}"))?;
@@ -1107,20 +1103,22 @@ impl ConfigExecutor {
                 }
             }
 
-            // Remove managed drop-in file if present
+            // Remove managed drop-in file if present with strict path sanitization
             if let Some(target_file) = &entry.target_file {
-                let rel_path = target_file
-                    .strip_prefix("/etc/")
-                    .or_else(|| target_file.strip_prefix("etc/"))
-                    .or_else(|| target_file.strip_prefix('/'))
-                    .unwrap_or(target_file);
-                let full_path = self.etc_root.join(rel_path);
-                if full_path.exists() {
-                    if let Err(e) = fs::remove_file(&full_path) {
-                        failed.push(format!("{}: {e}", full_path.display()));
+                match sanitize_dropin_target_file(target_file, &self.etc_root) {
+                    Ok(full_path) => {
+                        if full_path.exists() {
+                            if let Err(e) = fs::remove_file(&full_path) {
+                                failed.push(format!("{}: {e}", full_path.display()));
+                                continue;
+                            }
+                            removed_files.push(full_path.display().to_string());
+                        }
+                    }
+                    Err(err) => {
+                        skipped_tampered.push(format!("{key}: {err}; refusing unsafe deletion"));
                         continue;
                     }
-                    removed_files.push(full_path.display().to_string());
                 }
             }
 

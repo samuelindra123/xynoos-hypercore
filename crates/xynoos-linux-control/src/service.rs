@@ -56,8 +56,30 @@ impl ServiceAdapter {
         self.proc_root.join(pid.to_string()).is_dir()
     }
 
+    /// Validate service name against path traversal, option injection, and control characters.
+    pub fn validate_service_name(name: &str) -> io::Result<()> {
+        if name.is_empty()
+            || name.starts_with('-')
+            || name.contains('/')
+            || name.contains("..")
+            || name.contains('\0')
+            || !name
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+        {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("Invalid or unsafe service name: {name}"),
+            ));
+        }
+        Ok(())
+    }
+
     /// Check if unit or service definition is installed.
     pub fn is_installed(&self, service_name: &str) -> bool {
+        if Self::validate_service_name(service_name).is_err() {
+            return false;
+        }
         match self.init_system {
             InitSystem::Systemd => {
                 self.etc_root
@@ -83,6 +105,7 @@ impl ServiceAdapter {
 
     /// Query state of service.
     pub fn status(&self, service_name: &str) -> io::Result<ServiceState> {
+        Self::validate_service_name(service_name)?;
         if !self.is_installed(service_name) {
             return Ok(ServiceState::NotInstalled);
         }
@@ -173,6 +196,7 @@ impl ServiceAdapter {
 
     /// Enable service for automatic boot start.
     pub fn enable(&self, service_name: &str) -> io::Result<()> {
+        Self::validate_service_name(service_name)?;
         let _ = service_name;
         match self.init_system {
             InitSystem::Systemd => {
@@ -240,6 +264,7 @@ impl ServiceAdapter {
 
     /// Disable service from starting on boot.
     pub fn disable(&self, service_name: &str) -> io::Result<()> {
+        Self::validate_service_name(service_name)?;
         let _ = service_name;
         match self.init_system {
             InitSystem::Systemd => {
@@ -290,6 +315,7 @@ impl ServiceAdapter {
 
     /// Start service if installed and not already running.
     pub fn start(&self, service_name: &str) -> io::Result<()> {
+        Self::validate_service_name(service_name)?;
         let _ = service_name;
         #[cfg(not(feature = "debian-package"))]
         match self.init_system {
@@ -326,6 +352,7 @@ impl ServiceAdapter {
 
     /// Stop service.
     pub fn stop(&self, service_name: &str) -> io::Result<()> {
+        Self::validate_service_name(service_name)?;
         let _ = service_name;
         #[cfg(not(feature = "debian-package"))]
         match self.init_system {
