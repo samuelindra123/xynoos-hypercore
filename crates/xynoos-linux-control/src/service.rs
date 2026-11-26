@@ -1,11 +1,12 @@
 //! Unified Init System Lifecycle Adapters (systemd, SysVinit, OpenRC, runit).
 #![forbid(unsafe_code)]
 
+#[cfg(not(feature = "debian-package"))]
+use std::{fs, process::Command};
 use std::{
-    fs::{self, File},
+    fs::File,
     io::{self, Read},
     path::{Path, PathBuf},
-    process::Command,
 };
 use xynoos_pressureiq::InitSystem;
 
@@ -101,6 +102,7 @@ impl ServiceAdapter {
             }
         }
 
+        #[cfg(not(feature = "debian-package"))]
         match self.init_system {
             InitSystem::Systemd => {
                 if Path::new("/run/systemd/system").exists() {
@@ -164,10 +166,21 @@ impl ServiceAdapter {
             }
             _ => Ok(ServiceState::Unknown("Unsupported init system".into())),
         }
+
+        #[cfg(feature = "debian-package")]
+        Ok(ServiceState::Inactive)
     }
 
     /// Enable service for automatic boot start.
     pub fn enable(&self, service_name: &str) -> io::Result<()> {
+        let _ = service_name;
+        #[cfg(feature = "debian-package")]
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Managed by APT/dpkg; service enable is handled by systemd/SysVinit packaging",
+        ));
+
+        #[cfg(not(feature = "debian-package"))]
         match self.init_system {
             InitSystem::Systemd => {
                 let wants_dir = self.etc_root.join("systemd/system/multi-user.target.wants");
@@ -231,6 +244,14 @@ impl ServiceAdapter {
 
     /// Disable service from starting on boot.
     pub fn disable(&self, service_name: &str) -> io::Result<()> {
+        let _ = service_name;
+        #[cfg(feature = "debian-package")]
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Managed by APT/dpkg; service disable is handled by systemd/SysVinit packaging",
+        ));
+
+        #[cfg(not(feature = "debian-package"))]
         match self.init_system {
             InitSystem::Systemd => {
                 let symlink_path = self
@@ -277,6 +298,14 @@ impl ServiceAdapter {
 
     /// Start service if installed and not already running.
     pub fn start(&self, service_name: &str) -> io::Result<()> {
+        let _ = service_name;
+        #[cfg(feature = "debian-package")]
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Managed by APT/dpkg; service start is handled by systemd/SysVinit packaging",
+        ));
+
+        #[cfg(not(feature = "debian-package"))]
         match self.init_system {
             InitSystem::Systemd => {
                 let _ = Command::new("systemctl")
@@ -309,6 +338,14 @@ impl ServiceAdapter {
 
     /// Stop service.
     pub fn stop(&self, service_name: &str) -> io::Result<()> {
+        let _ = service_name;
+        #[cfg(feature = "debian-package")]
+        return Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "Managed by APT/dpkg; service stop is handled by systemd/SysVinit packaging",
+        ));
+
+        #[cfg(not(feature = "debian-package"))]
         match self.init_system {
             InitSystem::Systemd => {
                 let _ = Command::new("systemctl")
