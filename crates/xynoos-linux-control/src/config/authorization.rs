@@ -285,6 +285,6 @@ impl RuntimeAuthorizationContract {
     pub fn save_to(&self, path: &Path, _now_ms: u64) -> io::Result<()> {
         let payload = serde_json::to_string_pretty(self)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-        atomic_write_file(path, payload.as_bytes(), 0o600)
+        atomic_write_file(path, payload.as_bytes(), 0o644)
     }
 }

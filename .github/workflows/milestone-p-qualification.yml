@@ -124,7 +124,7 @@ jobs:
 
           echo "=== Testing Emergency Revocation ==="
           sudo target/release/xynoos runtime disable --state-dir /var/lib/xynoos
-          python3 - << 'EOF'
+          sudo python3 - << 'EOF'
           import json
           auth = json.load(open("/var/lib/xynoos/authorization.json"))
           assert auth["is_revoked"] == True, "Contract was not marked revoked!"
