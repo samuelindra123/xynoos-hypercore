@@ -1,13 +1,9 @@
 //! Configuration ownership ledger for tracking HyperCore-managed settings and drop-ins.
 #![forbid(unsafe_code)]
 
+use super::fs_safety::{atomic_write_file, safe_read_bounded};
 use serde::{Deserialize, Serialize};
-use std::{
-    collections::BTreeMap,
-    fs::{self, File},
-    io::{self, Read, Write},
-    path::Path,
-};
+use std::{collections::BTreeMap, fs, io, path::Path};
 
 pub const LEDGER_SCHEMA_VERSION: u32 = 1;
 
@@ -83,37 +79,17 @@ impl OwnershipLedger {
         if !path.exists() {
             return Ok(Self::default());
         }
-        let mut file = File::open(path)?;
-        let mut buf = String::new();
-        file.read_to_string(&mut buf)?;
+        let buf = safe_read_bounded(path, 5 * 1024 * 1024)?;
         serde_json::from_str(&buf)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
     /// Save the ledger atomically using a temporary file and sync.
     pub fn save_to(&mut self, path: &Path, now_ms: u64) -> io::Result<()> {
-        if path.is_symlink() {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "Refusing to save ledger through a symlink",
-            ));
-        }
         self.updated_at_unix_ms = now_ms;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let temp_path = path.with_extension("tmp");
         let payload = serde_json::to_string_pretty(self)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-
-        {
-            let mut file = File::create(&temp_path)?;
-            file.write_all(payload.as_bytes())?;
-            file.sync_all()?;
-        }
-
-        fs::rename(&temp_path, path)?;
-        Ok(())
+        atomic_write_file(path, payload.as_bytes(), 0o644)
     }
 
     /// Check the integrity of a specific managed entry on the filesystem.
@@ -123,6 +99,9 @@ impl OwnershipLedger {
         root_prefix: &Path,
     ) -> IntegrityStatus {
         if let Some(target_file) = &entry.target_file {
+            if target_file.contains("..") || target_file.contains('\0') {
+                return IntegrityStatus::ModifiedExternally;
+            }
             let rel_path = target_file
                 .strip_prefix("/etc/")
                 .or_else(|| target_file.strip_prefix("etc/"))
@@ -130,7 +109,12 @@ impl OwnershipLedger {
                 .unwrap_or(target_file);
             let full_path = root_prefix.join(rel_path);
 
-            if !full_path.exists() {
+            // Refuse symlinks replacing managed configurations
+            if let Ok(meta) = fs::symlink_metadata(&full_path) {
+                if meta.file_type().is_symlink() {
+                    return IntegrityStatus::ModifiedExternally;
+                }
+            } else {
                 return IntegrityStatus::Missing;
             }
 

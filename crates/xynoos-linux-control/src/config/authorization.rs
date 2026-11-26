@@ -1,15 +1,16 @@
 //! Explicit authorization models separating unprivileged planning from privileged execution.
 #![forbid(unsafe_code)]
 
-use super::action::AuthorizationScope;
-use serde::{Deserialize, Serialize};
-use std::{
-    fs::{self, File},
-    io::{self, Read, Write},
-    path::Path,
+use super::{
+    action::AuthorizationScope,
+    fs_safety::{atomic_write_file, safe_read_bounded, validate_cgroup_path},
 };
+use serde::{Deserialize, Serialize};
+use std::{io, path::Path};
 
 pub const RUNTIME_AUTH_SCHEMA_VERSION: u32 = 1;
+pub const MAX_SETUP_AUTH_DURATION_MS: u64 = 3_600_000; // Max 1 hour for setup authorization tokens
+pub const MAX_RUNTIME_AUTH_DURATION_MS: u64 = 7 * 24 * 3600 * 1000; // Max 7 days for daemon contracts
 
 /// Cryptographically bound or explicit operator authorization token for setup.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,13 +32,18 @@ impl SetupAuthorization {
         now_ms: u64,
         validity_duration_ms: u64,
     ) -> Self {
+        let bounded_duration = if validity_duration_ms == 0 {
+            MAX_SETUP_AUTH_DURATION_MS // Default to 1 hour max window
+        } else {
+            validity_duration_ms.min(MAX_SETUP_AUTH_DURATION_MS)
+        };
         Self {
             authorized_by: authorized_by.into(),
             scope,
             plan_fingerprint: plan_fingerprint.into(),
             allowed_action_ids: None,
             created_at_unix_ms: now_ms,
-            expires_at_unix_ms: now_ms.saturating_add(validity_duration_ms),
+            expires_at_unix_ms: now_ms.saturating_add(bounded_duration),
         }
     }
 
@@ -54,6 +60,12 @@ impl SetupAuthorization {
         current_plan_fingerprint: &str,
         now_ms: u64,
     ) -> Result<(), &'static str> {
+        if self.plan_fingerprint.is_empty() || current_plan_fingerprint.is_empty() {
+            return Err("Plan fingerprint cannot be empty");
+        }
+        if now_ms < self.created_at_unix_ms {
+            return Err("Authorization token creation timestamp is in the future");
+        }
         if now_ms > self.expires_at_unix_ms {
             return Err("Authorization token has expired");
         }
@@ -144,6 +156,11 @@ impl RuntimeAuthorizationContract {
         now_ms: u64,
         validity_duration_ms: u64,
     ) -> Self {
+        let expires_at = if validity_duration_ms == 0 {
+            now_ms.saturating_add(MAX_RUNTIME_AUTH_DURATION_MS) // Default to bounded 7-day validity
+        } else {
+            now_ms.saturating_add(validity_duration_ms.min(MAX_RUNTIME_AUTH_DURATION_MS))
+        };
         Self {
             schema_version: RUNTIME_AUTH_SCHEMA_VERSION,
             authorized_by: authorized_by.into(),
@@ -167,11 +184,7 @@ impl RuntimeAuthorizationContract {
             revocation_reason: None,
             plan_fingerprint: plan_fingerprint.into(),
             created_at_unix_ms: now_ms,
-            expires_at_unix_ms: if validity_duration_ms == 0 {
-                u64::MAX
-            } else {
-                now_ms.saturating_add(validity_duration_ms)
-            },
+            expires_at_unix_ms: expires_at,
         }
     }
 
@@ -188,22 +201,34 @@ impl RuntimeAuthorizationContract {
         if self.is_revoked {
             return false;
         }
-        // Reject path traversal and root cgroup escape attempts
-        if target_identity.is_empty()
-            || target_identity.contains("..")
-            || target_identity == "/"
-            || target_identity == "/sys/fs/cgroup"
-        {
-            return false;
-        }
+        let validated_target = match validate_cgroup_path(target_identity) {
+            Ok(v) => v,
+            Err(_) => return false,
+        };
+
         self.allowed_target_identities.iter().any(|pattern| {
-            if pattern == "*" {
-                // Permitted for any non-root target within cgroups
-                !target_identity.is_empty() && target_identity != "/"
-            } else if pattern.ends_with('*') {
-                target_identity.starts_with(pattern.trim_end_matches('*'))
+            if pattern == "*" || pattern == "/sys/fs/cgroup/*" {
+                // Permitted for any non-root valid cgroup target
+                true
+            } else if let Some(prefix) = pattern.strip_suffix("/*") {
+                let clean_prefix = prefix
+                    .strip_prefix("/sys/fs/cgroup/")
+                    .unwrap_or(prefix)
+                    .trim_matches('/');
+                validated_target.starts_with(clean_prefix)
+                    && validated_target.len() > clean_prefix.len()
+            } else if let Some(prefix) = pattern.strip_suffix('*') {
+                let clean_prefix = prefix
+                    .strip_prefix("/sys/fs/cgroup/")
+                    .unwrap_or(prefix)
+                    .trim_matches('/');
+                validated_target.starts_with(clean_prefix)
             } else {
-                pattern == target_identity
+                let clean_pattern = pattern
+                    .strip_prefix("/sys/fs/cgroup/")
+                    .unwrap_or(pattern)
+                    .trim_matches('/');
+                clean_pattern == validated_target
             }
         })
     }
@@ -219,8 +244,14 @@ impl RuntimeAuthorizationContract {
         if self.is_revoked {
             return Err("Runtime authorization has been revoked");
         }
+        if now_ms < self.created_at_unix_ms {
+            return Err("Runtime authorization contract creation timestamp is in the future");
+        }
         if now_ms > self.expires_at_unix_ms {
             return Err("Runtime authorization contract has expired");
+        }
+        if !self.allowed_target_types.iter().any(|t| t == "cgroup_v2") {
+            return Err("Cgroup v2 target type is not permitted in authorized scopes");
         }
         if !self.is_control_allowed(control) {
             return Err("Proposed control is not permitted in authorized scope");
@@ -240,53 +271,20 @@ impl RuntimeAuthorizationContract {
         self.revocation_reason = Some(reason.to_string());
     }
 
-    /// Load the contract from disk if present.
+    /// Load the contract from disk if present with security and permission validation.
     pub fn load_from(path: &Path) -> io::Result<Self> {
         if !path.exists() {
             return Ok(Self::default());
         }
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            if let Ok(meta) = fs::metadata(path) {
-                // Reject world-writable contract files to prevent untrusted manipulation
-                if meta.permissions().mode() & 0o002 != 0 {
-                    return Err(io::Error::new(
-                        io::ErrorKind::PermissionDenied,
-                        "Insecure authorization contract file: world-writable",
-                    ));
-                }
-            }
-        }
-        let mut f = File::open(path)?;
-        let mut s = String::new();
-        f.read_to_string(&mut s)?;
-        serde_json::from_str(&s)
+        let content = safe_read_bounded(path, 1024 * 1024)?;
+        serde_json::from_str(&content)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
-    /// Save the contract to disk atomically.
+    /// Save the contract to disk atomically with fsync and safe permissions.
     pub fn save_to(&self, path: &Path, _now_ms: u64) -> io::Result<()> {
-        if path.is_symlink() {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "Refusing to save authorization through a symlink",
-            ));
-        }
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let temp_path = path.with_extension("tmp");
         let payload = serde_json::to_string_pretty(self)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-
-        {
-            let mut file = File::create(&temp_path)?;
-            file.write_all(payload.as_bytes())?;
-            file.sync_all()?;
-        }
-
-        fs::rename(&temp_path, path)?;
-        Ok(())
+        atomic_write_file(path, payload.as_bytes(), 0o644)
     }
 }

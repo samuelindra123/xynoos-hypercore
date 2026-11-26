@@ -1,0 +1,137 @@
+name: Milestone P Production Security Architecture & Adversarial Hardening Qualification
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main, "feat/*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: qualification-p-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  security-qualification:
+    name: Production Security, Privilege Separation & Adversarial Hardening
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Code Formatting Check
+        run: cargo fmt --all -- --check
+
+      - name: Strict Clippy Lints
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Build Workspace Artifacts (Release Mode)
+        run: cargo build --workspace --all-targets --release --locked
+
+      - name: Execute Workspace Test Suite
+        run: cargo test --workspace --all-targets --locked
+
+      - name: Execute Milestone P Adversarial Security Test Suite
+        run: |
+          echo "=== Milestone P Adversarial Security Test Suite ==="
+          cargo test -p xynoos-linux-control --test milestone_p_adversarial_security_tests -- --nocapture
+
+      - name: Execute Milestone P Daemon Security Test Suite
+        run: |
+          echo "=== Milestone P Daemon Security Test Suite ==="
+          cargo test -p xynoos-aura --test milestone_p_daemon_security_tests -- --nocapture
+
+      - name: Systemd Service Sandboxing & Hardening Verification
+        run: |
+          echo "=== Systemd Service Hardening Invariant Inspection ==="
+          UNIT="systemd/xynoos-hypercore.service"
+          test -f "$UNIT"
+
+          # Verify mandatory security directives
+          grep -q "^ProtectSystem=strict" "$UNIT"
+          grep -q "^ProtectHome=yes" "$UNIT"
+          grep -q "^PrivateTmp=yes" "$UNIT"
+          grep -q "^ProtectClock=yes" "$UNIT"
+          grep -q "^ProtectHostname=yes" "$UNIT"
+          grep -q "^ProtectKernelTunables=yes" "$UNIT"
+          grep -q "^ProtectKernelModules=yes" "$UNIT"
+          grep -q "^NoNewPrivileges=yes" "$UNIT"
+          grep -q "^RestrictSUIDSGID=yes" "$UNIT"
+          grep -q "^RemoveIPC=yes" "$UNIT"
+          grep -q "^SystemCallArchitectures=native" "$UNIT"
+          grep -q "^CapabilityBoundingSet=" "$UNIT"
+          grep -q "^AmbientCapabilities=" "$UNIT"
+          grep -q "^RestrictAddressFamilies=AF_UNIX AF_NETLINK" "$UNIT"
+          grep -q "^LockPersonality=yes" "$UNIT"
+          grep -q "^RestrictRealtime=yes" "$UNIT"
+          grep -q "^UMask=0027" "$UNIT"
+          echo "All systemd sandboxing invariants verified successfully!"
+
+      - name: Multi-Distribution Packaging Security Verification
+        run: |
+          echo "=== Packaging Privilege & Security Audit ==="
+          # 1. RPM spec
+          test -f packaging/rpm/xynoos-hypercore.spec
+          grep -q "Name:.*xynoos-hypercore" packaging/rpm/xynoos-hypercore.spec
+          grep -q "%dir %attr(0755, root, root) %{_sharedstatedir}/xynoos" packaging/rpm/xynoos-hypercore.spec
+
+          # 2. Arch PKGBUILD
+          test -f packaging/arch/PKGBUILD
+          bash -n packaging/arch/PKGBUILD
+          bash -n packaging/arch/xynoos-hypercore.install
+
+          # 3. Void template & runit
+          test -f packaging/void/template
+          bash -n packaging/void/template
+          sh -n packaging/void/runit/xynoos-hypercore/run
+          sh -n packaging/void/runit/xynoos-hypercore/finish
+
+          # 4. Alpine APKBUILD & OpenRC
+          test -f packaging/alpine/APKBUILD
+          sh -n packaging/alpine/APKBUILD
+          sh -n packaging/alpine/xynoos-hypercore.initd
+          test -f packaging/alpine/xynoos-hypercore.confd
+
+          # 5. Standalone installer
+          test -f packaging/standalone/install.sh
+          sh -n packaging/standalone/install.sh
+          grep -q "Never run unverified scripts piped directly" packaging/standalone/install.sh
+          echo "Packaging security audit passed!"
+
+      - name: Privilege Separation & Adversarial Scenario Execution (CLI)
+        run: |
+          echo "=== Testing Unprivileged Read-Only Diagnostics ==="
+          target/release/xynoos doctor
+          target/release/xynoos setup --plan
+
+          echo "=== Testing Fail-Closed Setup Without Authorization ==="
+          python3 - << 'EOF'
+          import subprocess, sys
+          res = subprocess.run(["target/release/xynoos", "setup", "--apply"], capture_output=True, text=True)
+          assert res.returncode != 0, "setup --apply succeeded without authorization token!"
+          print("Un-authorized setup --apply safely rejected:", res.stderr.strip())
+          EOF
+
+          echo "=== Testing Scoped Setup Authorization Lifecycle ==="
+          sudo target/release/xynoos setup --auto --authorized --state-dir /var/lib/xynoos
+          test -f /var/lib/xynoos/authorization.json
+          test -f /var/lib/xynoos/owned-configs.json
+
+          echo "=== Testing Emergency Revocation ==="
+          sudo target/release/xynoos runtime disable --state-dir /var/lib/xynoos
+          sudo python3 - << 'EOF'
+          import json
+          auth = json.load(open("/var/lib/xynoos/authorization.json"))
+          assert auth["is_revoked"] == True, "Contract was not marked revoked!"
+          print("Revocation correctly persisted:", auth["revocation_reason"])
+          EOF
+
+          echo "=== Testing Rollback & Drop-in Cleanup ==="
+          sudo target/release/xynoos setup --rollback --state-dir /var/lib/xynoos
+          sudo target/release/xynoos setup --status --state-dir /var/lib/xynoos
+          echo "Adversarial lifecycle verification complete!"

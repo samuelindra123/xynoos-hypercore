@@ -32,7 +32,7 @@ do_start() {
     mkdir -p /run/xynoos
     chmod 0755 /run/xynoos
     mkdir -p /var/lib/xynoos
-    chmod 0700 /var/lib/xynoos
+    chmod 0755 /var/lib/xynoos
 
     start-stop-daemon --start --quiet --pidfile $PIDFILE --exec $DAEMON --test > /dev/null \
         || return 1

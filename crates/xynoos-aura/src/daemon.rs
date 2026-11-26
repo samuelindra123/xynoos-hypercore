@@ -175,6 +175,8 @@ pub struct DaemonConfig {
     pub max_backoff_ms: u64,
     pub pid_file: Option<PathBuf>,
     pub journal_file: Option<PathBuf>,
+    #[serde(default = "default_auth_file")]
+    pub auth_file: Option<PathBuf>,
     pub max_rss_bytes: usize,
     pub default_protection_bytes: u64,
     pub default_throttle_bytes: u64,
@@ -190,6 +192,10 @@ fn default_config_schema() -> u32 {
 
 fn default_adaptive_polling() -> bool {
     true
+}
+
+fn default_auth_file() -> Option<PathBuf> {
+    Some(PathBuf::from("/var/lib/xynoos/authorization.json"))
 }
 
 impl DaemonConfig {
@@ -233,6 +239,9 @@ impl DaemonConfig {
         }
         if let Some(ref j) = self.journal_file {
             validate_safe_path("journal_file", j)?;
+        }
+        if let Some(ref a) = self.auth_file {
+            validate_safe_path("auth_file", a)?;
         }
 
         Ok(())
@@ -289,6 +298,7 @@ impl Default for DaemonConfig {
             max_backoff_ms: 60000,
             pid_file: Some(PathBuf::from("/run/xynoos/hypercore.pid")),
             journal_file: Some(PathBuf::from("/run/xynoos/hypercore_journal.json")),
+            auth_file: default_auth_file(),
             max_rss_bytes: 64 * 1024 * 1024, // 64 MiB hard limit
             default_protection_bytes: 16 * 1024 * 1024,
             default_throttle_bytes: 64 * 1024 * 1024,
@@ -311,6 +321,7 @@ struct PidLockRecord {
 }
 
 /// Mekanisme penguncian PID instans tunggal yang tahan terhadap PID reuse dan race condition.
+#[derive(Debug)]
 pub struct PidLock {
     path: PathBuf,
 }
@@ -368,6 +379,15 @@ impl PidLock {
     }
 
     pub fn acquire(path: PathBuf) -> Result<Self, String> {
+        if let Ok(meta) = fs::symlink_metadata(&path) {
+            if meta.file_type().is_symlink() {
+                return Err(format!(
+                    "Refusing to acquire PID lock through existing symlink: {}",
+                    path.display()
+                ));
+            }
+        }
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)
                 .map_err(|e| format!("Gagal membuat direktori lock {}: {}", parent.display(), e))?;
@@ -404,7 +424,15 @@ impl PidLock {
                 Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {
                     // Check if existing lock belongs to a live non-reused process
                     Self::is_lock_holder_alive(&path)?;
-                    // Stale lock: remove and retry atomic creation
+                    // Stale lock: check not a symlink before removal
+                    if let Ok(meta) = fs::symlink_metadata(&path) {
+                        if meta.file_type().is_symlink() {
+                            return Err(format!(
+                                "Stale PID lock target is a symlink: {}",
+                                path.display()
+                            ));
+                        }
+                    }
                     let _ = fs::remove_file(&path);
                 }
                 Err(e) => {
@@ -426,7 +454,11 @@ impl PidLock {
 
 impl Drop for PidLock {
     fn drop(&mut self) {
-        let _ = fs::remove_file(&self.path);
+        if let Ok(meta) = fs::symlink_metadata(&self.path) {
+            if !meta.file_type().is_symlink() {
+                let _ = fs::remove_file(&self.path);
+            }
+        }
     }
 }
 
@@ -538,7 +570,12 @@ impl AuraDaemon {
             config.interval_ms,
         );
         let continuous_coordinator = crate::continuous_coordinator::ContinuousCoordinator::new();
-        let runtime_auth = xynoos_linux_control::config::RuntimeAuthorizationContract::default();
+        let runtime_auth = if let Some(ref auth_p) = config.auth_file {
+            xynoos_linux_control::config::RuntimeAuthorizationContract::load_from(auth_p)
+                .unwrap_or_default()
+        } else {
+            xynoos_linux_control::config::RuntimeAuthorizationContract::default()
+        };
 
         Ok(Self {
             config,
@@ -1054,6 +1091,31 @@ impl AuraDaemon {
         }
     }
 
+    /// Revert all currently active temporary interventions to their baseline original values.
+    pub fn revert_all_active_interventions(&mut self) -> usize {
+        let mut count = 0;
+        let items: Vec<_> = std::mem::take(&mut self.continuous_coordinator.active_interventions);
+        for mut record in items {
+            let cg_clean = record.target_id.trim_start_matches('/');
+            if !cg_clean.is_empty() && !cg_clean.contains("..") {
+                let target_path = PathBuf::from("/sys/fs/cgroup")
+                    .join(cg_clean)
+                    .join(&record.control);
+                if target_path.exists() && !target_path.is_symlink() {
+                    let _ = fs::write(&target_path, record.original_value.to_string().as_bytes());
+                }
+            }
+            record.status = crate::continuous_coordinator::InterventionStatus::Reverted;
+            record.message = "Intervention safely reverted to baseline".into();
+            self.continuous_coordinator.history.push_back(record);
+            count += 1;
+        }
+        while self.continuous_coordinator.history.len() > 32 {
+            self.continuous_coordinator.history.pop_front();
+        }
+        count
+    }
+
     /// Menjalankan loop daemon terikat sampai sinyal stop diterima menggunakan telemetri multi-sumber PressureIQ nyata.
     pub fn run_with_signal(
         &mut self,
@@ -1079,9 +1141,35 @@ impl AuraDaemon {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0);
-            let _reverted = self
+
+            // Dynamically verify and reload authorization contract
+            if let Some(ref auth_p) = self.config.auth_file {
+                if let Ok(loaded_auth) =
+                    xynoos_linux_control::config::RuntimeAuthorizationContract::load_from(auth_p)
+                {
+                    if (loaded_auth.is_revoked || now_ms > loaded_auth.expires_at_unix_ms)
+                        && !self.runtime_auth.is_revoked
+                    {
+                        self.revert_all_active_interventions();
+                    }
+                    self.runtime_auth = loaded_auth;
+                }
+            }
+
+            let reverted = self
                 .continuous_coordinator
                 .evaluate_closed_loop(&sample, now_ms);
+            for rec in reverted {
+                let cg_clean = rec.target_id.trim_start_matches('/');
+                if !cg_clean.is_empty() && !cg_clean.contains("..") {
+                    let target_path = PathBuf::from("/sys/fs/cgroup")
+                        .join(cg_clean)
+                        .join(&rec.control);
+                    if target_path.exists() && !target_path.is_symlink() {
+                        let _ = fs::write(&target_path, rec.original_value.to_string().as_bytes());
+                    }
+                }
+            }
 
             let snap_now = collect_multi_resource(None);
             let now_inst = Instant::now();
@@ -1174,6 +1262,11 @@ impl AuraDaemon {
                 std::thread::sleep(Duration::from_millis(sleep_ms));
             }
         }
+
+        // On shutdown: safely release all active temporary interventions
+        self.revert_all_active_interventions();
+        self.continuous_coordinator.state =
+            crate::continuous_coordinator::CoordinatorState::ShuttingDown;
 
         Ok(self.diagnostics())
     }

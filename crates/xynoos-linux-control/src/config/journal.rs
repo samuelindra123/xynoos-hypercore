@@ -1,12 +1,9 @@
 //! Crash-resilient durable journal for persistent system configuration operations.
 #![forbid(unsafe_code)]
 
+use super::fs_safety::{atomic_write_file, safe_read_bounded, verify_not_symlink};
 use serde::{Deserialize, Serialize};
-use std::{
-    fs::{self, File},
-    io::{self, Read, Write},
-    path::Path,
-};
+use std::{fs, io, path::Path};
 
 pub const CONFIG_JOURNAL_SCHEMA_VERSION: u32 = 1;
 
@@ -67,33 +64,19 @@ impl ConfigJournal {
         }
     }
 
-    /// Load existing journal from disk.
+    /// Load existing journal from disk with bounded size and permission validation.
     pub fn load_from(path: &Path) -> io::Result<Self> {
-        let mut file = File::open(path)?;
-        let mut content = String::new();
-        file.read_to_string(&mut content)?;
+        let content = safe_read_bounded(path, 5 * 1024 * 1024)?;
         serde_json::from_str(&content)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))
     }
 
-    /// Atomically persist the journal with fsync.
+    /// Atomically persist the journal with unique temporary file and fsync.
     pub fn persist(&mut self, path: &Path, now_ms: u64) -> io::Result<()> {
         self.updated_at_unix_ms = now_ms;
-        if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        let temp_path = path.with_extension("tmp");
         let payload = serde_json::to_string_pretty(self)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
-
-        {
-            let mut file = File::create(&temp_path)?;
-            file.write_all(payload.as_bytes())?;
-            file.sync_all()?;
-        }
-
-        fs::rename(&temp_path, path)?;
-        Ok(())
+        atomic_write_file(path, payload.as_bytes(), 0o600)
     }
 
     /// Add a step to the journal.
@@ -101,9 +84,10 @@ impl ConfigJournal {
         self.items.push(item);
     }
 
-    /// Clean up the journal file upon successful completion or clean rollback.
+    /// Clean up the journal file upon successful completion or clean rollback, refusing symlinks.
     pub fn cleanup(path: &Path) -> io::Result<()> {
         if path.exists() {
+            verify_not_symlink(path)?;
             fs::remove_file(path)?;
         }
         Ok(())
