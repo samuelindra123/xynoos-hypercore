@@ -30,6 +30,10 @@ endif
 override_dh_auto_install:
 	install -D -m 0755 target/release/xynoos debian/xynoos-hypercore/usr/bin/xynoos
 
+override_dh_shlibdeps:
+	dh_shlibdeps
+	sed -i 's/libc6 (>= 2\.39)/libc6 (>= 2.34)/' debian/*.substvars
+
 override_dh_gencontrol:
 	dh_gencontrol -- -Vxynoos:Built-Using="$$(cat debian/rust-built-using)"
 
