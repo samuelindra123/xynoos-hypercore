@@ -23,29 +23,22 @@
 //! 20. Cross-user authorization mismatch.
 #![forbid(unsafe_code)]
 
-use std::{
-    fs::{self, File},
-    io::Write,
-    path::{Path, PathBuf},
-};
+use std::{fs, path::PathBuf};
 use xynoos_linux_control::{
     config::{
         fs_safety::{
             atomic_write_file, safe_read_bounded, sanitize_dropin_target_file,
-            validate_cgroup_path, validate_device_name, validate_sysctl_key, verify_not_symlink,
+            validate_cgroup_path, validate_device_name, validate_sysctl_key,
         },
-        ActionClassification, AuthorizationScope, ConfigExecutor, ConfigJournal, ConfigJournalItem,
-        ConfigSubsystem, ConfigTxPhase, ConfigurationAction, IntegrityStatus, OwnershipLedger,
-        PersistenceRequirement, ReversalProcedure, RuntimeAuthorizationContract,
-        SetupAuthorization, TypedMutation, VerificationProcedure, CONFIG_ACTION_SCHEMA_VERSION,
+        ActionClassification, AuthorizationScope, ConfigExecutor, ConfigJournal, ConfigSubsystem,
+        ConfigurationAction, OwnershipLedger, PersistenceRequirement, ReversalProcedure,
+        RuntimeAuthorizationContract, SetupAuthorization, TypedMutation, VerificationProcedure,
+        CONFIG_ACTION_SCHEMA_VERSION,
     },
     service::ServiceAdapter,
 };
-use xynoos_pressureiq::{
-    discovery::types::{
-        ConfidenceLevel, ConfigurationOwnership, PrivilegeLevel, ReversibilityGuarantee,
-    },
-    InitSystem,
+use xynoos_pressureiq::discovery::types::{
+    ConfidenceLevel, ConfigurationOwnership, PrivilegeLevel, ReversibilityGuarantee,
 };
 
 struct TestEnv {
@@ -495,8 +488,8 @@ fn test_cgroup_cpu_weight_bounds() {
         preconditions: vec![],
         dependencies: vec![],
         conflict_status: None,
-        verification_procedure: VerificationProcedure::NoVerification,
-        reversal_procedure: ReversalProcedure::NoReversal,
+        verification_procedure: VerificationProcedure::NoOpPreserved,
+        reversal_procedure: ReversalProcedure::NoOpPreserved,
         persistence_requirements: PersistenceRequirement::RuntimeOnly,
         mutation: Some(TypedMutation::ApplyCgroupCpuWeight {
             cgroup_path: "user.slice".into(),
@@ -547,8 +540,8 @@ fn test_unsupported_kernel_interface_fails_closed() {
         preconditions: vec![],
         dependencies: vec![],
         conflict_status: None,
-        verification_procedure: VerificationProcedure::NoVerification,
-        reversal_procedure: ReversalProcedure::NoReversal,
+        verification_procedure: VerificationProcedure::NoOpPreserved,
+        reversal_procedure: ReversalProcedure::NoOpPreserved,
         persistence_requirements: PersistenceRequirement::RuntimeOnly,
         mutation: Some(TypedMutation::ApplySysctl {
             key: "vm.swappiness".into(),

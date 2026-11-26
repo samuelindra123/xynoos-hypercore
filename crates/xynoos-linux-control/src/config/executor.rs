@@ -11,10 +11,7 @@ use super::{
     journal::{ConfigJournal, ConfigJournalItem, ConfigTxPhase},
     ledger::{IntegrityStatus, OwnershipLedger},
 };
-use std::{
-    fs, io,
-    path::{Path, PathBuf},
-};
+use std::{fs, io, path::PathBuf};
 use xynoos_pressureiq::discovery::types::ConfigurationOwnership;
 
 /// Execution result for an individual action.
