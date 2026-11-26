@@ -27,8 +27,8 @@ use std::{fs, path::PathBuf};
 use xynoos_linux_control::{
     config::{
         fs_safety::{
-            atomic_write_file, safe_read_bounded, sanitize_dropin_target_file,
-            validate_cgroup_path, validate_device_name, validate_sysctl_key,
+            atomic_write_file, safe_read_bounded, validate_cgroup_path, validate_device_name,
+            validate_sysctl_key,
         },
         ActionClassification, AuthorizationScope, ConfigExecutor, ConfigJournal, ConfigSubsystem,
         ConfigurationAction, OwnershipLedger, PersistenceRequirement, ReversalProcedure,

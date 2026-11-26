@@ -3,11 +3,7 @@
 
 use std::{
     fs,
-    path::PathBuf,
-    sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc,
-    },
+    sync::{atomic::AtomicBool, Arc},
 };
 use xynoos_aura::daemon::{AuraDaemon, DaemonConfig, DaemonMode, PidLock};
 

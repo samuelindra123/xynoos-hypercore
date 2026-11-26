@@ -321,6 +321,7 @@ struct PidLockRecord {
 }
 
 /// Mekanisme penguncian PID instans tunggal yang tahan terhadap PID reuse dan race condition.
+#[derive(Debug)]
 pub struct PidLock {
     path: PathBuf,
 }
@@ -1093,11 +1094,7 @@ impl AuraDaemon {
     /// Revert all currently active temporary interventions to their baseline original values.
     pub fn revert_all_active_interventions(&mut self) -> usize {
         let mut count = 0;
-        let items: Vec<_> = self
-            .continuous_coordinator
-            .active_interventions
-            .drain(..)
-            .collect();
+        let items: Vec<_> = std::mem::take(&mut self.continuous_coordinator.active_interventions);
         for mut record in items {
             let cg_clean = record.target_id.trim_start_matches('/');
             if !cg_clean.is_empty() && !cg_clean.contains("..") {
@@ -1150,10 +1147,10 @@ impl AuraDaemon {
                 if let Ok(loaded_auth) =
                     xynoos_linux_control::config::RuntimeAuthorizationContract::load_from(auth_p)
                 {
-                    if loaded_auth.is_revoked || now_ms > loaded_auth.expires_at_unix_ms {
-                        if !self.runtime_auth.is_revoked {
-                            self.revert_all_active_interventions();
-                        }
+                    if (loaded_auth.is_revoked || now_ms > loaded_auth.expires_at_unix_ms)
+                        && !self.runtime_auth.is_revoked
+                    {
+                        self.revert_all_active_interventions();
                     }
                     self.runtime_auth = loaded_auth;
                 }
