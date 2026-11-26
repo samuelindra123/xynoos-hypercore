@@ -1046,12 +1046,16 @@ pub fn doctor_command(args: &[String]) -> Result<(), Box<dyn Error>> {
         let cgroup_v2_avail = inv.platform.cgroup_hierarchy
             == xynoos_pressureiq::discovery::platform::CgroupHierarchy::V2Unified;
         let init_name = format!("{:?}", inv.platform.init_system);
+        let installation = crate::product::installation_info();
+        let last_diag = crate::product::last_diagnostic().unwrap_or(serde_json::Value::Null);
 
         let out = serde_json::json!({
             "product": "Xynoos HyperCore",
             "version": env!("CARGO_PKG_VERSION"),
             "physical_kernel_mutation": false,
             "schema_version": 1,
+            "installation": installation,
+            "last_diagnostic": last_diag,
             "platform": inv.platform,
             "compatibility": assessment,
             "service": {
