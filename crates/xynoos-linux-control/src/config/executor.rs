@@ -12,8 +12,7 @@ use super::{
     ledger::{IntegrityStatus, OwnershipLedger},
 };
 use std::{
-    fs::{self, File},
-    io::{self, Write},
+    fs, io,
     path::{Path, PathBuf},
 };
 use xynoos_pressureiq::discovery::types::ConfigurationOwnership;
@@ -78,19 +77,6 @@ impl ConfigExecutor {
     /// Load or initialize the ownership ledger.
     pub fn load_ledger(&self) -> io::Result<OwnershipLedger> {
         OwnershipLedger::load_from(&self.ledger_path)
-    }
-
-    /// Verify an individual target path against symlink traversal attacks.
-    fn sanitize_path(&self, base: &Path, rel_path: &str) -> Result<PathBuf, String> {
-        if rel_path.contains("..") || rel_path.starts_with('/') {
-            return Err(format!("Unsafe path component detected in: {rel_path}"));
-        }
-        let target = base.join(rel_path);
-        // Ensure no component of target is a symlink pointing outside base
-        if target.is_symlink() {
-            return Err(format!("Refusing to write through symlink: {:?}", target));
-        }
-        Ok(target)
     }
 
     /// Execute an authorized action plan.
@@ -385,6 +371,8 @@ impl ConfigExecutor {
                 algorithm,
                 priority,
             } => {
+                validate_device_name(device_name)
+                    .map_err(|e| format!("Invalid zram device name: {e}"))?;
                 let swaps_path = self.proc_root.join("swaps");
                 if swaps_path.exists() {
                     if let Ok(swaps_content) = fs::read_to_string(&swaps_path) {
@@ -722,14 +710,8 @@ impl ConfigExecutor {
                 scheduler,
                 original_scheduler,
             } => {
-                if device_name.contains('/')
-                    || device_name.contains("..")
-                    || !device_name
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-                {
-                    return Err(format!("Unsafe block device name: {device_name}"));
-                }
+                validate_device_name(device_name)
+                    .map_err(|e| format!("Unsafe block device name: {e}"))?;
                 let allowed = ["none", "mq-deadline", "bfq", "kyber"];
                 if !allowed.contains(&scheduler.as_str()) {
                     return Err(format!(
@@ -784,14 +766,8 @@ impl ConfigExecutor {
                 read_ahead_kb,
                 original_kb,
             } => {
-                if device_name.contains('/')
-                    || device_name.contains("..")
-                    || !device_name
-                        .chars()
-                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
-                {
-                    return Err(format!("Unsafe block device name: {device_name}"));
-                }
+                validate_device_name(device_name)
+                    .map_err(|e| format!("Unsafe block device name: {e}"))?;
                 if !(16..=2048).contains(read_ahead_kb) {
                     return Err(format!(
                         "Read-ahead value {read_ahead_kb} out of permitted bounds (16..=2048)"
