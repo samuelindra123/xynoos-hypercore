@@ -70,7 +70,9 @@ pub use interplay::{AuraKernelCoordinator, InterplayReport, KernelTuningRecommen
 
 pub mod daemon;
 pub use daemon::{
-    AuraDaemon, ConfigValidationError, DaemonConfig, DaemonDiagnostics, DaemonMode, PidLock,
+    reconcile_durable_interventions_sysfs, recover_durable_lease, AuraDaemon,
+    ConfigValidationError, DaemonConfig, DaemonDiagnostics, DaemonMode, DurableInterventionLedger,
+    DurableInterventionRecord, LeasePhase, PidLock, RecoveryOutcome, RecoveryReport,
     TransactionJournal,
 };
 

@@ -175,6 +175,8 @@ pub struct DaemonConfig {
     pub max_backoff_ms: u64,
     pub pid_file: Option<PathBuf>,
     pub journal_file: Option<PathBuf>,
+    #[serde(default = "default_active_interventions_file")]
+    pub active_interventions_file: Option<PathBuf>,
     #[serde(default = "default_auth_file")]
     pub auth_file: Option<PathBuf>,
     pub max_rss_bytes: usize,
@@ -196,6 +198,10 @@ fn default_adaptive_polling() -> bool {
 
 fn default_auth_file() -> Option<PathBuf> {
     Some(PathBuf::from("/var/lib/xynoos/authorization.json"))
+}
+
+fn default_active_interventions_file() -> Option<PathBuf> {
+    Some(PathBuf::from("/var/lib/xynoos/active_interventions.json"))
 }
 
 impl DaemonConfig {
@@ -239,6 +245,9 @@ impl DaemonConfig {
         }
         if let Some(ref j) = self.journal_file {
             validate_safe_path("journal_file", j)?;
+        }
+        if let Some(ref act) = self.active_interventions_file {
+            validate_safe_path("active_interventions_file", act)?;
         }
         if let Some(ref a) = self.auth_file {
             validate_safe_path("auth_file", a)?;
@@ -298,6 +307,7 @@ impl Default for DaemonConfig {
             max_backoff_ms: 60000,
             pid_file: Some(PathBuf::from("/run/xynoos/hypercore.pid")),
             journal_file: Some(PathBuf::from("/run/xynoos/hypercore_journal.json")),
+            active_interventions_file: default_active_interventions_file(),
             auth_file: default_auth_file(),
             max_rss_bytes: 64 * 1024 * 1024, // 64 MiB hard limit
             default_protection_bytes: 16 * 1024 * 1024,
@@ -309,7 +319,8 @@ impl Default for DaemonConfig {
 }
 
 pub use xynoos_linux_control::journal::{
-    recover_durable_lease, JournalStatus, LeasePhase, RecoveryOutcome, RecoveryReport,
+    reconcile_durable_interventions_sysfs, recover_durable_lease, DurableInterventionLedger,
+    DurableInterventionRecord, JournalStatus, LeasePhase, RecoveryOutcome, RecoveryReport,
     TransactionJournal,
 };
 
@@ -656,6 +667,93 @@ impl AuraDaemon {
             RecoveryOutcome::RecoveryFailed => {
                 Err(format!("Pemulihan crash gagal: {:?}", rep.events))
             }
+        }
+    }
+
+    /// Rekonsiliasi pemulihan crash multi-siklus pada startup: membaca durable ledger
+    /// (/var/lib/xynoos/active_interventions.json), memverifikasi boot ID, identitas inode,
+    /// mendeteksi konflik eksternal, dan mengembalikan baseline original secara fail-closed.
+    pub fn reconcile_startup_crash_recovery(
+        &mut self,
+        cgroup_root: Option<&Path>,
+    ) -> Result<RecoveryReport, String> {
+        if let Some(ref ledger_path) = self.config.active_interventions_file {
+            if ledger_path.exists() {
+                let rep = reconcile_durable_interventions_sysfs(ledger_path, cgroup_root)?;
+                if rep.outcome == RecoveryOutcome::Restored {
+                    self.recovered_crashes = self.recovered_crashes.saturating_add(1);
+                }
+                return Ok(rep);
+            }
+        }
+        Ok(RecoveryReport {
+            outcome: RecoveryOutcome::NoJournal,
+            original_value: None,
+            current_value: None,
+            requested_value: None,
+            events: Vec::new(),
+        })
+    }
+
+    /// Menerapkan intervensi cgroup secara tahan banting (durable) dengan mendaftarkannya
+    /// ke memory coordinator dan menyimpannya ke ledger persisten di disk sebelum eksekusi kernel.
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_and_persist_intervention(
+        &mut self,
+        target_id: &str,
+        control: &str,
+        cgroup_inode: u64,
+        control_inode: u64,
+        original_value: u64,
+        applied_value: u64,
+        lease_duration_ms: u64,
+        sample: &crate::telemetry_scheduler::TelemetrySample,
+        now_ms: u64,
+    ) {
+        self.continuous_coordinator.record_intervention_applied(
+            target_id,
+            control,
+            original_value,
+            applied_value,
+            lease_duration_ms,
+            sample,
+            now_ms,
+        );
+
+        if let Some(ref ledger_path) = self.config.active_interventions_file {
+            let mut ledger = DurableInterventionLedger::load(ledger_path)
+                .ok()
+                .flatten()
+                .unwrap_or_else(|| {
+                    DurableInterventionLedger::new(
+                        xynoos_linux_control::journal::current_boot_id().unwrap_or_default(),
+                    )
+                });
+
+            let record = DurableInterventionRecord {
+                lease_id: format!(
+                    "{}-{}-{}-{}",
+                    std::process::id(),
+                    cgroup_inode,
+                    control,
+                    now_ms
+                ),
+                target_id: target_id.to_string(),
+                control: control.to_string(),
+                cgroup_inode,
+                control_inode,
+                original_value,
+                applied_value,
+                applied_at_epoch_ms: now_ms,
+                lease_duration_ms,
+                boot_id: xynoos_linux_control::journal::current_boot_id().unwrap_or_default(),
+                owner_uid: xynoos_linux_control::current_euid(),
+                process_pid: std::process::id(),
+                status: LeasePhase::Applied,
+            };
+
+            ledger.upsert_record(record);
+            let _ = ledger.persist(ledger_path);
         }
     }
 
@@ -1110,6 +1208,9 @@ impl AuraDaemon {
             self.continuous_coordinator.history.push_back(record);
             count += 1;
         }
+        if let Some(ref ledger_path) = self.config.active_interventions_file {
+            let _ = DurableInterventionLedger::cleanup(ledger_path);
+        }
         while self.continuous_coordinator.history.len() > 32 {
             self.continuous_coordinator.history.pop_front();
         }
@@ -1122,6 +1223,9 @@ impl AuraDaemon {
         stop_signal: Arc<AtomicBool>,
         max_cycles: Option<u64>,
     ) -> Result<DaemonDiagnostics, String> {
+        // Reconcile any orphaned active interventions from prior ungraceful crash (SIGKILL/power loss)
+        let _ = self.reconcile_startup_crash_recovery(None);
+
         let mut executed = 0u64;
         let mut prev_snap: Option<MultiResourceSnapshot> = None;
 
@@ -1167,6 +1271,16 @@ impl AuraDaemon {
                         .join(&rec.control);
                     if target_path.exists() && !target_path.is_symlink() {
                         let _ = fs::write(&target_path, rec.original_value.to_string().as_bytes());
+                    }
+                }
+                if let Some(ref ledger_path) = self.config.active_interventions_file {
+                    if let Ok(Some(mut ledger)) = DurableInterventionLedger::load(ledger_path) {
+                        ledger.remove_record(&rec.target_id, &rec.control);
+                        if ledger.records.is_empty() {
+                            let _ = DurableInterventionLedger::cleanup(ledger_path);
+                        } else {
+                            let _ = ledger.persist(ledger_path);
+                        }
                     }
                 }
             }
